@@ -33,10 +33,9 @@ const character = {
     { id: 1, category: "Condition", value: { condition: "Prone" }, duration: { type: "Permanent", rounds: null }, note: "" }
   ],
 
-  // tag can be "SR", "LR", "\u2014" (doesn't recharge), or any custom text
+  // tag can be "SR", "LR", "\u2014" (doesn't recharge), or any custom text.
+  // spell slots deliberately do NOT live here -- see spellSlots below.
   resources: [
-    { id: 1, name: "Spell Slots (1st)", tag: "LR", current: 2, max: 4 },
-    { id: 2, name: "Spell Slots (2nd)", tag: "LR", current: 1, max: 3 },
     { id: 3, name: "Action Surge", tag: "SR", current: 1, max: 1 },
     { id: 4, name: "Second Wind", tag: "LR", current: 2, max: 2 },
     { id: 5, name: "Arrows", tag: "\u2014", current: 20, max: 20 }
@@ -126,6 +125,11 @@ const character = {
 
   // shared slot pool (multiclass casters draw from one pool in 5e).
   // stored as raw current/max, same as resources -- nothing here is derived.
+  //
+  // SINGLE SOURCE OF TRUTH for slots. Rendered in two places -- the Combat
+  // tab's Resources list and the Spells tab -- both of which read and write
+  // this object directly, so the two views can never drift apart. Do not
+  // mirror slots into `resources`; that's what caused them to disagree before.
   spellSlots: {
     1: { current: 3, max: 4 },
     2: { current: 2, max: 3 },

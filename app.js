@@ -1384,6 +1384,19 @@ function renderContent() {
    COMBAT TAB
    ============================================================ */
 
+/* Spell slots live only in character.spellSlots. The Combat tab renders them
+   as resource rows and the Spells tab renders them per level -- both read and
+   write the same object, so the two views can't disagree. */
+
+function spellSlotLevels() {
+  if (!character.spellcasting || !character.spellcasting.classes.length) return [];
+  return Object.keys(character.spellSlots).map(n => parseInt(n)).sort((a, b) => a - b);
+}
+
+function slotRowName(level) {
+  return "Spell Slots (" + levelLabel(level).replace(" Level", "") + ")";
+}
+
 function renderCombatTab() {
   const ac = calculateAC(character);
   const maxHP = calculateMaxHP(character);
@@ -1441,6 +1454,15 @@ function renderCombatTab() {
       <div class="section-head">Resources</div>
       <button class="add-link" id="add-resource-button">+ Add</button>
     </div>
+    ${spellSlotLevels().map(lvl => {
+      const slot = character.spellSlots[lvl];
+      return `
+      <div class="res-row">
+        <div class="res-name-wrap" data-slot-view="${lvl}"><span class="res-name">${slotRowName(lvl)}</span><span class="res-tag">LR</span></div>
+        <div class="stepper"><button data-slot-minus="${lvl}">\u2212</button><span class="res-count">${slot.current}/${slot.max}</span><button data-slot-plus="${lvl}">+</button></div>
+      </div>
+    `;
+    }).join("")}
     ${character.resources.map(r => `
       <div class="res-row">
         <div class="res-name-wrap" data-resource-view="${r.id}"><span class="res-name">${r.name}</span><span class="res-tag">${r.tag}</span></div>
@@ -1517,6 +1539,16 @@ function wireCombatTab() {
   });
   document.querySelectorAll("[data-resource-view]").forEach(el => el.addEventListener("click", () => openResourceDetailModal(el.dataset.resourceView)));
   document.getElementById("add-resource-button").addEventListener("click", openAddResourceModal);
+
+  document.querySelectorAll("[data-slot-minus]").forEach(button => {
+    button.addEventListener("click", () => { character.spellSlots[button.dataset.slotMinus].current--; renderContent(); });
+  });
+  document.querySelectorAll("[data-slot-plus]").forEach(button => {
+    button.addEventListener("click", () => { character.spellSlots[button.dataset.slotPlus].current++; renderContent(); });
+  });
+  document.querySelectorAll("[data-slot-view]").forEach(el => {
+    el.addEventListener("click", () => openEditSlotsModal(parseInt(el.dataset.slotView)));
+  });
 
   document.querySelectorAll("[data-roll-tohit]").forEach(button => {
     button.addEventListener("click", (e) => {
@@ -2352,10 +2384,18 @@ function renderSpellsTab() {
   `;
 }
 
+// casting is never blocked -- homebrew and table rulings can put a character
+// outside the normal slot economy, so we warn and let the count go negative
+// rather than refusing the cast.
 function castSpell(spellId) {
   const spell = character.spells.find(s => s.id == spellId);
   const slot = character.spellSlots[spell.level];
-  if (slot && slot.current > 0) slot.current--;
+  if (slot) {
+    if (slot.current <= 0) showToast("No " + levelLabel(spell.level).replace(" Level", "") + "-level slots left");
+    slot.current--;
+  } else if (spell.level > 0) {
+    showToast("No " + levelLabel(spell.level).replace(" Level", "") + "-level slots on this sheet");
+  }
   if (spell.attackRoll) {
     const cls = character.spellcasting.classes.find(c => c.name === spell.classSource);
     const atk = calculateSpellAttack(character, cls.ability);
