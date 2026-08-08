@@ -560,14 +560,12 @@ function rechargeFieldHtml(idPrefix, currentTag) {
   const isKnown = known.includes(currentTag);
   const selectedType = isKnown ? (currentTag === "\u2014" ? "None" : currentTag) : "Custom";
   return `
-    <div class="field"><label>Recharges</label>
-      <select id="${idPrefix}-tag-type">
-        <option value="SR" ${selectedType === "SR" ? "selected" : ""}>Short Rest</option>
-        <option value="LR" ${selectedType === "LR" ? "selected" : ""}>Long Rest</option>
-        <option value="None" ${selectedType === "None" ? "selected" : ""}>Doesn't Recharge</option>
-        <option value="Custom" ${selectedType === "Custom" ? "selected" : ""}>Custom</option>
-      </select>
-    </div>
+    ${selectFieldHtml(idPrefix + "-tag-type", "Recharges", [
+      { value: "SR", label: "Short Rest" },
+      { value: "LR", label: "Long Rest" },
+      { value: "None", label: "Doesn't Recharge" },
+      { value: "Custom", label: "Custom" }
+    ], selectedType)}
     <div id="${idPrefix}-tag-custom-wrap">
       ${selectedType === "Custom" ? rechargeCustomFieldHtml(idPrefix, isKnown ? "" : currentTag) : ""}
     </div>
@@ -575,6 +573,7 @@ function rechargeFieldHtml(idPrefix, currentTag) {
 }
 
 function wireRechargeField(idPrefix) {
+  wireSelect(idPrefix + "-tag-type");
   const select = document.getElementById(idPrefix + "-tag-type");
   const wrap = document.getElementById(idPrefix + "-tag-custom-wrap");
   select.addEventListener("change", () => {
@@ -668,7 +667,7 @@ function openCharacterEditorModal() {
     <div class="field"><label>Name</label><input id="editor-name-input" type="text" value="${esc(character.name)}"></div>
     <div class="field">
       <label>Alignment</label>
-      <select id="editor-alignment-input">${ALIGNMENTS.map(a => `<option ${character.alignment === a ? "selected" : ""}>${a}</option>`).join("")}</select>
+      ${selectFieldHtml("editor-alignment-input", "", ALIGNMENTS, character.alignment)}
     </div>
     <div class="field"><label>Appearance</label><textarea id="editor-appearance-input" placeholder="Physical description">${esc(character.appearance)}</textarea></div>
     <div class="field"><label>Personality Traits</label><textarea id="editor-traits-input" placeholder="How they act, talk, carry themselves">${esc(character.personalityTraits)}</textarea></div>
@@ -679,6 +678,8 @@ function openCharacterEditorModal() {
 
     <button class="btn-primary" id="editor-save-button">Save</button>
   `);
+
+  wireSelect("editor-alignment-input");
 
   const avatarPreview = document.getElementById("editor-avatar");
   const picInput = document.getElementById("editor-pic-input");
@@ -2766,12 +2767,14 @@ function openEditSavingThrowModal(ability) {
     <hr class="breakdown-divider">
     <div class="breakdown-total" style="margin-bottom:14px;"><span>Total</span><span>${formatModifier(current.total)}</span></div>
     <div class="field"><label>Proficient?</label>
-      <select id="edit-save-prof"><option value="yes" ${character.savingThrowProficiency[ability] ? "selected" : ""}>Yes</option><option value="no" ${!character.savingThrowProficiency[ability] ? "selected" : ""}>No</option></select>
+      ${selectFieldHtml("edit-save-prof", "", [{ value: "yes", label: "Yes" }, { value: "no", label: "No" }], character.savingThrowProficiency[ability] ? "yes" : "no")}
     </div>
     <div class="toggle-line"><span>Override bonus</span><div class="switch ${isOverridden ? "on" : ""}" id="save-override-switch"><div class="knob"></div></div></div>
     <div id="save-override-wrap">${isOverridden ? `<div class="field"><label>Bonus</label><input id="edit-save-override-value" type="number" value="${overrideVal}"></div>` : ""}</div>
     <button class="btn-primary" id="save-save-button">Save</button>
   `);
+
+  wireSelect("edit-save-prof");
 
   const switchEl = document.getElementById("save-override-switch");
   const wrap = document.getElementById("save-override-wrap");
@@ -2808,17 +2811,15 @@ function openEditSkillModal(skillName) {
     ${breakdownRowsHtml(currentSkill.sources)}
     <hr class="breakdown-divider">
     <div class="breakdown-total" style="margin-bottom:14px;"><span>Total</span><span>${formatModifier(currentSkill.total)}</span></div>
-    <div class="field"><label>Proficiency</label>
-      <select id="edit-skill-prof">
-        <option value="0" ${current === 0 ? "selected" : ""}>None</option>
-        <option value="1" ${current === 1 ? "selected" : ""}>Proficient</option>
-        <option value="2" ${current === 2 ? "selected" : ""}>Expertise</option>
-      </select>
-    </div>
+    ${selectFieldHtml("edit-skill-prof", "Proficiency", [
+      { value: "0", label: "None" }, { value: "1", label: "Proficient" }, { value: "2", label: "Expertise" }
+    ], String(current))}
     <div class="toggle-line"><span>Override bonus</span><div class="switch ${isOverridden ? "on" : ""}" id="skill-override-switch"><div class="knob"></div></div></div>
     <div id="skill-override-wrap">${isOverridden ? `<div class="field"><label>Bonus</label><input id="edit-skill-override-value" type="number" value="${overrideVal}"></div>` : ""}</div>
     <button class="btn-primary" id="save-skill-button">Save</button>
   `);
+
+  wireSelect("edit-skill-prof");
 
   const switchEl = document.getElementById("skill-override-switch");
   const wrap = document.getElementById("skill-override-wrap");
@@ -2948,7 +2949,7 @@ function openAddFeatureOrSectionModal() {
 
   function renderFeatureBody() {
     body.innerHTML = `
-      <div class="field"><label>Section</label><select id="new-feature-category">${categories.map(c => `<option>${c}</option>`).join("")}</select></div>
+      ${selectFieldHtml("new-feature-category", "Section", categories)}
       <div class="field"><label>Name</label><input id="new-feature-name" placeholder="e.g. Great Weapon Master"></div>
       <div class="field"><label>Description</label><input id="new-feature-desc" placeholder="Optional"></div>
       <div class="field"><label>Effects</label></div>
@@ -2956,6 +2957,7 @@ function openAddFeatureOrSectionModal() {
       <button class="add-link" id="add-feature-effect-button">+ Add Effect</button>
       <button class="btn-primary" id="save-feature-button" style="margin-top:14px;">Add Feature</button>
     `;
+    wireSelect("new-feature-category");
     const listEl = document.getElementById("feature-effects-list");
     renderFeatureEffectsList(listEl, formEffects);
     document.getElementById("add-feature-effect-button").addEventListener("click", () => {
@@ -3240,21 +3242,14 @@ function spellFormFieldsHtml(spell) {
   return `
     <div class="field"><label>Name</label><input id="spell-form-name" value="${esc(spell ? spell.name : "")}" placeholder="e.g. Fireball"></div>
     <div class="field-row">
-      <div class="field"><label>Level</label>
-        <select id="spell-form-level">
-          <option value="0" ${spell && spell.level === 0 ? "selected" : ""}>Cantrip</option>
-          ${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(l => `<option value="${l}" ${spell && spell.level === l ? "selected" : ""}>${levelLabel(l)}</option>`).join("")}
-        </select>
-      </div>
-      <div class="field"><label>Class</label><select id="spell-form-class">${classOptions.map(c => `<option ${spell && c === spell.classSource ? "selected" : ""}>${c}</option>`).join("")}</select></div>
+      ${selectFieldHtml("spell-form-level", "Level",
+        [{ value: "0", label: "Cantrip" }].concat([1, 2, 3, 4, 5, 6, 7, 8, 9].map(l => ({ value: String(l), label: levelLabel(l) }))),
+        String(spell ? spell.level : 0))}
+      ${selectFieldHtml("spell-form-class", "Class", classOptions, spell ? spell.classSource : undefined)}
     </div>
-    <div class="field"><label>Casting Time</label>
-      <select id="spell-form-time">
-        <option value="A" ${spell && spell.castingTime === "A" ? "selected" : ""}>Action</option>
-        <option value="B" ${spell && spell.castingTime === "B" ? "selected" : ""}>Bonus Action</option>
-        <option value="R" ${spell && spell.castingTime === "R" ? "selected" : ""}>Reaction</option>
-      </select>
-    </div>
+    ${selectFieldHtml("spell-form-time", "Casting Time", [
+      { value: "A", label: "Action" }, { value: "B", label: "Bonus Action" }, { value: "R", label: "Reaction" }
+    ], spell ? spell.castingTime : "A")}
     <div class="toggle-line"><span>Requires spell attack roll</span><div class="switch ${spell && spell.attackRoll ? "on" : ""}" id="spell-form-attack-switch"><div class="knob"></div></div></div>
     <div class="field"><label>Description</label><input id="spell-form-desc" value="${esc(spell ? (spell.desc || "") : "")}" placeholder="Optional"></div>
   `;
@@ -3277,6 +3272,7 @@ function openAddSpellModal() {
     ${spellFormFieldsHtml(null)}
     <button class="btn-primary" id="save-spell-button" style="margin-top:6px;">Add Spell</button>
   `);
+  wireSelect("spell-form-level"); wireSelect("spell-form-class"); wireSelect("spell-form-time");
   document.getElementById("spell-form-attack-switch").addEventListener("click", (e) => { attackOn = !attackOn; e.currentTarget.classList.toggle("on", attackOn); });
   document.getElementById("save-spell-button").addEventListener("click", () => {
     const formData = readSpellForm();
@@ -3300,6 +3296,7 @@ function openSpellDetailModal(spellId) {
       <button class="btn-primary" id="remove-spell-button" style="background:#5A2C29;color:#F0908A;">Remove</button>
     </div>
   `);
+  wireSelect("spell-form-level"); wireSelect("spell-form-class"); wireSelect("spell-form-time");
   document.getElementById("spell-form-attack-switch").addEventListener("click", (e) => { attackOn = !attackOn; e.currentTarget.classList.toggle("on", attackOn); });
   document.getElementById("save-spell-edit-button").addEventListener("click", () => {
     const formData = readSpellForm();
