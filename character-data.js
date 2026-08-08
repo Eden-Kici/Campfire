@@ -23,7 +23,6 @@ const character = {
   baseSpeed: 30,
 
   inspiration: { current: 0, max: 1 },
-  concentration: { active: false, spell: "", visible: true },
 
   hp: { current: 18, temp: 0 },
   baseMaxHP: 24,
@@ -37,8 +36,26 @@ const character = {
     { die: "d8", total: 2, current: 2 }
   ],
 
+  // Effects are grouped by their cause. One spell or condition often produces
+  // several modifiers that all begin and end together, so duration and
+  // concentration belong to the group rather than to each modifier. This is the
+  // same shape as trait.effects, so features and active effects flatten
+  // identically. A group with an empty effects array is a valid label-only
+  // reminder ("Cursed") with no mechanical bonus.
   activeEffects: [
-    { id: 1, category: "Condition", value: { condition: "Prone" }, duration: { type: "Permanent", rounds: null }, note: "" }
+    {
+      id: 1, name: "Prone", concentration: false,
+      duration: { type: "Permanent", rounds: null },
+      effects: [{ category: "Condition", value: { condition: "Prone" } }]
+    },
+    {
+      id: 2, name: "Bless", concentration: true,
+      duration: { type: "Rounds", rounds: 10 },
+      effects: [
+        { category: "Bonus", value: { stat: "Attack Rolls", amount: 1 } },
+        { category: "Saving Throw", value: { ability: "WIS", amount: 1 } }
+      ]
+    }
   ],
 
   // tag can be "SR", "LR", "\u2014" (doesn't recharge), or any custom text.
@@ -247,8 +264,33 @@ function allFeatureEffects(character) {
   return all;
 }
 
+// A group's display name is what shows on its chip and what labels its
+// contribution in every stat breakdown. Falls back to describing the first
+// modifier so an unnamed group is never blank.
+function effectGroupLabel(group) {
+  if (group.name && group.name.trim()) return group.name.trim();
+  const first = (group.effects || [])[0];
+  return first ? effectSummaryLabel(first) : "Effect";
+}
+
+// Flattens groups into the { category, value, note } shape the calculation
+// layer expects, tagging each modifier with the name of whatever caused it.
+function activeEffectModifiers(character) {
+  const modifiers = [];
+  character.activeEffects.forEach(group => {
+    (group.effects || []).forEach(effect => {
+      modifiers.push({ category: effect.category, value: effect.value, note: effectGroupLabel(group) });
+    });
+  });
+  return modifiers;
+}
+
 function getAllEffects(character) {
-  return character.activeEffects.concat(allFeatureEffects(character));
+  return activeEffectModifiers(character).concat(allFeatureEffects(character));
+}
+
+function concentrationGroups(character) {
+  return character.activeEffects.filter(group => group.concentration);
 }
 
 function effectsAffectingAbility(character, ability) {
@@ -274,7 +316,8 @@ function effectsAffectingStat(character, statName) {
 }
 
 function hasCondition(character, conditionName) {
-  return character.activeEffects.some(e => e.category === "Condition" && e.value.condition === conditionName);
+  return character.activeEffects.some(group =>
+    (group.effects || []).some(e => e.category === "Condition" && e.value.condition === conditionName));
 }
 
 function effectSourceLabel(effect) {

@@ -160,8 +160,14 @@ function openBreakdownModal(title, total, suffix, sources, rollButton) {
 }
 
 function effectSubfieldsHtml(category, idPrefix) {
+  // a datalist rather than a select: the 16 standard conditions are suggested,
+  // but homebrew and non-SRD statuses can just be typed in. no extra wiring,
+  // which matters because this markup gets re-rendered on every category change.
   if (category === "Condition") {
-    return `<div class="field"><label>Condition</label><select id="${idPrefix}-condition">${ALL_CONDITIONS.map(c => `<option>${c}</option>`).join("")}</select></div>`;
+    return `<div class="field"><label>Condition</label>
+      <input id="${idPrefix}-condition" list="condition-options" placeholder="Choose one, or type your own">
+      <datalist id="condition-options">${ALL_CONDITIONS.map(c => `<option value="${c}">`).join("")}</datalist>
+    </div>`;
   }
   if (category === "Ability Score" || category === "Saving Throw") {
     return `<div class="field-row">
@@ -182,7 +188,7 @@ function effectSubfieldsHtml(category, idPrefix) {
 }
 
 function readEffectValueFromForm(category, idPrefix) {
-  if (category === "Condition") return { condition: document.getElementById(idPrefix + "-condition").value };
+  if (category === "Condition") return { condition: document.getElementById(idPrefix + "-condition").value.trim() };
   if (category === "Ability Score" || category === "Saving Throw") {
     return { ability: document.getElementById(idPrefix + "-ability").value, amount: parseInt(document.getElementById(idPrefix + "-amount").value) || 0 };
   }
@@ -1416,14 +1422,13 @@ function applyRest(kind) {
     if (type === "Long Rest") return !isLong;
     return true;                                          // Permanent
   });
+  // resting breaks concentration, which ends anything it was holding up
+  const stillConcentrating = concentrationGroups(character).length;
+  if (stillConcentrating) character.activeEffects = character.activeEffects.filter(g => !g.concentration);
+
   const cleared = before - character.activeEffects.length;
   if (cleared) summary.push(plural(cleared, "effect") + " cleared");
-
-  if (character.concentration.active) {
-    character.concentration.active = false;
-    character.concentration.spell = "";
-    summary.push("concentration broken");
-  }
+  if (stillConcentrating) summary.push("concentration broken");
 
   if (isLong) {
     const maxHP = calculateMaxHP(character);
@@ -1542,18 +1547,15 @@ function renderCombatTab() {
       <button class="add-link" id="add-effect-button">+ Add</button>
     </div>
     <div class="chip-row">
-      ${character.activeEffects.map(effect => `
-        <div class="chip" data-effect-view="${effect.id}">${effectSummaryLabel(effect)}<button class="chip-remove" data-effect-remove="${effect.id}">\u2715</button></div>
+      ${character.activeEffects.map(group => `
+        <div class="chip" data-effect-view="${group.id}">${group.concentration ? `<span class="conc-mark" title="Concentration">\u25C8</span>` : ""}${effectGroupLabel(group)}<button class="chip-remove" data-effect-remove="${group.id}">\u2715</button></div>
       `).join("") || `<div class="empty-hint">Nothing active</div>`}
     </div>
 
-    ${character.concentration.visible ? `
+    ${concentrationGroups(character).length ? `
       <div class="conc-row">
-        <span>Concentration${character.concentration.active && character.concentration.spell ? " \u00B7 " + character.concentration.spell : ""}</span>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <button class="toggle-btn ${character.concentration.active ? "active" : ""}" id="concentration-toggle">${character.concentration.active ? "Active" : "None"}</button>
-          <button class="chip-remove" id="concentration-remove">\u2715</button>
-        </div>
+        <span>Concentrating \u00B7 ${concentrationGroups(character).map(g => effectGroupLabel(g)).join(", ")}</span>
+        <button class="toggle-btn" id="concentration-drop">Drop</button>
       </div>
     ` : ""}
 
@@ -1648,10 +1650,15 @@ function wireCombatTab() {
   });
   document.querySelectorAll("[data-effect-view]").forEach(chip => chip.addEventListener("click", () => openEffectDetailModal(chip.dataset.effectView)));
 
-  const concToggle = document.getElementById("concentration-toggle");
-  if (concToggle) concToggle.addEventListener("click", () => { character.concentration.active = !character.concentration.active; renderContent(); });
-  const concRemove = document.getElementById("concentration-remove");
-  if (concRemove) concRemove.addEventListener("click", () => { character.concentration.visible = false; renderContent(); });
+  // dropping concentration removes whatever it was holding up, which is the
+  // whole point of hanging effects off a named group
+  const concDrop = document.getElementById("concentration-drop");
+  if (concDrop) concDrop.addEventListener("click", () => {
+    const dropped = concentrationGroups(character).map(g => effectGroupLabel(g));
+    character.activeEffects = character.activeEffects.filter(g => !g.concentration);
+    renderContent();
+    showToast("Concentration dropped · " + dropped.join(", ") + " ended");
+  });
 
   document.querySelectorAll("[data-res-minus]").forEach(button => {
     button.addEventListener("click", () => { character.resources.find(x => x.id == button.dataset.resMinus).current--; renderContent(); });
@@ -1770,11 +1777,18 @@ function spendHitDie(index) {
 
 /* ---------------- effects (conditions) ---------------- */
 
+// One modal builds a whole group: a name, how long it lasts, whether it takes
+// concentration, and any number of modifiers underneath. Naming it is what
+// makes non-SRD content expressible -- "Bless" or a homebrew curse is just a
+// named group, and its modifiers are removed together with it.
 function openAddEffectModal() {
+  const formEffects = [{ category: "Condition", value: {} }];
+  let concentration = false;
+
   openModal("full", `
     <div class="modal-heading">Add Effect</div>
-    <div class="field"><label>Category</label><select id="effect-category">${EFFECT_CATEGORIES_GENERAL.map(c => `<option>${c}</option>`).join("")}</select></div>
-    <div id="effect-subfields"></div>
+    <div class="field"><label>Name</label><input id="effect-name" list="condition-options" placeholder="e.g. Bless, Prone, Hexed"></div>
+    <datalist id="condition-options">${ALL_CONDITIONS.map(c => `<option value="${c}">`).join("")}</datalist>
     <div class="field"><label>Duration</label>
       <select id="effect-duration-type">
         <option value="Rounds">Rounds</option><option value="Short Rest">Until Short Rest</option>
@@ -1782,44 +1796,65 @@ function openAddEffectModal() {
       </select>
     </div>
     <div id="effect-duration-rounds"></div>
-    <div class="field"><label>Note (optional)</label><input id="effect-note" placeholder="e.g. Bless from the cleric"></div>
-    <button class="btn-primary" id="save-effect-button">Add Effect</button>
+    <div class="toggle-line"><span>Requires concentration</span><div class="switch" id="effect-conc-switch"><div class="knob"></div></div></div>
+    <div class="field" style="margin-top:14px;"><label>Modifiers</label></div>
+    <div id="effect-effects-list"></div>
+    <button class="add-link" id="add-effect-row-button">+ Add Modifier</button>
+    <div class="menu-note">Leave the list empty for a label-only reminder with no mechanical effect.</div>
+    <button class="btn-primary" id="save-effect-button" style="margin-top:14px;">Add Effect</button>
   `);
 
-  const categorySelect = document.getElementById("effect-category");
-  const subfields = document.getElementById("effect-subfields");
   const durationTypeSelect = document.getElementById("effect-duration-type");
   const roundsField = document.getElementById("effect-duration-rounds");
+  const listEl = document.getElementById("effect-effects-list");
 
-  function renderSubfields() { subfields.innerHTML = effectSubfieldsHtml(categorySelect.value, "effect"); }
   function renderRoundsField() {
-    roundsField.innerHTML = durationTypeSelect.value === "Rounds" ? `<div class="field"><label>Number of Rounds</label><input id="effect-rounds" type="number" value="1"></div>` : "";
+    roundsField.innerHTML = durationTypeSelect.value === "Rounds"
+      ? `<div class="field"><label>Number of Rounds</label><input id="effect-rounds" type="number" value="1"></div>` : "";
   }
-  categorySelect.addEventListener("change", renderSubfields);
   durationTypeSelect.addEventListener("change", renderRoundsField);
-  renderSubfields();
   renderRoundsField();
 
+  document.getElementById("effect-conc-switch").addEventListener("click", (e) => {
+    concentration = !concentration;
+    e.currentTarget.classList.toggle("on", concentration);
+  });
+
+  renderFeatureEffectsList(listEl, formEffects, EFFECT_CATEGORIES_GENERAL);
+  document.getElementById("add-effect-row-button").addEventListener("click", () => {
+    formEffects.push({ category: "Bonus", value: {} });
+    renderFeatureEffectsList(listEl, formEffects, EFFECT_CATEGORIES_GENERAL);
+  });
+
   document.getElementById("save-effect-button").addEventListener("click", () => {
-    const category = categorySelect.value;
-    const value = readEffectValueFromForm(category, "effect");
     const durationType = durationTypeSelect.value;
-    const duration = { type: durationType, rounds: durationType === "Rounds" ? (parseInt(document.getElementById("effect-rounds").value) || 1) : null };
-    const note = document.getElementById("effect-note").value.trim();
     const newId = Math.max(0, ...character.activeEffects.map(e => e.id)) + 1;
-    character.activeEffects.push({ id: newId, category, value, duration, note });
+    character.activeEffects.push({
+      id: newId,
+      name: document.getElementById("effect-name").value.trim(),
+      concentration,
+      duration: {
+        type: durationType,
+        rounds: durationType === "Rounds" ? (parseInt(document.getElementById("effect-rounds").value) || 1) : null
+      },
+      effects: readFeatureEffectsFromForm(formEffects)
+    });
     closeModal();
     renderContent();
   });
 }
 
 function openEffectDetailModal(effectId) {
-  const effect = character.activeEffects.find(e => e.id == effectId);
+  const group = character.activeEffects.find(e => e.id == effectId);
+  const modifiers = group.effects || [];
   openModal("center", `
-    <div class="breakdown-title">${effectSummaryLabel(effect)}</div>
-    <div class="breakdown-row"><span>Category</span><span>${effect.category}</span></div>
-    <div class="breakdown-row"><span>Duration</span><span>${durationLabel(effect)}</span></div>
-    ${effect.note ? `<div class="breakdown-row"><span>Note</span><span>${effect.note}</span></div>` : ""}
+    <div class="breakdown-title">${effectGroupLabel(group)}</div>
+    <div class="breakdown-row"><span>Duration</span><span>${durationLabel(group)}</span></div>
+    ${group.concentration ? `<div class="breakdown-row"><span>Concentration</span><span>Required</span></div>` : ""}
+    ${modifiers.length ? `
+      <div class="breakdown-subhead">Modifiers</div>
+      ${modifiers.map(e => `<div class="breakdown-row"><span>${e.category}</span><span>${effectSummaryLabel(e)}</span></div>`).join("")}
+    ` : `<div class="empty-hint">No mechanical effect — this is a reminder only.</div>`}
     <button class="btn-primary" id="remove-effect-button" style="background:#5A2C29;color:#F0908A;">Remove Effect</button>
   `);
   document.getElementById("remove-effect-button").addEventListener("click", () => {
@@ -2279,12 +2314,15 @@ function openEditSubsectionModal(category) {
   });
 }
 
-function renderFeatureEffectsList(container, formEffects) {
+// shared by the feature editor and the active-effect editor; the two differ
+// only in whether "Condition" is an allowed category.
+function renderFeatureEffectsList(container, formEffects, categories) {
+  categories = categories || EFFECT_CATEGORIES_FEATURE;
   container.innerHTML = formEffects.map((eff, idx) => `
     <div class="feature-effect-row">
       <div class="field-row">
         <div class="field"><label>Effect Category</label>
-          <select data-eff-category="${idx}">${EFFECT_CATEGORIES_FEATURE.map(c => `<option ${c === eff.category ? "selected" : ""}>${c}</option>`).join("")}</select>
+          <select data-eff-category="${idx}">${categories.map(c => `<option ${c === eff.category ? "selected" : ""}>${c}</option>`).join("")}</select>
         </div>
         <button class="chip-remove" data-remove-effect="${idx}">\u2715</button>
       </div>
@@ -2303,13 +2341,13 @@ function renderFeatureEffectsList(container, formEffects) {
       const idx = parseInt(sel.dataset.effCategory);
       formEffects[idx].category = sel.value;
       formEffects[idx].value = {};
-      renderFeatureEffectsList(container, formEffects);
+      renderFeatureEffectsList(container, formEffects, categories);
     });
   });
   container.querySelectorAll("[data-remove-effect]").forEach(btn => {
     btn.addEventListener("click", () => {
       formEffects.splice(parseInt(btn.dataset.removeEffect), 1);
-      renderFeatureEffectsList(container, formEffects);
+      renderFeatureEffectsList(container, formEffects, categories);
     });
   });
 }

@@ -113,6 +113,7 @@ body {
   font-size: 13px; display: flex; align-items: center; gap: 6px; cursor: pointer;
 }
 .chip-remove { background: none; border: none; color: #6E655B; cursor: pointer; font-size: 12px; padding: 0; }
+.conc-mark { color: #F5C37A; font-size: 10px; margin-right: 1px; }
 
 .conc-row {
   display: flex; align-items: center; justify-content: space-between;
