@@ -141,7 +141,8 @@ const character = {
       isWeapon: true, isDefaultLoadout: true, attackAbility: "DEX",
       proficiencyRequired: "Simple", magicBonus: 0,
       damage: [{ dice: "1d6", type: "Piercing", ability: "DEX" }],
-      weaponType: "ranged", range: "80/320 ft", properties: ["Ammunition", "Two-Handed"]
+      weaponType: "ranged", range: "80/320 ft", properties: ["Ammunition", "Two-Handed"],
+      ammunition: "Arrows"   // spends from the resource of that name on each attack
     },
     {
       id: 8, name: "Serpent's Fang", category: "Equipped", weight: 1, qty: 1,
@@ -272,6 +273,40 @@ function equippedEffectItems(character) {
 
 function weaponList(character) {
   return character.inventory.filter(item => item.isWeapon);
+}
+
+/* Properties are stored as free strings because several carry a parameter --
+   "Versatile (1d10)". Lookups therefore match on the base name, the text
+   before any bracket. */
+function propertyBaseName(text) {
+  return String(text).split("(")[0].trim().toLowerCase();
+}
+
+function weaponProperty(weapon, name) {
+  return (weapon.properties || []).find(p => propertyBaseName(p) === name.toLowerCase()) || null;
+}
+
+// "Versatile (1d10)" -> "1d10". Null if absent or if no die was written down.
+function versatileDie(weapon) {
+  const property = weaponProperty(weapon, "Versatile");
+  const match = property && property.match(/\(([^)]+)\)/);
+  return match ? match[1].trim() : null;
+}
+
+/* Finesse lets a weapon use Strength or Dexterity, "your choice". Taking the
+   better of the two is what that choice always amounts to in practice. Only
+   swaps between those two, so a homebrew weapon keyed to another ability is
+   left alone. */
+function finesseAbility(character, weapon) {
+  if (!weaponProperty(weapon, "Finesse")) return null;
+  const strength = abilityModifier(effectiveAbilityScore(character, "STR"));
+  const dexterity = abilityModifier(effectiveAbilityScore(character, "DEX"));
+  return dexterity > strength ? "DEX" : "STR";
+}
+
+function ammunitionResource(character, weapon) {
+  if (!weapon.ammunition) return null;
+  return character.resources.find(r => r.name === weapon.ammunition) || null;
 }
 
 function allFeatureEffects(character) {
@@ -558,10 +593,16 @@ function weaponProficiency(character, weapon) {
 function calculateAttack(character, weapon) {
   const proficiency = weaponProficiency(character, weapon);
 
+  // Finesse may override the weapon's stated ability, for both attack and any
+  // damage part that was keyed to Strength or Dexterity.
+  const finesse = finesseAbility(character, weapon);
+  const usesFinesse = finesse && ["STR", "DEX"].includes(weapon.attackAbility);
+  const attackAbility = usesFinesse ? finesse : weapon.attackAbility;
+
   const toHitSources = [];
   toHitSources.push({
-    label: ABILITY_FULL_NAMES[weapon.attackAbility] + " modifier",
-    value: abilityModifier(effectiveAbilityScore(character, weapon.attackAbility))
+    label: ABILITY_FULL_NAMES[attackAbility] + " modifier" + (usesFinesse ? " (Finesse)" : ""),
+    value: abilityModifier(effectiveAbilityScore(character, attackAbility))
   });
   if (proficiency.proficient) {
     toHitSources.push({
@@ -588,22 +629,30 @@ function calculateAttack(character, weapon) {
   if (weapon.magicBonus) onceOnly.push({ label: weapon.name + " (magic bonus)", value: weapon.magicBonus });
   effectsAffectingStat(character, "Damage Rolls").forEach(e => onceOnly.push({ label: effectSourceLabel(e), value: e.value.amount }));
 
+  // Two-handing a versatile weapon swaps the base damage die for the larger one
+  // written in the property. Only the weapon's own first damage part changes;
+  // rider dice are unaffected.
+  const versatile = versatileDie(weapon);
+  const twoHanded = !!weapon.twoHanded && !!versatile;
+
   const damage = (weapon.damage || []).map((part, index) => {
     const sources = [];
-    if (part.ability) {
+    const partAbility = (finesse && ["STR", "DEX"].includes(part.ability)) ? finesse : part.ability;
+    if (partAbility) {
       sources.push({
-        label: ABILITY_FULL_NAMES[part.ability] + " modifier",
-        value: abilityModifier(effectiveAbilityScore(character, part.ability))
+        label: ABILITY_FULL_NAMES[partAbility] + " modifier" + (partAbility !== part.ability ? " (Finesse)" : ""),
+        value: abilityModifier(effectiveAbilityScore(character, partAbility))
       });
     }
     if (index === 0) onceOnly.forEach(s => sources.push(s));
     const bonusTotal = sources.reduce((sum, s) => sum + s.value, 0);
+    const dice = (index === 0 && twoHanded) ? versatile : part.dice;
     return {
-      dice: part.dice,
+      dice,
       type: part.type || "",
       bonusTotal,
       sources,
-      notation: part.dice + (bonusTotal ? formatModifier(bonusTotal) : "")
+      notation: dice + (bonusTotal ? formatModifier(bonusTotal) : "")
     };
   });
 
@@ -617,6 +666,9 @@ function calculateAttack(character, weapon) {
     source, proficiency,
     toHitTotal, toHitSources,
     damage,
-    damageNotation: damage.map(d => d.notation).join(" + ") || "—"
+    damageNotation: damage.map(d => d.notation).join(" + ") || "—",
+    versatile, twoHanded,
+    finesse: usesFinesse ? finesse : null,
+    ammunition: ammunitionResource(character, weapon)
   };
 }

@@ -1996,8 +1996,13 @@ function renderCombatTab() {
           <div class="atk-icon">${icon}</div>
           <div style="flex:1;min-width:0;">
             <div class="atk-name">${weapon.name}${atk.proficiency.proficient ? "" : `<span class="atk-warn" title="Not proficient">!</span>`}</div>
-            <div class="atk-range">${[weapon.range, atk.damage.map(d => d.type).filter(Boolean).join(" + ")].filter(Boolean).join(" \u00B7 ")}</div>
+            <div class="atk-range">${[
+              weapon.range,
+              atk.damage.map(d => d.type).filter(Boolean).join(" + "),
+              atk.ammunition ? atk.ammunition.name + " " + atk.ammunition.current : ""
+            ].filter(Boolean).join(" \u00B7 ")}</div>
           </div>
+          ${atk.versatile ? `<button class="grip-toggle ${atk.twoHanded ? "two" : ""}" data-grip="${weapon.id}" title="One- or two-handed">${atk.twoHanded ? "2H" : "1H"}</button>` : ""}
           <button class="atk-pill" data-roll-tohit="${weapon.id}">${formatModifier(atk.toHitTotal)}</button>
           <button class="atk-pill" data-roll-damage="${weapon.id}">${atk.damageNotation}</button>
         </div>
@@ -2076,6 +2081,12 @@ function wireCombatTab() {
       e.stopPropagation();
       const weapon = character.inventory.find(i => i.id == button.dataset.rollTohit);
       const atk = calculateAttack(character, weapon);
+      // ammunition is spent when the attack is made, not when it's rerolled
+      if (atk.ammunition) {
+        if (atk.ammunition.current <= 0) showToast("Out of " + atk.ammunition.name);
+        atk.ammunition.current--;
+        renderContent();
+      }
       showRoll({ label: weapon.name + " \u2013 To Hit", notation: "1d20" + formatModifier(atk.toHitTotal),
                  sources: atk.toHitSources, kind: "attack" });
     });
@@ -2094,6 +2105,15 @@ function wireCombatTab() {
       });
     });
   });
+  document.querySelectorAll("[data-grip]").forEach(button => {
+    button.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const weapon = character.inventory.find(i => i.id == button.dataset.grip);
+      weapon.twoHanded = !weapon.twoHanded;
+      renderContent();
+    });
+  });
+
   document.querySelectorAll("[data-atk-detail]").forEach(row => row.addEventListener("click", () => openAttackDetailModal(row.dataset.atkDetail)));
   document.getElementById("add-attack-button").addEventListener("click", openAddAttackModal);
 }
@@ -2558,6 +2578,12 @@ function openAttackDetailModal(weaponId) {
     <div class="breakdown-source">
       ${atk.proficiency.required ? "Requires " + atk.proficiency.required + " \u2014 " : ""}${atk.proficiency.proficient ? "proficient" : "not proficient"}${atk.proficiency.overridden ? " (set manually)" : ""}
     </div>
+    ${atk.finesse ? `<div class="breakdown-source">Finesse \u2014 using ${ABILITY_FULL_NAMES[atk.finesse]}, your better of Strength and Dexterity</div>` : ""}
+    ${atk.versatile ? `
+      <div class="toggle-line" style="margin-top:10px;">
+        <span>Wielding two-handed <span class="atk-range">(${atk.versatile})</span></span>
+        <div class="switch ${atk.twoHanded ? "on" : ""}" id="atk-grip-switch"><div class="knob"></div></div>
+      </div>` : ""}
 
     <div class="breakdown-subhead">To Hit</div>
     ${breakdownRowsHtml(atk.toHitSources)}
@@ -2597,7 +2623,8 @@ function openAttackDetailModal(weaponId) {
     <div class="field" style="margin-top:14px;"><label>Properties</label></div>
     <div id="property-picker"></div>
 
-    <div class="field" style="margin-top:14px;"><label>Source (optional \u2014 leave blank for "Custom")</label><input id="edit-atk-source" value="${weapon.customSource || ""}"></div>
+    ${comboFieldHtml("edit-atk-ammo", "Spends Ammunition From", "None", weapon.ammunition)}
+    <div class="field"><label>Source (optional \u2014 leave blank for "Custom")</label><input id="edit-atk-source" value="${weapon.customSource || ""}"></div>
 
     <div class="btn-row-2">
       <button class="btn-primary" id="save-edit-atk-button">Save Changes</button>
@@ -2609,6 +2636,14 @@ function openAttackDetailModal(weaponId) {
   wireSelect("edit-atk-type");
   wireSelect("edit-atk-prof");
   wireCombo("edit-atk-req", WEAPON_PROFICIENCY_TYPES);
+  wireCombo("edit-atk-ammo", character.resources.map(r => r.name));
+
+  const gripSwitch = document.getElementById("atk-grip-switch");
+  if (gripSwitch) gripSwitch.addEventListener("click", () => {
+    weapon.twoHanded = !weapon.twoHanded;
+    gripSwitch.classList.toggle("on", weapon.twoHanded);
+    renderContent();
+  });
 
   const damageRows = document.getElementById("damage-rows");
   renderDamageRows(damageRows, parts);
@@ -2629,6 +2664,7 @@ function openAttackDetailModal(weaponId) {
     weapon.customSource = document.getElementById("edit-atk-source").value.trim();
     weapon.magicBonus = parseInt(document.getElementById("edit-atk-magic").value) || 0;
     weapon.proficiencyRequired = document.getElementById("edit-atk-req").value.trim();
+    weapon.ammunition = document.getElementById("edit-atk-ammo").value.trim();
     weapon.damage = readDamageRows(parts);
 
     const prof = document.getElementById("edit-atk-prof").value;
