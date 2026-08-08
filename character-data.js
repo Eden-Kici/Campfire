@@ -2,7 +2,12 @@
    1. STORED DATA
    ============================================================ */
 
-const character = {
+/* `character` is the sheet currently open, not a fixed object. Everything in
+   the app reads this global fresh on each call and nothing captures it, so
+   switching characters is a matter of repointing it -- see selectCharacter().
+   The literal below is the demo character used when there's nothing saved. */
+let character = {
+  id: 1,
   name: "Sigrid of Chester",
   classLine: "Fighter 5 / Rogue 2",
 

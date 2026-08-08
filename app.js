@@ -658,9 +658,20 @@ function showToast(message) {
    CHARACTER SELECTOR (POC — list is faked, only Sigrid is real)
    ============================================================ */
 
-let savedCharacters = [
-  { id: 1, name: "Sigrid of Chester", classLine: "Fighter 5 / Rogue 2" }
-];
+/* savedCharacters holds whole character objects, not stubs. Opening one points
+   the global `character` at it, so every calculation and render reads the
+   right sheet without any of them knowing a switch happened. */
+let savedCharacters = [character];
+
+function selectCharacter(id) {
+  const found = savedCharacters.find(c => c.id === id);
+  if (found) character = found;
+  return found;
+}
+
+function nextCharacterId() {
+  return Math.max(0, ...savedCharacters.map(c => c.id || 0)) + 1;
+}
 
 let currentScreen = "selector";
 
@@ -766,7 +777,7 @@ function renderSelectorScreen() {
         <div class="char-card" data-open-char="${c.id}">
           <div>
             <div class="char-card-name">${esc(c.name)}${c.customBuild ? ` <span class="res-tag" style="background:#5A2C29;color:#F0908A;">CUSTOM</span>` : ""}</div>
-            <div class="char-card-class">${c.classLine}</div>
+            <div class="char-card-class">${esc(c.classLine)}</div>
           </div>
           <button class="char-card-menu" data-char-menu="${c.id}">\u22EF</button>
         </div>
@@ -792,7 +803,10 @@ function renderSelectorScreen() {
   document.getElementById("party-finder-button").addEventListener("click", openPartyFinder);
 
   document.querySelectorAll("[data-open-char]").forEach(card => {
-    card.addEventListener("click", () => showScreen("sheet"));
+    card.addEventListener("click", () => {
+      selectCharacter(parseInt(card.dataset.openChar));
+      showScreen("sheet");
+    });
   });
 
   document.querySelectorAll("[data-char-menu]").forEach(btn => {
@@ -814,13 +828,28 @@ function renderSelectorScreen() {
     const file = e.target.files[0];
     e.target.value = "";
     if (!file) return;
-    showToast("Importing " + file.name + "\u2026");
-    setTimeout(() => {
-      const newId = Math.max(0, ...savedCharacters.map(c => c.id)) + 1;
-      savedCharacters.push({ id: newId, name: "Imported Character", classLine: "Unknown Class" });
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      let parsed;
+      try {
+        parsed = JSON.parse(reader.result);
+      } catch (err) {
+        showToast("That file isn't valid JSON");
+        return;
+      }
+      if (!parsed || typeof parsed !== "object" || !parsed.name || !parsed.abilities) {
+        showToast("That doesn't look like a character");
+        return;
+      }
+      // an imported character gets a fresh id so it can't collide with one you already have
+      parsed.id = nextCharacterId();
+      savedCharacters.push(parsed);
       renderSelectorScreen();
-      showToast("Character imported");
-    }, 800);
+      showToast("Imported " + parsed.name);
+    };
+    reader.onerror = () => showToast("Couldn't read that file");
+    reader.readAsText(file);
   });
 }
 
@@ -841,9 +870,10 @@ function openCharacterMenu(id) {
   });
 }
 
+// exports the card you picked, not whichever sheet happens to be open
 function exportCharacter(c) {
-  const filename = c.name.replace(/\s+/g, "_") + ".json";
-  const dataStr = JSON.stringify(character, null, 2);
+  const filename = c.name.replace(/[^a-z0-9]+/gi, "_") + ".json";
+  const dataStr = JSON.stringify(c, null, 2);
   const blob = new Blob([dataStr], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -864,6 +894,8 @@ function confirmDeleteCharacter(id) {
   `);
   document.getElementById("confirm-delete-char-button").addEventListener("click", () => {
     savedCharacters = savedCharacters.filter(x => x.id !== id);
+    // don't leave `character` pointing at something that no longer exists
+    if (character && character.id === id) character = savedCharacters[0] || null;
     closeModal();
     renderSelectorScreen();
     showToast("Character deleted");
