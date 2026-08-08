@@ -1503,6 +1503,136 @@ function wireSkillsStep() {
 }
 
 
+/* ---------- turning creatorState into an actual character ----------
+
+   Everything the creator collected -- race, subrace, class, subclass,
+   background, point-buy scores, the +2/+1 overlay and the skill picks -- gets
+   mapped onto the same shape the demo character uses. Nothing here is new
+   data: SRD_RACES, SRD_CLASSES and SRD_BACKGROUNDS already hold the features
+   and proficiencies, the creator was just rendering and discarding them. */
+
+const ABILITY_ABBREVIATIONS = {
+  Strength: "STR", Dexterity: "DEX", Constitution: "CON",
+  Intelligence: "INT", Wisdom: "WIS", Charisma: "CHA"
+};
+
+// the sheet keys skills without spaces ("SleightOfHand"), the creator lists
+// them with ("Sleight of Hand")
+function skillKey(name) {
+  return name.replace(/[^a-zA-Z]/g, "");
+}
+
+/* Classes describe weapon proficiency either as categories ("Simple and
+   martial weapons") or as a list of named weapons ("Daggers, darts, slings,
+   quarterstaffs, light crossbows"). Both end up in the same list, and
+   weaponProficiency() matches a weapon on its category or its name. */
+function parseWeaponProficiencies(text) {
+  if (!text) return [];
+  const categories = [];
+  if (/simple/i.test(text)) categories.push("Simple");
+  if (/martial/i.test(text)) categories.push("Martial");
+  if (categories.length) return categories;
+
+  return text.split(/,| and /i)
+    .map(entry => entry.trim().replace(/s$/i, ""))
+    .filter(Boolean);
+}
+
+function buildCharacterFromCreator() {
+  const race = SRD_RACES.find(r => r.name === creatorState.race);
+  const cls = SRD_CLASSES.find(c => c.name === creatorState.charClass);
+  const background = SRD_BACKGROUNDS.find(b => b.name === creatorState.background);
+  const subrace = race && race.subraces
+    ? race.subraces.find(s => s.name === creatorState.subrace) : null;
+  const subclass = cls && cls.subclasses
+    ? cls.subclasses.find(s => s.name === creatorState.subclass) : null;
+
+  const abilities = {};
+  CREATOR_ABILITY_ORDER.forEach(name => { abilities[ABILITY_ABBREVIATIONS[name]] = finalScoreFor(name); });
+
+  // background skills are granted outright; race and class ones were chosen
+  const skillProficiency = {};
+  const grantSkill = name => { skillProficiency[skillKey(name)] = 1; };
+  (background ? background.skills : []).forEach(grantSkill);
+  creatorState.raceSkillChoices.forEach(grantSkill);
+  creatorState.classSkillChoices.forEach(grantSkill);
+
+  const savingThrowProficiency = { STR: 0, DEX: 0, CON: 0, INT: 0, WIS: 0, CHA: 0 };
+  (cls ? cls.saves : []).forEach(save => { savingThrowProficiency[ABILITY_ABBREVIATIONS[save]] = 1; });
+
+  const traits = {
+    "Race Traits": (race ? race.features : []).concat(subrace ? subrace.features : [])
+      .map(f => ({ name: f.name, desc: f.desc })),
+    "Class Features": (cls ? cls.features : []).concat(subclass ? subclass.features : [])
+      .map(f => ({ name: f.name, desc: f.desc })),
+    "Background Features": background ? [{ name: background.feature.name, desc: background.feature.desc }] : [],
+    "Feats": [],
+    "Proficiencies": cls ? [
+      { name: "Armor", desc: cls.armorProf },
+      { name: "Weapons", desc: cls.weaponProf }
+    ] : [],
+    "Languages": [{ name: "Common", desc: "" }]
+  };
+
+  // a first-level character has one hit die and takes its maximum for HP
+  const hitDieSize = cls ? parseInt(cls.hitDie.replace("d", "")) : 8;
+  const constitution = abilityModifier(abilities.CON);
+
+  const weaponProficiencies = parseWeaponProficiencies(cls ? cls.weaponProf : "");
+
+  return {
+    id: nextCharacterId(),
+    name: creatorState.name,
+    classLine: `${creatorState.charClass}${creatorState.subclass ? " (" + creatorState.subclass + ")" : ""} · ${creatorState.subrace ? creatorState.subrace + " " : ""}${creatorState.race}`,
+    customBuild: creatorState.customBuild,
+
+    profilePic: null,
+    alignment: "True Neutral",
+    appearance: creatorState.appearance,
+    personalityTraits: "", ideals: "", bonds: "", flaws: "",
+    backstory: creatorState.backstory,
+
+    abilities,
+    proficiencyBonus: 2,                 // level 1
+    baseSpeed: 30,
+    inspiration: { current: 0, max: 1 },
+
+    hp: { current: hitDieSize + constitution, temp: 0 },
+    baseMaxHP: hitDieSize + constitution,
+    maxHpModifiers: [],
+    hitDice: [{ die: cls ? cls.hitDie : "d8", total: 1, current: 1, recharge: { on: "LR", amount: "half" } }],
+
+    activeEffects: [],
+    resources: [],
+
+    weaponProficiencies,
+    savingThrowProficiency,
+    savingThrowOverride: {},
+    skillProficiency,
+    skillOverride: {},
+    skillAbilityMap: JSON.parse(JSON.stringify(SKILL_ABILITY_MAP)),
+
+    traits,
+    inventory: [],
+    categoryRules: {
+      Worn: { countsWeight: true, appliesEffects: true },
+      Equipped: { countsWeight: true, appliesEffects: true },
+      Carrying: { countsWeight: true, appliesEffects: false },
+      "Camp Storage": { countsWeight: false, appliesEffects: false }
+    },
+
+    spellcasting: { classes: [] },
+    spellSlots: {},
+    maxPreparedByClass: {},
+    spells: [],
+
+    partyMembers: [],
+    noteSections: [{ id: 1, name: "Session Notes", autoShare: false, receiveFrom: true }],
+    notes: []
+  };
+}
+
+
 /* ---------- step: name / appearance / backstory ---------- */
 
 function finalStepHtml(stepNum, totalSteps) {
@@ -1543,16 +1673,12 @@ function wireFinalStep() {
     const { exceeds } = pointBuySpentAndExceeds();
     creatorState.customBuild = exceeds;
 
-    const newId = Math.max(0, ...savedCharacters.map(c => c.id)) + 1;
-    savedCharacters.push({
-      id: newId,
-      name: creatorState.name,
-      classLine: `${creatorState.charClass}${creatorState.subclass ? " (" + creatorState.subclass + ")" : ""} \u00B7 ${creatorState.subrace ? creatorState.subrace + " " : ""}${creatorState.race}`,
-      customBuild: creatorState.customBuild
-    });
+    const built = buildCharacterFromCreator();
+    savedCharacters.push(built);
+    selectCharacter(built.id);
     closeModal();
-    renderSelectorScreen();
-    showToast(creatorState.customBuild ? "Character created (custom)" : "Character created");
+    showScreen("sheet");
+    showToast(creatorState.customBuild ? "Created " + built.name + " (custom build)" : "Created " + built.name);
   });
 }
 

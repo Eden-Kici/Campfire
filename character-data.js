@@ -2,6 +2,16 @@
    1. STORED DATA
    ============================================================ */
 
+/* Which ability each skill keys off. Held per character so a homebrew game can
+   rekey one, but every character starts from this. Copy it rather than sharing
+   the object, or two characters end up editing the same map. */
+const SKILL_ABILITY_MAP = {
+  Athletics: "STR", Acrobatics: "DEX", SleightOfHand: "DEX", Stealth: "DEX",
+  Arcana: "INT", History: "INT", Investigation: "INT", Nature: "INT", Religion: "INT",
+  AnimalHandling: "WIS", Insight: "WIS", Medicine: "WIS", Perception: "WIS", Survival: "WIS",
+  Deception: "CHA", Intimidation: "CHA", Performance: "CHA", Persuasion: "CHA"
+};
+
 /* `character` is the sheet currently open, not a fixed object. Everything in
    the app reads this global fresh on each call and nothing captures it, so
    switching characters is a matter of repointing it -- see selectCharacter().
@@ -96,12 +106,7 @@ let character = {
   // present only for a skill that's been manually overridden; value replaces the calculated total
   skillOverride: {},
 
-  skillAbilityMap: {
-    Athletics: "STR", Acrobatics: "DEX", SleightOfHand: "DEX", Stealth: "DEX",
-    Arcana: "INT", History: "INT", Investigation: "INT", Nature: "INT", Religion: "INT",
-    AnimalHandling: "WIS", Insight: "WIS", Medicine: "WIS", Perception: "WIS", Survival: "WIS",
-    Deception: "CHA", Intimidation: "CHA", Performance: "CHA", Persuasion: "CHA"
-  },
+  skillAbilityMap: JSON.parse(JSON.stringify(SKILL_ABILITY_MAP)),
 
   // grouped under "Features & Traits". any entry can carry .effects (array,
   // can hold multiple), permanent as long as the feature exists.
@@ -674,9 +679,15 @@ function weaponProficiency(character, weapon) {
     return { proficient: !!weapon.proficientOverride, overridden: true, required };
   }
   if (!required) return { proficient: true, overridden: false, required: "" };
-  const held = character.weaponProficiencies || [];
+
+  /* A proficiency entry may be a category ("Martial") or a specific weapon
+     ("Dagger") -- SRD Wizards get named weapons rather than a whole category.
+     So a weapon counts as proficient if the character holds either the
+     category it requires or its own name. */
+  const held = (character.weaponProficiencies || []).map(p => p.toLowerCase());
+  const name = (weapon.name || "").toLowerCase();
   return {
-    proficient: held.some(p => p.toLowerCase() === required.toLowerCase()),
+    proficient: held.includes(required.toLowerCase()) || (!!name && held.includes(name)),
     overridden: false,
     required
   };
