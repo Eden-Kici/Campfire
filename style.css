@@ -246,7 +246,21 @@ body {
 
 /* -------------------- feature effect rows (in add/edit feature forms) -------------------- */
 
-.feature-effect-row { background: #242019; border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; }
+/* A repeated sub-card inside a form. It used to be #242019 -- the same colour
+   as the inputs it contains and only a shade off the #1C1815 modal behind it,
+   so neither its own edge nor its contents had any separation. It now sits
+   recessed below the modal with a visible border, letting the #242019 controls
+   inside read as raised. */
+.feature-effect-row {
+  background: #16120F; border: 1px solid #332C24; border-radius: 12px;
+  padding: 12px 12px 4px; margin-bottom: 14px;
+}
+.subcard-head {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 10px; font-weight: bold; letter-spacing: .6px; text-transform: uppercase;
+  color: #6E655B; margin-bottom: 10px;
+}
+.subcard-head .chip-remove { font-size: 13px; padding: 0 0 0 8px; }
 
 /* unused SRD properties, offered as dashed "add" chips to distinguish them
    from the solid chips of ones already on the weapon */

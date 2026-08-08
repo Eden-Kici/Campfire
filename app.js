@@ -2534,10 +2534,13 @@ function renderDamageRows(container, parts) {
 
   container.innerHTML = parts.map((part, idx) => `
     <div class="feature-effect-row">
+      <div class="subcard-head">
+        <span>Damage ${idx + 1}</span>
+        <button class="chip-remove" data-remove-damage="${idx}">\u2715</button>
+      </div>
       <div class="field-row">
         <div class="field" style="flex:0 0 84px;"><label>Dice</label><input id="dmg-dice-${idx}" value="${part.dice || ""}" placeholder="1d6"></div>
         ${selectFieldHtml("dmg-type-" + idx, "Damage Type", DAMAGE_TYPES, part.type)}
-        <button class="chip-remove" data-remove-damage="${idx}">\u2715</button>
       </div>
       ${selectFieldHtml("dmg-ability-" + idx, "Adds ability modifier", abilityOptions, part.ability || "")}
     </div>
@@ -3003,10 +3006,11 @@ function renderFeatureEffectsList(container, formEffects, categories) {
   categories = categories || EFFECT_CATEGORIES_FEATURE;
   container.innerHTML = formEffects.map((eff, idx) => `
     <div class="feature-effect-row">
-      <div class="field-row">
-        ${selectFieldHtml("eff-category-" + idx, "Effect Category", categories, eff.category)}
+      <div class="subcard-head">
+        <span>Modifier ${idx + 1}</span>
         <button class="chip-remove" data-remove-effect="${idx}">\u2715</button>
       </div>
+      ${selectFieldHtml("eff-category-" + idx, "Effect Category", categories, eff.category)}
       <div data-subfields-index="${idx}"></div>
     </div>
   `).join("");
