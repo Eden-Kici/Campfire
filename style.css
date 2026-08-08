@@ -255,6 +255,10 @@ body {
   background: #16120F; border: 1px solid #332C24; border-radius: 12px;
   padding: 12px 12px 4px; margin-bottom: 14px;
 }
+
+/* gear / weapon / armour selector at the top of the item form */
+.type-toggle { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 16px; }
+.type-toggle .toggle-btn { padding: 10px 0; text-align: center; }
 .subcard-head {
   display: flex; align-items: center; justify-content: space-between;
   font-size: 10px; font-weight: bold; letter-spacing: .6px; text-transform: uppercase;

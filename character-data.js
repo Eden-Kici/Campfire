@@ -124,7 +124,13 @@ const character = {
   // isDefaultLoadout marks the pre-seeded weapons so they keep that default
   // label; attacks added later via the UI default to "Custom" instead.
   inventory: [
-    { id: 1, name: "Chain Shirt", category: "Worn", weight: 20, qty: 1, acBonus: 3 },
+    // armour sets a base AC and caps Dexterity, rather than adding a flat bonus
+    {
+      id: 1, name: "Chain Shirt", category: "Worn", weight: 20, qty: 1,
+      description: "Interlocking metal rings worn under clothing.",
+      armour: { base: 13, kind: "medium", dexCap: 2 }
+    },
+    // not armour -- a flat bonus that stacks on top of whatever you're wearing
     { id: 2, name: "Cloak of Protection", category: "Worn", weight: 1, qty: 1, acBonus: 1 },
     // damage is a list, so one weapon can deal several types at once. Only a
     // part that names an `ability` adds that modifier; extra dice (poison,
@@ -156,7 +162,12 @@ const character = {
     },
     { id: 5, name: "Ring of Precision", category: "Worn", weight: 0, qty: 1, attackBonus: 1 },
     { id: 6, name: "Bag of Holding", category: "Carrying", weight: 15, qty: 1 },
-    { id: 7, name: "Spare Chainmail", category: "Camp Storage", weight: 55, qty: 1 }
+    // stored, not worn -- proves armour only counts from a category whose
+    // rules say appliesEffects
+    {
+      id: 7, name: "Spare Chainmail", category: "Camp Storage", weight: 55, qty: 1,
+      armour: { base: 16, kind: "heavy", dexCap: 0 }
+    }
   ],
 
   categoryRules: {
@@ -437,13 +448,57 @@ function calculateProficiencyBonus(character) {
   return { total, sources };
 }
 
+function itemType(item) {
+  if (item.isWeapon) return "weapon";
+  if (item.armour) return "armour";
+  return "gear";
+}
+
+function equippedArmour(character) {
+  return equippedEffectItems(character).filter(i => i.armour && i.armour.kind !== "shield");
+}
+
+function equippedShields(character) {
+  return equippedEffectItems(character).filter(i => i.armour && i.armour.kind === "shield");
+}
+
+/* 5e armour sets a base AC and limits how much Dexterity you may add, rather
+   than adding a bonus on top of 10 + Dex. Light armour takes full Dex, medium
+   caps it at 2, heavy allows none, and shields are a flat addition that stacks
+   with whatever you're wearing. Unarmoured falls back to 10 + Dex.
+
+   Only one suit of body armour can apply; if somehow two are equipped the
+   better base wins. A dexCap of null means no limit. */
 function calculateAC(character) {
   const sources = [];
-  sources.push({ label: "Base", value: 10 });
-  sources.push({ label: ABILITY_FULL_NAMES.DEX + " modifier", value: abilityModifier(effectiveAbilityScore(character, "DEX")) });
+  const dexModifier = abilityModifier(effectiveAbilityScore(character, "DEX"));
 
+  const worn = equippedArmour(character)
+    .slice()
+    .sort((a, b) => (b.armour.base || 0) - (a.armour.base || 0))[0];
+
+  let dexAllowed = dexModifier;
+  if (worn) {
+    sources.push({ label: worn.name + " (base)", value: worn.armour.base || 0 });
+    const cap = worn.armour.dexCap;
+    if (cap !== null && cap !== undefined) dexAllowed = Math.min(dexModifier, cap);
+  } else {
+    sources.push({ label: "Unarmoured", value: 10 });
+  }
+
+  const capped = worn && worn.armour.dexCap !== null && worn.armour.dexCap !== undefined && dexModifier > worn.armour.dexCap;
+  sources.push({
+    label: ABILITY_FULL_NAMES.DEX + " modifier" + (capped ? " (capped at " + worn.armour.dexCap + ")" : ""),
+    value: dexAllowed
+  });
+
+  equippedShields(character).forEach(shield => {
+    sources.push({ label: shield.name, value: shield.armour.base || 0 });
+  });
+
+  // flat bonuses from anything that isn't armour, e.g. a Cloak of Protection
   equippedEffectItems(character).forEach(item => {
-    if (item.acBonus) sources.push({ label: item.category + " \u2013 " + item.name, value: item.acBonus });
+    if (item.acBonus && !item.armour) sources.push({ label: item.category + " \u2013 " + item.name, value: item.acBonus });
   });
   effectsAffectingStat(character, "AC").forEach(e => sources.push({ label: effectSourceLabel(e), value: e.value.amount }));
 

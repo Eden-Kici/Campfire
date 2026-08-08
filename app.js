@@ -2411,65 +2411,10 @@ function openResourceDetailModal(resourceId) {
 
 /* ---------------- attacks ---------------- */
 
+// Combat's "+ Add" is a shortcut into the one item form, preset to Weapon and
+// to the Equipped category. There is no separate weapon-creation path.
 function openAddAttackModal() {
-  const parts = [{ dice: "1d4", type: DAMAGE_TYPES[0], ability: "STR" }];
-
-  openModal("full", `
-    <div class="modal-heading">New Attack</div>
-    <div class="field"><label>Weapon Name</label><input id="new-atk-name" placeholder="e.g. Dagger"></div>
-    <div class="field-row">
-      ${selectFieldHtml("new-atk-ability", "Attack Ability", Object.keys(ABILITY_FULL_NAMES), "STR")}
-      <div class="field"><label>Magic Bonus</label><input id="new-atk-magic" type="number" value="0"></div>
-    </div>
-    <div class="field-row">
-      ${selectFieldHtml("new-atk-type", "Type", [{ value: "melee", label: "Melee" }, { value: "ranged", label: "Ranged" }], "melee")}
-      <div class="field"><label>Range</label><input id="new-atk-range" placeholder="5 ft"></div>
-    </div>
-    ${comboFieldHtml("new-atk-req", "Requires Proficiency", "None")}
-
-    <div class="field"><label>Damage</label></div>
-    <div id="damage-rows"></div>
-    <button class="add-link" id="add-damage-button">+ Add Damage Type</button>
-
-    <div class="field" style="margin-top:14px;"><label>Properties</label></div>
-    <div id="property-picker"></div>
-
-    <div class="field" style="margin-top:14px;"><label>Source (optional \u2014 leave blank for "Custom")</label><input id="new-atk-source" placeholder="e.g. Innate, Warlock Pact"></div>
-    <button class="btn-primary" id="save-atk-button">Add Attack</button>
-  `);
-
-  wireSelect("new-atk-ability");
-  wireSelect("new-atk-type");
-  wireCombo("new-atk-req", WEAPON_PROFICIENCY_TYPES);
-
-  const damageRows = document.getElementById("damage-rows");
-  renderDamageRows(damageRows, parts);
-  document.getElementById("add-damage-button").addEventListener("click", () => {
-    parts.push({ dice: "1d4", type: DAMAGE_TYPES[0] });
-    renderDamageRows(damageRows, parts);
-  });
-
-  const properties = [];
-  renderPropertyPicker(document.getElementById("property-picker"), properties);
-
-  document.getElementById("save-atk-button").addEventListener("click", () => {
-    const newId = Math.max(0, ...character.inventory.map(i => i.id)) + 1;
-    character.inventory.push({
-      id: newId,
-      name: document.getElementById("new-atk-name").value.trim() || "New Weapon",
-      category: "Equipped", weight: 1, qty: 1, isWeapon: true,
-      attackAbility: document.getElementById("new-atk-ability").value,
-      proficiencyRequired: document.getElementById("new-atk-req").value.trim(),
-      magicBonus: parseInt(document.getElementById("new-atk-magic").value) || 0,
-      damage: readDamageRows(parts),
-      weaponType: document.getElementById("new-atk-type").value,
-      range: document.getElementById("new-atk-range").value.trim(),
-      properties: properties.slice(),
-      customSource: document.getElementById("new-atk-source").value.trim()
-    });
-    closeModal();
-    renderContent();
-  });
+  openAddInventoryModal("Equipped", "weapon");
 }
 
 /* Properties are free-form strings because several SRD ones carry a parameter
@@ -2569,10 +2514,6 @@ function readDamageRows(parts) {
 function openAttackDetailModal(weaponId) {
   const weapon = character.inventory.find(i => i.id == weaponId);
   const atk = calculateAttack(character, weapon);
-  const parts = JSON.parse(JSON.stringify(weapon.damage || []));
-
-  const profValue = weapon.proficientOverride === undefined || weapon.proficientOverride === null
-    ? "derived" : (weapon.proficientOverride ? "yes" : "no");
 
   openModal("full", `
     <div class="modal-heading">${weapon.name}</div>
@@ -2601,45 +2542,11 @@ function openAttackDetailModal(weaponId) {
       <div class="breakdown-total"><span>Total</span><span>${part.notation}</span></div>
     `).join("")}
 
-    <div class="modal-heading" style="margin-top:24px;">Edit</div>
-    <div class="field"><label>Name</label><input id="edit-atk-name" value="${weapon.name}"></div>
-    <div class="field-row">
-      ${selectFieldHtml("edit-atk-ability", "Attack Ability", Object.keys(ABILITY_FULL_NAMES), weapon.attackAbility)}
-      <div class="field"><label>Magic Bonus</label><input id="edit-atk-magic" type="number" value="${weapon.magicBonus || 0}"></div>
-    </div>
-    <div class="field-row">
-      ${selectFieldHtml("edit-atk-type", "Type", [{ value: "melee", label: "Melee" }, { value: "ranged", label: "Ranged" }], weapon.weaponType)}
-      <div class="field"><label>Range</label><input id="edit-atk-range" value="${weapon.range || ""}"></div>
-    </div>
-
-    <div class="field-row">
-      ${comboFieldHtml("edit-atk-req", "Requires Proficiency", "None", weapon.proficiencyRequired)}
-      ${selectFieldHtml("edit-atk-prof", "Proficient?", [
-        { value: "derived", label: "Auto" }, { value: "yes", label: "Yes" }, { value: "no", label: "No" }
-      ], profValue)}
-    </div>
-
-    <div class="field"><label>Damage</label></div>
-    <div id="damage-rows"></div>
-    <button class="add-link" id="add-damage-button">+ Add Damage Type</button>
-
-    <div class="field" style="margin-top:14px;"><label>Properties</label></div>
-    <div id="property-picker"></div>
-
-    ${comboFieldHtml("edit-atk-ammo", "Spends Ammunition From", "None", weapon.ammunition)}
-    <div class="field"><label>Source (optional \u2014 leave blank for "Custom")</label><input id="edit-atk-source" value="${weapon.customSource || ""}"></div>
-
-    <div class="btn-row-2">
-      <button class="btn-primary" id="save-edit-atk-button">Save Changes</button>
+    <div class="btn-row-2" style="margin-top:22px;">
+      <button class="btn-primary" id="edit-weapon-button">Edit Weapon</button>
       <button class="btn-primary" id="remove-atk-button" style="background:#5A2C29;color:#F0908A;">Remove</button>
     </div>
   `);
-
-  wireSelect("edit-atk-ability");
-  wireSelect("edit-atk-type");
-  wireSelect("edit-atk-prof");
-  wireCombo("edit-atk-req", WEAPON_PROFICIENCY_TYPES);
-  wireCombo("edit-atk-ammo", character.resources.map(r => r.name));
 
   const gripSwitch = document.getElementById("atk-grip-switch");
   if (gripSwitch) gripSwitch.addEventListener("click", () => {
@@ -2648,35 +2555,10 @@ function openAttackDetailModal(weaponId) {
     renderContent();
   });
 
-  const damageRows = document.getElementById("damage-rows");
-  renderDamageRows(damageRows, parts);
-  document.getElementById("add-damage-button").addEventListener("click", () => {
-    parts.push({ dice: "1d4", type: DAMAGE_TYPES[0] });
-    renderDamageRows(damageRows, parts);
-  });
+  // a weapon IS an inventory item, so editing one is editing that item -- the
+  // full form lives there rather than being duplicated here
+  document.getElementById("edit-weapon-button").addEventListener("click", () => openItemDetailModal(weaponId));
 
-  const properties = (weapon.properties || []).slice();
-  renderPropertyPicker(document.getElementById("property-picker"), properties);
-
-  document.getElementById("save-edit-atk-button").addEventListener("click", () => {
-    weapon.name = document.getElementById("edit-atk-name").value.trim() || weapon.name;
-    weapon.attackAbility = document.getElementById("edit-atk-ability").value;
-    weapon.weaponType = document.getElementById("edit-atk-type").value;
-    weapon.range = document.getElementById("edit-atk-range").value.trim();
-    weapon.properties = properties.slice();
-    weapon.customSource = document.getElementById("edit-atk-source").value.trim();
-    weapon.magicBonus = parseInt(document.getElementById("edit-atk-magic").value) || 0;
-    weapon.proficiencyRequired = document.getElementById("edit-atk-req").value.trim();
-    weapon.ammunition = document.getElementById("edit-atk-ammo").value.trim();
-    weapon.damage = readDamageRows(parts);
-
-    const prof = document.getElementById("edit-atk-prof").value;
-    if (prof === "derived") delete weapon.proficientOverride;
-    else weapon.proficientOverride = prof === "yes";
-
-    closeModal();
-    renderContent();
-  });
   document.getElementById("remove-atk-button").addEventListener("click", () => {
     character.inventory = character.inventory.filter(i => i.id != weaponId);
     closeModal();
@@ -3635,7 +3517,198 @@ function wireInventoryTab() {
   wireItemDragging();
 }
 
-function openAddInventoryModal(presetCategory) {
+/* ---------- shared item form ----------
+
+   Weapons, armour and gear are all inventory entries, so there is one form for
+   all three and a type toggle decides which extra block appears. Combat's
+   "+ Add" opens this same form preset to Weapon, and the attack editor sends
+   you here rather than keeping a second copy of the weapon fields. */
+
+const ITEM_TYPES = [
+  { value: "gear", label: "Gear" },
+  { value: "weapon", label: "Weapon" },
+  { value: "armour", label: "Armour" }
+];
+
+const ARMOUR_KINDS = [
+  { value: "light", label: "Light", dexCap: null },
+  { value: "medium", label: "Medium", dexCap: 2 },
+  { value: "heavy", label: "Heavy", dexCap: 0 },
+  { value: "shield", label: "Shield", dexCap: null }
+];
+
+function itemTypeToggleHtml(current) {
+  return `
+    <div class="type-toggle">
+      ${ITEM_TYPES.map(type => `
+        <button class="toggle-btn ${current === type.value ? "active" : ""}" data-item-type="${type.value}">${type.label}</button>
+      `).join("")}
+    </div>`;
+}
+
+function commonItemFieldsHtml(item) {
+  item = item || {};
+  const categories = Object.keys(character.categoryRules);
+  return `
+    <div class="field"><label>Name</label><input id="if-name" value="${item.name || ""}" placeholder="e.g. Potion of Healing"></div>
+    ${selectFieldHtml("if-category", "Category", categories, item.category || categories[0])}
+    <div class="field-row">
+      <div class="field"><label>Weight (lb)</label><input id="if-weight" type="number" value="${item.weight != null ? item.weight : 1}"></div>
+      <div class="field"><label>Quantity</label><input id="if-qty" type="number" value="${item.qty || 1}"></div>
+    </div>
+    <div class="field"><label>Description (optional)</label><textarea id="if-desc" placeholder="What it is, what it does">${item.description || ""}</textarea></div>
+    <div class="field-row">
+      <div class="field"><label>AC Bonus</label><input id="if-ac" type="number" value="${item.acBonus || 0}"></div>
+      <div class="field"><label>Attack Bonus</label><input id="if-atkb" type="number" value="${item.attackBonus || 0}"></div>
+    </div>`;
+}
+
+function readCommonItemFields() {
+  return {
+    name: document.getElementById("if-name").value.trim() || "New Item",
+    category: document.getElementById("if-category").value,
+    weight: parseFloat(document.getElementById("if-weight").value) || 0,
+    qty: parseInt(document.getElementById("if-qty").value) || 1,
+    description: document.getElementById("if-desc").value.trim()
+  };
+}
+
+function weaponFieldsHtml(weapon) {
+  weapon = weapon || {};
+  const profValue = weapon.proficientOverride === undefined || weapon.proficientOverride === null
+    ? "derived" : (weapon.proficientOverride ? "yes" : "no");
+  return `
+    <div class="field-row">
+      ${selectFieldHtml("wf-ability", "Attack Ability", Object.keys(ABILITY_FULL_NAMES), weapon.attackAbility || "STR")}
+      <div class="field"><label>Magic Bonus</label><input id="wf-magic" type="number" value="${weapon.magicBonus || 0}"></div>
+    </div>
+    <div class="field-row">
+      ${selectFieldHtml("wf-type", "Attack Type", [{ value: "melee", label: "Melee" }, { value: "ranged", label: "Ranged" }], weapon.weaponType || "melee")}
+      <div class="field"><label>Range</label><input id="wf-range" value="${weapon.range || ""}" placeholder="5 ft"></div>
+    </div>
+    <div class="field-row">
+      ${comboFieldHtml("wf-req", "Requires Proficiency", "None", weapon.proficiencyRequired)}
+      ${selectFieldHtml("wf-prof", "Proficient?", [
+        { value: "derived", label: "Auto" }, { value: "yes", label: "Yes" }, { value: "no", label: "No" }
+      ], profValue)}
+    </div>
+    <div class="field"><label>Damage</label></div>
+    <div id="damage-rows"></div>
+    <button class="add-link" id="add-damage-button">+ Add Damage Type</button>
+    <div class="field" style="margin-top:16px;"><label>Properties</label></div>
+    <div id="property-picker"></div>
+    ${comboFieldHtml("wf-ammo", "Spends Ammunition From", "None", weapon.ammunition)}
+    <div class="field"><label>Source (optional — leave blank for "Custom")</label><input id="wf-source" value="${weapon.customSource || ""}"></div>`;
+}
+
+function wireWeaponFields(state) {
+  wireSelect("wf-ability");
+  wireSelect("wf-type");
+  wireSelect("wf-prof");
+  wireCombo("wf-req", WEAPON_PROFICIENCY_TYPES);
+  wireCombo("wf-ammo", character.resources.map(r => r.name));
+
+  const rows = document.getElementById("damage-rows");
+  renderDamageRows(rows, state.damage);
+  document.getElementById("add-damage-button").addEventListener("click", () => {
+    state.damage.push({ dice: "1d4", type: DAMAGE_TYPES[0] });
+    renderDamageRows(rows, state.damage);
+  });
+  renderPropertyPicker(document.getElementById("property-picker"), state.properties);
+}
+
+function readWeaponFields(state) {
+  const prof = document.getElementById("wf-prof").value;
+  return {
+    isWeapon: true,
+    attackAbility: document.getElementById("wf-ability").value,
+    magicBonus: parseInt(document.getElementById("wf-magic").value) || 0,
+    weaponType: document.getElementById("wf-type").value,
+    range: document.getElementById("wf-range").value.trim(),
+    proficiencyRequired: document.getElementById("wf-req").value.trim(),
+    ammunition: document.getElementById("wf-ammo").value.trim(),
+    customSource: document.getElementById("wf-source").value.trim(),
+    damage: readDamageRows(state.damage),
+    properties: state.properties.slice(),
+    proficientOverride: prof === "derived" ? undefined : prof === "yes"
+  };
+}
+
+function armourFieldsHtml(item) {
+  const armour = (item && item.armour) || {};
+  return `
+    <div class="field-row">
+      <div class="field"><label>Base AC</label><input id="af-base" type="number" value="${armour.base != null ? armour.base : 11}"></div>
+      ${selectFieldHtml("af-kind", "Armour Type", ARMOUR_KINDS, armour.kind || "light")}
+    </div>
+    <div class="field"><label>Max Dexterity Bonus</label>
+      <input id="af-dexcap" type="number" value="${armour.dexCap != null ? armour.dexCap : ""}" placeholder="Blank for no limit">
+    </div>
+    <div class="menu-note" style="margin-top:0;">A shield's base is the bonus it adds and stacks with worn armour. Anything else replaces the unarmoured 10.</div>`;
+}
+
+function wireArmourFields() {
+  wireSelect("af-kind");
+  // switching kind drops in that kind's usual Dexterity limit
+  document.getElementById("af-kind").addEventListener("change", (e) => {
+    const kind = ARMOUR_KINDS.find(k => k.value === e.target.value);
+    document.getElementById("af-dexcap").value = kind && kind.dexCap != null ? kind.dexCap : "";
+  });
+}
+
+function readArmourFields() {
+  const raw = document.getElementById("af-dexcap").value.trim();
+  return {
+    base: parseInt(document.getElementById("af-base").value) || 0,
+    kind: document.getElementById("af-kind").value,
+    dexCap: raw === "" ? null : (parseInt(raw) || 0)
+  };
+}
+
+// keeps the stored object honest when the type changes -- a former weapon
+// shouldn't keep its damage list once it becomes gear
+function applyItemType(item, type, state) {
+  if (type === "weapon") {
+    Object.assign(item, readWeaponFields(state));
+    delete item.armour;
+    return;
+  }
+  ["isWeapon", "attackAbility", "magicBonus", "weaponType", "range", "proficiencyRequired",
+   "proficientOverride", "ammunition", "customSource", "damage", "properties", "twoHanded", "isDefaultLoadout"]
+    .forEach(key => delete item[key]);
+  if (type === "armour") item.armour = readArmourFields();
+  else delete item.armour;
+}
+
+function renderItemTypeFields(container, type, item, state) {
+  container.innerHTML = type === "weapon" ? weaponFieldsHtml(item)
+    : type === "armour" ? armourFieldsHtml(item) : "";
+  if (type === "weapon") wireWeaponFields(state);
+  if (type === "armour") wireArmourFields();
+}
+
+function wireItemTypeToggle(state, container, item) {
+  document.querySelectorAll("[data-item-type]").forEach(button => {
+    button.addEventListener("click", () => {
+      state.type = button.dataset.itemType;
+      document.querySelectorAll("[data-item-type]").forEach(other =>
+        other.classList.toggle("active", other.dataset.itemType === state.type));
+      renderItemTypeFields(container, state.type, item, state);
+    });
+  });
+}
+
+function newItemFormState(item) {
+  item = item || {};
+  return {
+    type: item.name ? itemType(item) : "gear",
+    damage: JSON.parse(JSON.stringify(item.damage && item.damage.length
+      ? item.damage : [{ dice: "1d4", type: DAMAGE_TYPES[0], ability: "STR" }])),
+    properties: (item.properties || []).slice()
+  };
+}
+
+function openAddInventoryModal(presetCategory, presetType) {
   const categories = Object.keys(character.categoryRules);
   let mode = "item";
 
@@ -3652,34 +3725,36 @@ function openAddInventoryModal(presetCategory) {
   const modeCatBtn = document.getElementById("mode-invcat-btn");
   const body = document.getElementById("add-inv-body");
 
+  const state = newItemFormState();
+  if (presetType) state.type = presetType;
+
   function renderItemBody() {
     const defaultCat = presetCategory && categories.includes(presetCategory) ? presetCategory : categories[0];
     body.innerHTML = `
-      <div class="field"><label>Name</label><input id="new-item-name" placeholder="e.g. Potion of Healing"></div>
-      <div class="field-row">
-        <div class="field"><label>Weight (lb)</label><input id="new-item-weight" type="number" value="1"></div>
-        <div class="field"><label>Quantity</label><input id="new-item-qty" type="number" value="1"></div>
-      </div>
-      <div class="field"><label>Category</label><select id="new-item-cat">${categories.map(c => `<option ${c === defaultCat ? "selected" : ""}>${c}</option>`).join("")}</select></div>
-      <div class="field-row">
-        <div class="field"><label>AC Bonus (optional)</label><input id="new-item-ac" type="number" value="0"></div>
-        <div class="field"><label>Attack Bonus (optional)</label><input id="new-item-atkb" type="number" value="0"></div>
-      </div>
-      <button class="btn-primary" id="save-item-button">Add Item</button>
+      ${itemTypeToggleHtml(state.type)}
+      ${commonItemFieldsHtml({ category: defaultCat })}
+      <div id="type-fields"></div>
+      <button class="btn-primary" id="save-item-button" style="margin-top:16px;">Add Item</button>
     `;
+    wireSelect("if-category");
+
+    const typeFields = document.getElementById("type-fields");
+    renderItemTypeFields(typeFields, state.type, null, state);
+    wireItemTypeToggle(state, typeFields, null);
+
     document.getElementById("save-item-button").addEventListener("click", () => {
-      const name = document.getElementById("new-item-name").value.trim() || "New Item";
-      const weight = parseFloat(document.getElementById("new-item-weight").value) || 0;
-      const qty = parseInt(document.getElementById("new-item-qty").value) || 1;
-      const category = document.getElementById("new-item-cat").value;
-      const acBonus = parseInt(document.getElementById("new-item-ac").value) || 0;
-      const attackBonus = parseInt(document.getElementById("new-item-atkb").value) || 0;
       const newId = Math.max(0, ...character.inventory.map(i => i.id)) + 1;
-      const item = { id: newId, name, category, weight, qty };
+      const item = Object.assign({ id: newId }, readCommonItemFields());
+
+      const acBonus = parseInt(document.getElementById("if-ac").value) || 0;
+      const attackBonus = parseInt(document.getElementById("if-atkb").value) || 0;
       if (acBonus) item.acBonus = acBonus;
       if (attackBonus) item.attackBonus = attackBonus;
+
+      applyItemType(item, state.type, state);
+
       character.inventory.push(item);
-      openInvCategories[category] = true;
+      openInvCategories[item.category] = true;
       closeModal();
       renderContent();
     });
@@ -3774,37 +3849,36 @@ function openEditCategoryModal(category) {
 
 function openItemDetailModal(itemId) {
   const item = character.inventory.find(i => i.id == itemId);
-  const categories = Object.keys(character.categoryRules);
+  const state = newItemFormState(item);
+
   openModal("full", `
     <div class="modal-heading-row">
       <div class="modal-heading">Edit Item</div>
       <button class="icon-btn-delete" id="delete-item-trigger" title="Remove item">\uD83D\uDDD1</button>
     </div>
-    <div class="field"><label>Name</label><input id="edit-item-name" value="${item.name}"></div>
-    <div class="field-row">
-      <div class="field"><label>Weight (lb)</label><input id="edit-item-weight" type="number" value="${item.weight}"></div>
-      <div class="field"><label>Quantity</label><input id="edit-item-qty" type="number" value="${item.qty || 1}"></div>
-    </div>
-    <div class="field"><label>Category</label><select id="edit-item-cat">${categories.map(c => `<option ${c === item.category ? "selected" : ""}>${c}</option>`).join("")}</select></div>
-    <div class="field-row">
-      <div class="field"><label>AC Bonus</label><input id="edit-item-ac" type="number" value="${item.acBonus || 0}"></div>
-      <div class="field"><label>Attack Bonus</label><input id="edit-item-atkb" type="number" value="${item.attackBonus || 0}"></div>
-    </div>
-    ${item.isWeapon ? `<div class="empty-hint">This is also a weapon \u2014 edit its attack stats from the Combat tab.</div>` : ""}
-    <div class="btn-row-2">
+    ${itemTypeToggleHtml(state.type)}
+    ${commonItemFieldsHtml(item)}
+    <div id="type-fields"></div>
+    <div class="btn-row-2" style="margin-top:16px;">
       <button class="btn-primary" id="save-item-edit-button">Save Changes</button>
       <button class="btn-primary" id="give-item-button" style="background:#242019;color:#F5C37A;">Give</button>
     </div>
   `);
+
+  wireSelect("if-category");
+  const typeFields = document.getElementById("type-fields");
+  renderItemTypeFields(typeFields, state.type, item, state);
+  wireItemTypeToggle(state, typeFields, item);
+
   document.getElementById("save-item-edit-button").addEventListener("click", () => {
-    item.name = document.getElementById("edit-item-name").value.trim() || item.name;
-    item.weight = parseFloat(document.getElementById("edit-item-weight").value) || 0;
-    item.qty = parseInt(document.getElementById("edit-item-qty").value) || 1;
-    item.category = document.getElementById("edit-item-cat").value;
-    const ac = parseInt(document.getElementById("edit-item-ac").value) || 0;
-    const atkb = parseInt(document.getElementById("edit-item-atkb").value) || 0;
+    Object.assign(item, readCommonItemFields());
+    const ac = parseInt(document.getElementById("if-ac").value) || 0;
+    const atkb = parseInt(document.getElementById("if-atkb").value) || 0;
     if (ac) item.acBonus = ac; else delete item.acBonus;
     if (atkb) item.attackBonus = atkb; else delete item.attackBonus;
+
+    applyItemType(item, state.type, state);
+
     closeModal();
     renderContent();
   });
