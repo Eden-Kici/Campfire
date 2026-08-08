@@ -203,6 +203,15 @@ function prefillEffectSubfields(eff, idPrefix) {
   });
 }
 
+// only "SR" and "LR" are understood by the rest system. anything custom is the
+// player's to track, so the form says so plainly at the point of choosing it.
+function rechargeCustomFieldHtml(idPrefix, value) {
+  return `
+    <div class="field"><label>Custom Label</label><input id="${idPrefix}-tag-custom" value="${value || ""}" placeholder="e.g. Per Day"></div>
+    <div class="form-warning">Custom recharges aren't restored by a Short or Long Rest \u2014 you'll need to reset this one yourself.</div>
+  `;
+}
+
 function rechargeFieldHtml(idPrefix, currentTag) {
   const known = ["SR", "LR", "\u2014"];
   const isKnown = known.includes(currentTag);
@@ -217,7 +226,7 @@ function rechargeFieldHtml(idPrefix, currentTag) {
       </select>
     </div>
     <div id="${idPrefix}-tag-custom-wrap">
-      ${selectedType === "Custom" ? `<div class="field"><label>Custom Label</label><input id="${idPrefix}-tag-custom" value="${isKnown ? "" : currentTag}"></div>` : ""}
+      ${selectedType === "Custom" ? rechargeCustomFieldHtml(idPrefix, isKnown ? "" : currentTag) : ""}
     </div>
   `;
 }
@@ -226,8 +235,7 @@ function wireRechargeField(idPrefix) {
   const select = document.getElementById(idPrefix + "-tag-type");
   const wrap = document.getElementById(idPrefix + "-tag-custom-wrap");
   select.addEventListener("change", () => {
-    wrap.innerHTML = select.value === "Custom"
-      ? `<div class="field"><label>Custom Label</label><input id="${idPrefix}-tag-custom" placeholder="e.g. Per Day"></div>` : "";
+    wrap.innerHTML = select.value === "Custom" ? rechargeCustomFieldHtml(idPrefix, "") : "";
   });
 }
 
@@ -1350,6 +1358,104 @@ function wirePartyModal() {
 
 
 /* ============================================================
+   APP MENU + RESTS
+   ============================================================ */
+
+/* A rest is the only thing that reads the recharge vocabulary ("SR"/"LR") that
+   resources and spell slots both use, and the duration types on active effects.
+   Everything it touches was already stored and previously inert.
+
+   Deliberately NOT handled here:
+     - Pact Magic (SR slots in a separate pool -- needs a data model change)
+     - Exhaustion (a long rest drops it one level, but it's a bare label today
+       with no level attached)
+     - Hit dice spending, which is a player choice rather than part of the
+       automatic sweep. Spend them from the Hit Dice rows on the Combat tab. */
+
+function restoreOnRest(entry, isLong) {
+  const rule = (entry.tag || entry.recharge || "").toUpperCase();
+  if (rule !== "SR" && rule !== "LR") return false;      // custom / "—" never auto-restore
+  if (rule === "LR" && !isLong) return false;
+  if (entry.current === entry.max) return false;
+  entry.current = entry.max;
+  return true;
+}
+
+// 5e: a long rest returns half your total hit dice, rounded down, minimum one.
+// The player picks which in the real rules; we fill the largest pools first.
+function regainHitDice() {
+  const pools = character.hitDice || [];
+  let budget = Math.max(1, Math.floor(pools.reduce((sum, p) => sum + p.total, 0) / 2));
+  let regained = 0;
+  pools.forEach(pool => {
+    while (budget > 0 && pool.current < pool.total) { pool.current++; budget--; regained++; }
+  });
+  return regained;
+}
+
+function plural(n, word) {
+  return n + " " + word + (n === 1 ? "" : "s");
+}
+
+function applyRest(kind) {
+  const isLong = kind === "long";
+  const summary = [];
+
+  const resources = character.resources.filter(r => restoreOnRest(r, isLong)).length;
+  if (resources) summary.push(plural(resources, "resource"));
+
+  const slots = Object.keys(character.spellSlots)
+    .filter(lvl => restoreOnRest(character.spellSlots[lvl], isLong)).length;
+  if (slots) summary.push(plural(slots, "slot level"));
+
+  // an hour has passed, so round-durations are gone either way
+  const before = character.activeEffects.length;
+  character.activeEffects = character.activeEffects.filter(e => {
+    const type = e.duration.type;
+    if (type === "Rounds" || type === "Short Rest") return false;
+    if (type === "Long Rest") return !isLong;
+    return true;                                          // Permanent
+  });
+  const cleared = before - character.activeEffects.length;
+  if (cleared) summary.push(plural(cleared, "effect") + " cleared");
+
+  if (character.concentration.active) {
+    character.concentration.active = false;
+    character.concentration.spell = "";
+    summary.push("concentration broken");
+  }
+
+  if (isLong) {
+    const maxHP = calculateMaxHP(character);
+    if (character.hp.current !== maxHP.total) summary.push("HP restored");
+    character.hp.current = maxHP.total;
+    character.hp.temp = 0;                                // temp HP ends on a long rest
+    const dice = regainHitDice();
+    if (dice) summary.push(plural(dice, "hit die").replace("dies", "dice"));
+  }
+
+  closeModal();
+  renderContent();
+  showToast((isLong ? "Long rest" : "Short rest") + " · " + (summary.join(" · ") || "nothing to restore"));
+}
+
+function openAppMenu() {
+  openModal("sheet", `
+    <div class="modal-heading">Menu</div>
+    <button class="btn-primary" id="menu-short-rest">Short Rest</button>
+    <button class="btn-secondary" id="menu-long-rest">Long Rest</button>
+    <div class="menu-note">
+      Short rest restores anything tagged SR and clears short-term effects.
+      Long rest also restores LR items, all hit points, and half your spent hit dice.
+      Custom recharges are never restored automatically.
+    </div>
+  `);
+  document.getElementById("menu-short-rest").addEventListener("click", () => applyRest("short"));
+  document.getElementById("menu-long-rest").addEventListener("click", () => applyRest("long"));
+}
+
+
+/* ============================================================
    TAB SWITCHING
    ============================================================ */
 
@@ -1368,6 +1474,7 @@ function updateActiveTabStyling() {
 
 document.getElementById("back-to-selector").addEventListener("click", () => showScreen("selector"));
 document.getElementById("char-name-row").addEventListener("click", openCharacterEditorModal);
+document.getElementById("app-menu-button").addEventListener("click", openAppMenu);
 
 function renderContent() {
   const content = document.getElementById("content");
@@ -1411,7 +1518,7 @@ function renderCombatTab() {
       <div class="hp-label">Hit Points</div>
       <div class="hp-bar-track">
         <div class="hp-bar-fill" style="width: ${hpPercent}%"></div>
-        <div class="hp-bar-text">${character.hp.current} / ${maxHP.total}</div>
+        <div class="hp-bar-text">${character.hp.current} / ${maxHP.total}${character.hp.temp ? ` <span class="hp-temp">+${character.hp.temp} temp</span>` : ""}</div>
       </div>
     </div>
 
@@ -1458,7 +1565,7 @@ function renderCombatTab() {
       const slot = character.spellSlots[lvl];
       return `
       <div class="res-row">
-        <div class="res-name-wrap" data-slot-view="${lvl}"><span class="res-name">${slotRowName(lvl)}</span><span class="res-tag">LR</span></div>
+        <div class="res-name-wrap" data-slot-view="${lvl}"><span class="res-name">${slotRowName(lvl)}</span><span class="res-tag">${slot.recharge || "LR"}</span></div>
         <div class="stepper"><button data-slot-minus="${lvl}">\u2212</button><span class="res-count">${slot.current}/${slot.max}</span><button data-slot-plus="${lvl}">+</button></div>
       </div>
     `;
@@ -1469,6 +1576,21 @@ function renderCombatTab() {
         <div class="stepper"><button data-res-minus="${r.id}">\u2212</button><span class="res-count">${r.current}/${r.max}</span><button data-res-plus="${r.id}">+</button></div>
       </div>
     `).join("")}
+
+    ${(character.hitDice && character.hitDice.length) ? `
+      <div class="section-head-row">
+        <div class="section-head">Hit Dice</div>
+      </div>
+      ${character.hitDice.map((pool, index) => `
+        <div class="res-row">
+          <div class="res-name-wrap"><span class="res-name">${pool.die}</span><span class="res-tag">½ LR</span></div>
+          <div class="stepper">
+            <span class="res-count">${pool.current}/${pool.total}</span>
+            <button class="atk-pill" data-spend-hitdie="${index}">Spend</button>
+          </div>
+        </div>
+      `).join("")}
+    ` : ""}
 
     <div class="section-head-row">
       <div class="section-head">Attacks</div>
@@ -1550,6 +1672,10 @@ function wireCombatTab() {
     el.addEventListener("click", () => openEditSlotsModal(parseInt(el.dataset.slotView)));
   });
 
+  document.querySelectorAll("[data-spend-hitdie]").forEach(button => {
+    button.addEventListener("click", () => spendHitDie(parseInt(button.dataset.spendHitdie)));
+  });
+
   document.querySelectorAll("[data-roll-tohit]").forEach(button => {
     button.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -1623,6 +1749,22 @@ function applyHp(type, amount) {
     }
     character.hp.current = Math.max(0, character.hp.current - remaining);
   }
+}
+
+
+/* ---------------- hit dice ---------------- */
+
+// same stance as casting with no slots: warn, but don't block. a table ruling
+// or homebrew feature can put a character outside the normal economy.
+function spendHitDie(index) {
+  const pool = character.hitDice[index];
+  if (pool.current <= 0) showToast("No " + pool.die + " hit dice left");
+  pool.current--;
+  const notation = "1" + pool.die + formatModifier(abilityModifier(effectiveAbilityScore(character, "CON")));
+  const result = rollNotation(notation);
+  applyHp("heal", result.total);
+  showRollToast("Hit Die – " + pool.die, notation);
+  renderContent();
 }
 
 

@@ -29,6 +29,14 @@ const character = {
   baseMaxHP: 24,
   maxHpModifiers: [],
 
+  // hit dice are per class in 5e -- Fighter 5 / Rogue 2 means 5d10 + 2d8.
+  // spent individually to heal (die + CON modifier); a long rest gives back
+  // half your total, rounded down, minimum one.
+  hitDice: [
+    { die: "d10", total: 5, current: 4 },
+    { die: "d8", total: 2, current: 2 }
+  ],
+
   activeEffects: [
     { id: 1, category: "Condition", value: { condition: "Prone" }, duration: { type: "Permanent", rounds: null }, note: "" }
   ],
@@ -130,10 +138,14 @@ const character = {
   // tab's Resources list and the Spells tab -- both of which read and write
   // this object directly, so the two views can never drift apart. Do not
   // mirror slots into `resources`; that's what caused them to disagree before.
+  // recharge uses the same vocabulary as resource tags ("SR" / "LR"), so rests
+  // can treat slots and resources with one rule. NOTE: Pact Magic doesn't fit
+  // here -- a Warlock's slots recharge on SR *and* live in a separate pool from
+  // the shared multiclass pool. That needs its own structure; see notes.
   spellSlots: {
-    1: { current: 3, max: 4 },
-    2: { current: 2, max: 3 },
-    3: { current: 1, max: 2 }
+    1: { current: 3, max: 4, recharge: "LR" },
+    2: { current: 2, max: 3, recharge: "LR" },
+    3: { current: 1, max: 2, recharge: "LR" }
   },
 
   // maxPreparedByClass is also a raw ingredient (not calculated from level/ability)
