@@ -663,6 +663,56 @@ function showToast(message) {
    right sheet without any of them knowing a switch happened. */
 let savedCharacters = [character];
 
+
+/* ---------- persistence ----------
+
+   The character shape has changed repeatedly, so the saved blob carries a
+   schema version. A blob from an older version is set aside rather than
+   loaded, because a half-migrated character is worse than a missing one --
+   the earlier flat effects, string recharges and flat armour bonuses would
+   all read as silently wrong rather than failing loudly.
+
+   A real build would migrate. A POC only needs to notice. */
+
+const STORAGE_KEY = "campfire.characters";
+const SCHEMA_VERSION = 1;
+
+function persistCharacters() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      version: SCHEMA_VERSION,
+      openId: character ? character.id : null,
+      characters: savedCharacters
+    }));
+  } catch (err) {
+    // a full or unavailable store shouldn't take the app down mid-session
+    console.warn("Couldn't save characters:", err);
+  }
+}
+
+function loadCharacters() {
+  let raw;
+  try {
+    raw = localStorage.getItem(STORAGE_KEY);
+  } catch (err) {
+    return null;                                  // storage blocked entirely
+  }
+  if (!raw) return null;
+
+  let saved;
+  try {
+    saved = JSON.parse(raw);
+  } catch (err) {
+    return { stale: true, reason: "unreadable" };
+  }
+  if (!saved || !Array.isArray(saved.characters) || !saved.characters.length) return null;
+  if (saved.version !== SCHEMA_VERSION) return { stale: true, reason: "version " + saved.version };
+
+  savedCharacters = saved.characters;
+  character = savedCharacters.find(c => c.id === saved.openId) || savedCharacters[0];
+  return { stale: false };
+}
+
 function selectCharacter(id) {
   const found = savedCharacters.find(c => c.id === id);
   if (found) character = found;
@@ -771,6 +821,7 @@ function openCharacterEditorModal() {
 
 function renderSelectorScreen() {
   const el = document.getElementById("selector-screen");
+  persistCharacters();          // creating, importing and deleting all land here
 
   const listHtml = savedCharacters.length
     ? savedCharacters.map(c => `
@@ -2094,6 +2145,10 @@ function renderContent() {
   else if (activeTab === "spells") { content.innerHTML = renderSpellsTab(); wireSpellsTab(); }
   else if (activeTab === "notes") { content.innerHTML = renderNotesTab(); wireNotesTab(); }
   else { content.innerHTML = "<p>" + activeTab + " tab coming soon</p>"; }
+
+  // every mutation in the app ends in a re-render, so saving here catches all
+  // of them without hunting individual call sites
+  persistCharacters();
 }
 
 
@@ -4653,4 +4708,8 @@ function openShareModal(noteId) {
    INIT
    ============================================================ */
 
+const restored = loadCharacters();
 showScreen("selector");
+if (restored && restored.stale) {
+  showToast("Saved characters were from an older version (" + restored.reason + ") and weren't loaded");
+}
