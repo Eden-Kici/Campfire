@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Campfire Player</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="phone">
+
+    <div id="selector-screen"></div>
+
+    <div id="sheet-screen">
+      <div class="app-header">
+        <div class="brand-row">
+          <button class="back-button" id="back-to-selector">&#8249;</button>
+          <span class="brand-name">Campfire</span>
+        </div>
+        <div class="char-name-row" id="char-name-row">
+          <div class="char-avatar" id="char-avatar"></div>
+          <div>
+            <div class="char-name" id="char-name-display">Sigrid of Chester</div>
+            <div class="char-class" id="char-class-display">Fighter 5 / Rogue 2</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="content" id="content">
+        <div id="ac-display"></div>
+      </div>
+
+      <div class="tabbar">
+        <button class="tab-item active" data-tab="combat">Combat</button>
+        <button class="tab-item" data-tab="character">Character</button>
+        <button class="tab-item" data-tab="spells">Spells</button>
+        <button class="tab-item" data-tab="inventory">Inventory</button>
+        <button class="tab-item" data-tab="notes">Notes</button>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="character-data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
