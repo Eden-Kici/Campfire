@@ -352,19 +352,23 @@ body {
 
 .modal-handle { width: 40px; height: 5px; background: #6E655B; border-radius: 3px; margin: 10px auto 14px; cursor: pointer; }
 .modal-close-x { background: none; border: none; color: #9C9186; font-size: 16px; cursor: pointer; float: right; }
-.modal-heading { font-size: 16px; font-weight: bold; margin-bottom: 14px; }
+.modal-heading { font-size: 17px; font-weight: bold; margin-bottom: 14px; }
 .modal-heading-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
 .modal-heading-row .modal-heading { margin-bottom: 0; }
 .icon-btn-delete { background: none; border: none; color: #9C9186; font-size: 17px; cursor: pointer; padding: 4px; line-height: 1; }
 
-.breakdown-title { font-size: 16px; font-weight: bold; margin-bottom: 14px; }
+/* Type scale, largest to smallest: modal title, section heading and its total,
+   then the line items that make it up. The section heading used to be 13px
+   against 14px rows and a 17px total, which put the most important label at
+   the bottom of the hierarchy. */
+.breakdown-title { font-size: 17px; font-weight: bold; margin-bottom: 14px; }
 .breakdown-source { font-size: 12px; color: #9C9186; margin-bottom: 6px; }
-.breakdown-subhead { font-size: 13px; font-weight: bold; color: #F5C37A; margin: 14px 0 6px; }
-.breakdown-row { display: flex; justify-content: space-between; font-size: 14px; padding: 6px 0; }
+.breakdown-subhead { font-size: 15px; font-weight: bold; color: #F5C37A; margin: 22px 0 8px; }
+.breakdown-row { display: flex; justify-content: space-between; font-size: 13.5px; padding: 6px 0; }
 .breakdown-row span:first-child { color: #9C9186; }
 .breakdown-row span:last-child { color: #FAF6F0; font-weight: 600; }
 .breakdown-divider { border: none; border-top: 1px solid #332C24; margin: 10px 0; }
-.breakdown-total { display: flex; justify-content: space-between; font-size: 17px; font-weight: bold; color: #FAF6F0; padding: 2px 0; }
+.breakdown-total { display: flex; justify-content: space-between; font-size: 15px; font-weight: bold; color: #FAF6F0; padding: 2px 0; }
 
 
 /* -------------------- forms -------------------- */
