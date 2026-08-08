@@ -180,9 +180,9 @@ function showRollToast(label, notation) {
   const toast = document.createElement("div");
   toast.className = "roll-toast";
   toast.innerHTML = `
-    <div class="roll-toast-label">${label}</div>
+    <div class="roll-toast-label">${esc(label)}</div>
     <div class="roll-toast-value">${result.total}</div>
-    <div class="roll-toast-sub">${notation} \u00B7 ${result.breakdown}</div>
+    <div class="roll-toast-sub">${esc(notation)} \u00B7 ${esc(result.breakdown)}</div>
   `;
   document.querySelector(".phone").appendChild(toast);
 
@@ -270,18 +270,18 @@ function rollWindowHtml() {
   const dice = outcome.parts.map(part => {
     const detail = part.result.breakdown.replace(/\d+d\d+\(/g, "(");
     return outcome.parts.length > 1
-      ? `<div class="roll-part"><span>${detail}</span><span class="roll-part-total">${part.result.total} ${part.label || ""}</span></div>`
+      ? `<div class="roll-part"><span>${detail}</span><span class="roll-part-total">${part.result.total} ${esc(part.label || "")}</span></div>`
       : `<div>${detail}</div>`;
   }).join("");
 
   const chips = (config.sources || [])
     .filter(source => source.value !== 0)
-    .map(source => `<span class="roll-chip ${source.value > 0 ? "pos" : "neg"}">${source.label} ${formatModifier(source.value)}</span>`)
+    .map(source => `<span class="roll-chip ${source.value > 0 ? "pos" : "neg"}">${esc(source.label)} ${formatModifier(source.value)}</span>`)
     .join("");
 
   return `
-    <div class="roll-title">${config.label}</div>
-    <div class="roll-notation">${config.notation}</div>
+    <div class="roll-title">${esc(config.label)}</div>
+    <div class="roll-notation">${esc(config.notation)}</div>
 
     <div class="roll-values">
       <div class="roll-side">${isDamage ? `<div class="roll-side-label">½</div><div class="roll-side-value">${Math.floor(total / 2)}</div>` : ""}</div>
@@ -296,7 +296,7 @@ function rollWindowHtml() {
 
     <div class="roll-mode-row">
       ${["advantage", "normal", "disadvantage"].map(option => `
-        <button class="roll-mode-btn ${mode === option ? "active " + option : ""}" data-roll-mode="${option}">
+        <button class="roll-mode-btn ${mode === option ? "active " + option : ""}" data-roll-mode="${esc(option)}">
           ${option === "advantage" ? "ADV" : option === "normal" ? "NORMAL" : "DIS"}
         </button>
       `).join("")}
@@ -374,16 +374,16 @@ function makeDraggable(handleEl, boxEl) {
 }
 
 function breakdownRowsHtml(sources) {
-  return sources.map(s => `<div class="breakdown-row"><span>${s.label}</span><span>${formatModifier(s.value)}</span></div>`).join("");
+  return sources.map(s => `<div class="breakdown-row"><span>${esc(s.label)}</span><span>${formatModifier(s.value)}</span></div>`).join("");
 }
 
 function openBreakdownModal(title, total, suffix, sources, rollButton) {
   openModal("center", `
-    <div class="breakdown-title">${title}</div>
+    <div class="breakdown-title">${esc(title)}</div>
     ${breakdownRowsHtml(sources)}
     <hr class="breakdown-divider">
     <div class="breakdown-total"><span>Total</span><span>${total}${suffix || ""}</span></div>
-    ${rollButton ? `<button class="btn-primary" id="breakdown-roll-btn" style="margin-top:14px;">Roll ${rollButton.label}</button>` : ""}
+    ${rollButton ? `<button class="btn-primary" id="breakdown-roll-btn" style="margin-top:14px;">Roll ${esc(rollButton.label)}</button>` : ""}
   `);
   if (rollButton) document.getElementById("breakdown-roll-btn").addEventListener("click", () =>
     showRoll({ label: rollButton.label, notation: rollButton.notation, sources, kind: rollButton.kind || "check", ability: rollButton.ability }));
@@ -402,16 +402,16 @@ function selectFieldHtml(id, label, options, value) {
 
   return `
     <div class="field">
-      ${label ? `<label>${label}</label>` : ""}
+      ${label ? `<label>${esc(label)}</label>` : ""}
       <div class="select" data-select="${id}">
-        <input type="hidden" id="${id}" value="${selected ? selected.value : ""}">
+        <input type="hidden" id="${id}" value="${esc(selected ? selected.value : "")}">
         <button type="button" class="select-trigger">
-          <span class="select-value">${selected ? selected.label : ""}</span>
+          <span class="select-value">${esc(selected ? selected.label : "")}</span>
           <span class="select-caret">⌄</span>
         </button>
         <div class="select-list" hidden>
           ${items.map(item => `
-            <button type="button" class="select-option ${selected && item.value === selected.value ? "active" : ""}" data-value="${item.value}">${item.label}</button>
+            <button type="button" class="select-option ${selected && item.value === selected.value ? "active" : ""}" data-value="${esc(item.value)}">${esc(item.label)}</button>
           `).join("")}
         </div>
       </div>
@@ -453,8 +453,8 @@ function wireSelectsIn(root) {
 function comboFieldHtml(id, label, placeholder, value) {
   return `
     <div class="field combo">
-      <label>${label}</label>
-      <input id="${id}" autocomplete="off" placeholder="${placeholder}" value="${value || ""}">
+      <label>${esc(label)}</label>
+      <input id="${id}" autocomplete="off" placeholder="${placeholder}" value="${esc(value || "")}">
       <div class="combo-list" id="${id}-list" hidden></div>
     </div>`;
 }
@@ -468,7 +468,7 @@ function wireCombo(id, options) {
     const query = input.value.trim().toLowerCase();
     const matches = options.filter(option => option.toLowerCase().includes(query));
     list.innerHTML = matches.length
-      ? matches.map(option => `<button type="button" class="combo-option" data-pick="${option}">${option}</button>`).join("")
+      ? matches.map(option => `<button type="button" class="combo-option" data-pick="${esc(option)}">${esc(option)}</button>`).join("")
       : `<div class="combo-empty">No match — "${input.value.trim()}" will be used as a custom entry</div>`;
 
     // pointerdown fires before the input loses focus, on both touch and mouse
@@ -550,7 +550,7 @@ function prefillEffectSubfields(eff, idPrefix) {
 // player's to track, so the form says so plainly at the point of choosing it.
 function rechargeCustomFieldHtml(idPrefix, value) {
   return `
-    <div class="field"><label>Custom Label</label><input id="${idPrefix}-tag-custom" value="${value || ""}" placeholder="e.g. Per Day"></div>
+    <div class="field"><label>Custom Label</label><input id="${idPrefix}-tag-custom" value="${esc(value || "")}" placeholder="e.g. Per Day"></div>
     <div class="form-warning">Custom recharges aren't restored by a Short or Long Rest \u2014 you'll need to reset this one yourself.</div>
   `;
 }
@@ -600,7 +600,7 @@ function readRechargeValue(idPrefix) {
 function showToast(message) {
   const toast = document.createElement("div");
   toast.className = "roll-toast";
-  toast.innerHTML = `<div class="roll-toast-value" style="font-size:15px;">${message}</div>`;
+  toast.innerHTML = `<div class="roll-toast-value" style="font-size:15px;">${esc(message)}</div>`;
   document.querySelector(".phone").appendChild(toast);
 
   activeToasts.unshift(toast);
@@ -665,17 +665,17 @@ function openCharacterEditorModal() {
       <input type="file" id="editor-pic-input" accept="image/*" style="display:none;">
     </div>
 
-    <div class="field"><label>Name</label><input id="editor-name-input" type="text" value="${character.name}"></div>
+    <div class="field"><label>Name</label><input id="editor-name-input" type="text" value="${esc(character.name)}"></div>
     <div class="field">
       <label>Alignment</label>
       <select id="editor-alignment-input">${ALIGNMENTS.map(a => `<option ${character.alignment === a ? "selected" : ""}>${a}</option>`).join("")}</select>
     </div>
-    <div class="field"><label>Appearance</label><textarea id="editor-appearance-input" placeholder="Physical description">${character.appearance || ""}</textarea></div>
-    <div class="field"><label>Personality Traits</label><textarea id="editor-traits-input" placeholder="How they act, talk, carry themselves">${character.personalityTraits || ""}</textarea></div>
-    <div class="field"><label>Ideals</label><textarea id="editor-ideals-input" placeholder="What they believe in">${character.ideals || ""}</textarea></div>
-    <div class="field"><label>Bonds</label><textarea id="editor-bonds-input" placeholder="Who or what they're tied to">${character.bonds || ""}</textarea></div>
-    <div class="field"><label>Flaws</label><textarea id="editor-flaws-input" placeholder="What holds them back">${character.flaws || ""}</textarea></div>
-    <div class="field"><label>Backstory</label><textarea id="editor-backstory-input" class="field-textarea-lg" placeholder="Their history">${character.backstory || ""}</textarea></div>
+    <div class="field"><label>Appearance</label><textarea id="editor-appearance-input" placeholder="Physical description">${esc(character.appearance)}</textarea></div>
+    <div class="field"><label>Personality Traits</label><textarea id="editor-traits-input" placeholder="How they act, talk, carry themselves">${esc(character.personalityTraits)}</textarea></div>
+    <div class="field"><label>Ideals</label><textarea id="editor-ideals-input" placeholder="What they believe in">${esc(character.ideals)}</textarea></div>
+    <div class="field"><label>Bonds</label><textarea id="editor-bonds-input" placeholder="Who or what they're tied to">${esc(character.bonds)}</textarea></div>
+    <div class="field"><label>Flaws</label><textarea id="editor-flaws-input" placeholder="What holds them back">${esc(character.flaws)}</textarea></div>
+    <div class="field"><label>Backstory</label><textarea id="editor-backstory-input" class="field-textarea-lg" placeholder="Their history">${esc(character.backstory)}</textarea></div>
 
     <button class="btn-primary" id="editor-save-button">Save</button>
   `);
@@ -724,7 +724,7 @@ function renderSelectorScreen() {
     ? savedCharacters.map(c => `
         <div class="char-card" data-open-char="${c.id}">
           <div>
-            <div class="char-card-name">${c.name}${c.customBuild ? ` <span class="res-tag" style="background:#5A2C29;color:#F0908A;">CUSTOM</span>` : ""}</div>
+            <div class="char-card-name">${esc(c.name)}${c.customBuild ? ` <span class="res-tag" style="background:#5A2C29;color:#F0908A;">CUSTOM</span>` : ""}</div>
             <div class="char-card-class">${c.classLine}</div>
           </div>
           <button class="char-card-menu" data-char-menu="${c.id}">\u22EF</button>
@@ -786,7 +786,7 @@ function renderSelectorScreen() {
 function openCharacterMenu(id) {
   const c = savedCharacters.find(x => x.id === id);
   openModal("center", `
-    <div class="modal-heading">${c.name}</div>
+    <div class="modal-heading">${esc(c.name)}</div>
     <button class="btn-primary" id="export-char-button" style="margin-bottom:8px;">Export</button>
     <button class="btn-primary" id="delete-char-button" style="background:#5A2C29;color:#F0908A;">Delete</button>
   `);
@@ -816,7 +816,7 @@ function exportCharacter(c) {
 function confirmDeleteCharacter(id) {
   const c = savedCharacters.find(x => x.id === id);
   openModal("center", `
-    <div class="modal-heading">Delete ${c.name}?</div>
+    <div class="modal-heading">Delete ${esc(c.name)}?</div>
     <div class="breakdown-source" style="margin-bottom:14px;">This can't be undone.</div>
     <button class="btn-primary" id="confirm-delete-char-button" style="background:#5A2C29;color:#F0908A;margin-bottom:8px;">Delete</button>
     <button class="btn-secondary" id="cancel-delete-char-button">Cancel</button>
@@ -1044,7 +1044,7 @@ function featureRowHtml(f) {
 }
 
 function optionButtonHtml(label, active, dataAttr, value) {
-  return `<button class="toggle-btn creator-option ${active ? "active" : ""}" data-${dataAttr}="${value}" style="display:block;width:100%;text-align:left;margin-bottom:8px;padding:12px 14px;">${label}</button>`;
+  return `<button class="toggle-btn creator-option ${active ? "active" : ""}" data-${dataAttr}="${value}" style="display:block;width:100%;text-align:left;margin-bottom:8px;padding:12px 14px;">${esc(label)}</button>`;
 }
 
 function creatorStepKeys() {
@@ -1367,17 +1367,17 @@ function skillsStepHtml(stepNum, totalSteps) {
       } else {
         if (raceChoice && raceChoice.options.includes(s.name)) {
           const disabled = !isRace && creatorState.raceSkillChoices.length >= raceChoice.count;
-          raceSlot = `<span style="display:inline-block;width:44px;text-align:center;"><input type="checkbox" data-race-skill="${s.name}" ${isRace ? "checked" : ""} ${disabled ? "disabled" : ""}></span>`;
+          raceSlot = `<span style="display:inline-block;width:44px;text-align:center;"><input type="checkbox" data-race-skill="${esc(s.name)}" ${isRace ? "checked" : ""} ${disabled ? "disabled" : ""}></span>`;
         }
         if (cls && cls.skillChoices.options.includes(s.name)) {
           const disabled = !isClass && creatorState.classSkillChoices.length >= cls.skillChoices.count;
-          classSlot = `<span style="display:inline-block;width:44px;text-align:center;"><input type="checkbox" data-class-skill="${s.name}" ${isClass ? "checked" : ""} ${disabled ? "disabled" : ""}></span>`;
+          classSlot = `<span style="display:inline-block;width:44px;text-align:center;"><input type="checkbox" data-class-skill="${esc(s.name)}" ${isClass ? "checked" : ""} ${disabled ? "disabled" : ""}></span>`;
         }
       }
 
       html += `
         <div class="skill-row" style="cursor:default;">
-          <span class="skill-name">${s.name}</span>
+          <span class="skill-name">${esc(s.name)}</span>
           <span class="skill-bonus">${bonusStr}</span>
           ${raceSlot}${classSlot}
         </div>
@@ -1438,15 +1438,15 @@ function finalStepHtml(stepNum, totalSteps) {
     <div class="breakdown-source">Step ${stepNum} of ${totalSteps} \u00B7 Name & Details</div>
     <div class="field" style="margin-top:14px;">
       <label>Character Name</label>
-      <input id="creator-name-input" type="text" value="${creatorState.name}" placeholder="e.g. Sigrid of Chester">
+      <input id="creator-name-input" type="text" value="${esc(creatorState.name)}" placeholder="e.g. Sigrid of Chester">
     </div>
     <div class="field">
       <label>Appearance (optional)</label>
-      <input id="creator-appearance-input" type="text" value="${creatorState.appearance}" placeholder="Brief physical description">
+      <input id="creator-appearance-input" type="text" value="${esc(creatorState.appearance)}" placeholder="Brief physical description">
     </div>
     <div class="field">
       <label>Backstory (optional)</label>
-      <input id="creator-backstory-input" type="text" value="${creatorState.backstory}" placeholder="A line or two of history">
+      <input id="creator-backstory-input" type="text" value="${esc(creatorState.backstory)}" placeholder="A line or two of history">
     </div>
     <div class="btn-row-2" style="margin-top:10px;">
       <button class="btn-secondary" id="creator-back-button">Back</button>
@@ -1569,14 +1569,14 @@ function partyModalHtml() {
         <div class="modal-heading">Party</div>
         <div class="res-row">
           <div>
-            <div class="res-name">${party.name}</div>
+            <div class="res-name">${esc(party.name)}</div>
             <div class="atk-range">${party.status === "hosting" ? `Hosting \u00B7 Code ${party.code}` : (party.gm ? `Connected \u00B7 GM ${party.gm}` : "Connected \u00B7 No GM")}</div>
           </div>
         </div>
         <div class="breakdown-subhead">Members</div>
         ${party.members.map(m => `
           <div class="member-row">
-            <span>${m.name}</span>
+            <span>${esc(m.name)}</span>
             ${m.owner ? `<span class="res-tag" style="background:#E8843A;color:#1a0f00;">OWNER</span>` : ""}
           </div>
         `).join("")}
@@ -1604,9 +1604,9 @@ function partyModalHtml() {
       <div class="modal-heading">Join a Party</div>
       <div class="breakdown-source" style="margin-bottom:10px;">${FAKE_PARTIES.length} parties found nearby</div>
       ${FAKE_PARTIES.map(p => `
-        <div class="res-row" data-join-party="${p.name}" style="cursor:pointer;">
+        <div class="res-row" data-join-party="${esc(p.name)}" style="cursor:pointer;">
           <div>
-            <div class="res-name">${p.name}</div>
+            <div class="res-name">${esc(p.name)}</div>
             <div class="atk-range">${p.gm ? `GM ${p.gm} \u00B7 ` : ""}${p.members.length} player${p.members.length === 1 ? "" : "s"}</div>
           </div>
           <span class="add-link">Join</span>
@@ -1619,7 +1619,7 @@ function partyModalHtml() {
   if (partyModalScreen === "connecting") {
     return `
       <div class="modal-heading">Join a Party</div>
-      <div class="empty-hint" style="padding:50px 20px;">Connecting to ${partyConnectingTo.name}\u2026</div>
+      <div class="empty-hint" style="padding:50px 20px;">Connecting to ${esc(partyConnectingTo.name)}\u2026</div>
     `;
   }
 
@@ -1848,7 +1848,7 @@ function openAppMenu() {
 
     <div class="drawer-section">App</div>
     ${MENU_STUBS.map(item => `
-      <button class="drawer-item" data-stub="${item.label}">${item.label}<span class="drawer-hint">${item.hint}</span></button>
+      <button class="drawer-item" data-stub="${esc(item.label)}">${esc(item.label)}<span class="drawer-hint">${item.hint}</span></button>
     `).join("")}
   `);
   document.getElementById("menu-short-rest").addEventListener("click", openShortRestModal);
@@ -1953,13 +1953,13 @@ function renderCombatTab() {
     </div>
     <div class="chip-row">
       ${character.activeEffects.map(group => `
-        <div class="chip" data-effect-view="${group.id}">${group.concentration ? `<span class="conc-mark" title="Concentration">\u25C8</span>` : ""}${effectGroupLabel(group)}<button class="chip-remove" data-effect-remove="${group.id}">\u2715</button></div>
+        <div class="chip" data-effect-view="${group.id}">${group.concentration ? `<span class="conc-mark" title="Concentration">\u25C8</span>` : ""}${esc(effectGroupLabel(group))}<button class="chip-remove" data-effect-remove="${group.id}">\u2715</button></div>
       `).join("") || `<div class="empty-hint">Nothing active</div>`}
     </div>
 
     ${concentrationGroups(character).length ? `
       <div class="conc-row">
-        <span>Concentrating \u00B7 ${concentrationGroups(character).map(g => effectGroupLabel(g)).join(", ")}</span>
+        <span>Concentrating \u00B7 ${esc(concentrationGroups(character).map(g => effectGroupLabel(g)).join(", "))}</span>
         <button class="toggle-btn" id="concentration-drop">Drop</button>
       </div>
     ` : ""}
@@ -1979,7 +1979,7 @@ function renderCombatTab() {
     }).join("")}
     ${character.resources.map(r => `
       <div class="res-row">
-        <div class="res-name-wrap" data-resource-view="${r.id}"><span class="res-name">${r.name}</span><span class="res-tag">${r.tag}</span></div>
+        <div class="res-name-wrap" data-resource-view="${r.id}"><span class="res-name">${esc(r.name)}</span><span class="res-tag">${esc(r.tag)}</span></div>
         <div class="stepper"><button data-res-minus="${r.id}">\u2212</button><span class="res-count">${r.current}/${r.max}</span><button data-res-plus="${r.id}">+</button></div>
       </div>
     `).join("")}
@@ -1995,16 +1995,16 @@ function renderCombatTab() {
         <div class="atk-row" data-atk-detail="${weapon.id}">
           <div class="atk-icon">${icon}</div>
           <div style="flex:1;min-width:0;">
-            <div class="atk-name">${weapon.name}${atk.proficiency.proficient ? "" : `<span class="atk-warn" title="Not proficient">!</span>`}</div>
-            <div class="atk-range">${[
+            <div class="atk-name">${esc(weapon.name)}${atk.proficiency.proficient ? "" : `<span class="atk-warn" title="Not proficient">!</span>`}</div>
+            <div class="atk-range">${esc([
               weapon.range,
               atk.damage.map(d => d.type).filter(Boolean).join(" + "),
               atk.ammunition ? atk.ammunition.name + " " + atk.ammunition.current : ""
-            ].filter(Boolean).join(" \u00B7 ")}</div>
+            ].filter(Boolean).join(" \u00B7 "))}</div>
           </div>
           ${atk.versatile ? `<button class="grip-toggle ${atk.twoHanded ? "two" : ""}" data-grip="${weapon.id}" title="One- or two-handed">${atk.twoHanded ? "2H" : "1H"}</button>` : ""}
           <button class="atk-pill" data-roll-tohit="${weapon.id}">${formatModifier(atk.toHitTotal)}</button>
-          <button class="atk-pill" data-roll-damage="${weapon.id}">${atk.damageNotation}</button>
+          <button class="atk-pill" data-roll-damage="${weapon.id}">${esc(atk.damageNotation)}</button>
         </div>
       `;
     }).join("")}
@@ -2341,13 +2341,13 @@ function openEffectDetailModal(effectId) {
   const group = character.activeEffects.find(e => e.id == effectId);
   const modifiers = group.effects || [];
   openModal("center", `
-    <div class="breakdown-title">${effectGroupLabel(group)}</div>
-    <div class="breakdown-row"><span>Duration</span><span>${durationLabel(group)}</span></div>
+    <div class="breakdown-title">${esc(effectGroupLabel(group))}</div>
+    <div class="breakdown-row"><span>Duration</span><span>${esc(durationLabel(group))}</span></div>
     ${group.concentration ? `<div class="breakdown-row"><span>Concentration</span><span>Required</span></div>` : ""}
-    ${group.note ? `<div class="effect-note">${group.note}</div>` : ""}
+    ${group.note ? `<div class="effect-note">${esc(group.note)}</div>` : ""}
     ${modifiers.length ? `
       <div class="breakdown-subhead">Modifiers</div>
-      ${modifiers.map(e => `<div class="breakdown-row"><span>${e.category}</span><span>${effectSummaryLabel(e)}</span></div>`).join("")}
+      ${modifiers.map(e => `<div class="breakdown-row"><span>${esc(e.category)}</span><span>${esc(effectSummaryLabel(e))}</span></div>`).join("")}
     ` : `<div class="empty-hint">No mechanical effect — this is a reminder only.</div>`}
     <button class="btn-primary" id="remove-effect-button" style="background:#5A2C29;color:#F0908A;">Remove Effect</button>
   `);
@@ -2385,7 +2385,7 @@ function openResourceDetailModal(resourceId) {
   const r = character.resources.find(x => x.id == resourceId);
   openModal("sheet", `
     <div class="modal-heading">Edit Resource</div>
-    <div class="field"><label>Name</label><input id="edit-res-name" value="${r.name}"></div>
+    <div class="field"><label>Name</label><input id="edit-res-name" value="${esc(r.name)}"></div>
     <div class="field"><label>Max Uses</label><input id="edit-res-max" type="number" value="${r.max}"></div>
     ${rechargeFieldHtml("edit-res", r.tag)}
     <div class="btn-row-2">
@@ -2435,11 +2435,11 @@ function renderPropertyPicker(container, selected) {
   container.innerHTML = `
     <div class="chip-row" style="margin-bottom:8px;">
       ${selected.map((property, idx) => `
-        <div class="chip">${property}<button class="chip-remove" data-prop-remove="${idx}">✕</button></div>
+        <div class="chip">${esc(property)}<button class="chip-remove" data-prop-remove="${idx}">✕</button></div>
       `).join("") || `<div class="empty-hint" style="padding:2px 0;">No properties</div>`}
     </div>
     ${available.length ? `<div class="prop-palette">
-      ${available.map(name => `<button type="button" class="prop-add" data-prop-add="${name}">+ ${name}</button>`).join("")}
+      ${available.map(name => `<button type="button" class="prop-add" data-prop-add="${esc(name)}">+ ${esc(name)}</button>`).join("")}
     </div>` : ""}
     <div class="field-row" style="margin-top:10px;">
       <div class="field" style="margin-bottom:0;"><input id="prop-custom-input" placeholder="Anything else, e.g. Versatile (1d10)"></div>
@@ -2484,7 +2484,7 @@ function renderDamageRows(container, parts) {
         <button class="chip-remove" data-remove-damage="${idx}">\u2715</button>
       </div>
       <div class="field-row">
-        <div class="field" style="flex:0 0 84px;"><label>Dice</label><input id="dmg-dice-${idx}" value="${part.dice || ""}" placeholder="1d6"></div>
+        <div class="field" style="flex:0 0 84px;"><label>Dice</label><input id="dmg-dice-${idx}" value="${esc(part.dice || "")}" placeholder="1d6"></div>
         ${selectFieldHtml("dmg-type-" + idx, "Damage Type", DAMAGE_TYPES, part.type)}
       </div>
       ${selectFieldHtml("dmg-ability-" + idx, "Adds ability modifier", abilityOptions, part.ability || "")}
@@ -2516,16 +2516,16 @@ function openAttackDetailModal(weaponId) {
   const atk = calculateAttack(character, weapon);
 
   openModal("full", `
-    <div class="modal-heading">${weapon.name}</div>
-    <div class="breakdown-source">${atk.source}${weapon.range ? " \u00B7 " + weapon.range : ""}</div>
-    ${weapon.properties && weapon.properties.length ? `<div class="breakdown-source">${weapon.properties.join(", ")}</div>` : ""}
+    <div class="modal-heading">${esc(weapon.name)}</div>
+    <div class="breakdown-source">${esc(atk.source)}${weapon.range ? " \u00B7 " + esc(weapon.range) : ""}</div>
+    ${weapon.properties && weapon.properties.length ? `<div class="breakdown-source">${esc(weapon.properties.join(", "))}</div>` : ""}
     <div class="breakdown-source">
-      ${atk.proficiency.required ? "Requires " + atk.proficiency.required + " \u2014 " : ""}${atk.proficiency.proficient ? "proficient" : "not proficient"}${atk.proficiency.overridden ? " (set manually)" : ""}
+      ${atk.proficiency.required ? "Requires " + esc(atk.proficiency.required) + " \u2014 " : ""}${atk.proficiency.proficient ? "proficient" : "not proficient"}${atk.proficiency.overridden ? " (set manually)" : ""}
     </div>
     ${atk.finesse ? `<div class="breakdown-source">Finesse \u2014 using ${ABILITY_FULL_NAMES[atk.finesse]}, your better of Strength and Dexterity</div>` : ""}
     ${atk.versatile ? `
       <div class="toggle-line" style="margin-top:10px;">
-        <span>Wielding two-handed <span class="atk-range">(${atk.versatile})</span></span>
+        <span>Wielding two-handed <span class="atk-range">(${esc(atk.versatile)})</span></span>
         <div class="switch ${atk.twoHanded ? "on" : ""}" id="atk-grip-switch"><div class="knob"></div></div>
       </div>` : ""}
 
@@ -2535,11 +2535,11 @@ function openAttackDetailModal(weaponId) {
     <div class="breakdown-total"><span>Total</span><span>${formatModifier(atk.toHitTotal)}</span></div>
 
     ${atk.damage.map(part => `
-      <div class="breakdown-subhead">${part.type || "Damage"}</div>
-      <div class="breakdown-row"><span>Dice</span><span>${part.dice}</span></div>
+      <div class="breakdown-subhead">${esc(part.type || "Damage")}</div>
+      <div class="breakdown-row"><span>Dice</span><span>${esc(part.dice)}</span></div>
       ${breakdownRowsHtml(part.sources)}
       <hr class="breakdown-divider">
-      <div class="breakdown-total"><span>Total</span><span>${part.notation}</span></div>
+      <div class="breakdown-total"><span>Total</span><span>${esc(part.notation)}</span></div>
     `).join("")}
 
     <div class="btn-row-2" style="margin-top:22px;">
@@ -2577,7 +2577,7 @@ let openFeatureCategories = {};
 function renderCollapseSection(title, key, bodyHtml) {
   return `
     <div class="section-head-row" data-section-toggle="${key}" style="cursor:pointer;">
-      <div class="section-head">${title}</div>
+      <div class="section-head">${esc(title)}</div>
       <span style="color:#9C9186;font-size:12px;">${openSections[key] ? "\u2212" : "+"}</span>
     </div>
     ${openSections[key] ? bodyHtml : ""}
@@ -2636,18 +2636,18 @@ function renderCharacterTab() {
   const featuresHtml = `
     ${Object.keys(character.traits).map(category => `
       <div class="collapse-card">
-        <div class="collapse-head" data-trait-category="${category}">
-          <span>${category}</span>
+        <div class="collapse-head" data-trait-category="${esc(category)}">
+          <span>${esc(category)}</span>
           <div style="display:flex;align-items:center;gap:10px;">
-            <button class="mini-edit" data-edit-subsection="${category}">\u270E</button>
+            <button class="mini-edit" data-edit-subsection="${esc(category)}">\u270E</button>
             <span>${openFeatureCategories[category] ? "\u2212" : "+"}</span>
           </div>
         </div>
         <div class="collapse-body ${openFeatureCategories[category] ? "open" : ""}">
           ${character.traits[category].map((t, index) => `
-            <div class="trait-item" data-feature-view="${category}|||${index}">
-              <div class="trait-name">${t.name}</div>
-              ${t.desc ? `<div class="trait-desc">${t.desc}</div>` : ""}
+            <div class="trait-item" data-feature-view="${esc(category)}|||${index}">
+              <div class="trait-name">${esc(t.name)}</div>
+              ${t.desc ? `<div class="trait-desc">${esc(t.desc)}</div>` : ""}
               ${t.effects && t.effects.length ? `<div class="trait-effect">Grants: ${t.effects.map(e => featureEffectSummary(e)).join(", ")}</div>` : ""}
             </div>
           `).join("") || `<div class="empty-hint">Nothing yet</div>`}
@@ -2848,7 +2848,7 @@ function openEditSkillModal(skillName) {
 function openEditSubsectionModal(category) {
   openModal("center", `
     <div class="breakdown-title">Edit Section</div>
-    <div class="field"><label>Name</label><input id="edit-subsection-name" value="${category}"></div>
+    <div class="field"><label>Name</label><input id="edit-subsection-name" value="${esc(category)}"></div>
     <div class="btn-row-2">
       <button class="btn-primary" id="save-subsection-edit-button">Save Changes</button>
       <button class="btn-primary" id="remove-subsection-button" style="background:#5A2C29;color:#F0908A;">Remove</button>
@@ -2872,8 +2872,8 @@ function openEditSubsectionModal(category) {
   document.getElementById("remove-subsection-button").addEventListener("click", () => {
     const count = character.traits[category].length;
     const warning = count > 0
-      ? `This section contains ${count} feature${count === 1 ? "" : "s"} that will also be deleted. Remove "${category}"?`
-      : `Remove empty section "${category}"?`;
+      ? `This section contains ${count} feature${count === 1 ? "" : "s"} that will also be deleted. Remove "${esc(category)}"?`
+      : `Remove empty section "${esc(category)}"?`;
     if (!confirm(warning)) return;
     delete character.traits[category];
     delete openFeatureCategories[category];
@@ -3015,8 +3015,8 @@ function openEditFeatureModal(category, index) {
 
   openModal("full", `
     <div class="modal-heading">Edit Feature</div>
-    <div class="field"><label>Name</label><input id="edit-feature-name" value="${trait.name}"></div>
-    <div class="field"><label>Description</label><input id="edit-feature-desc" value="${trait.desc || ""}"></div>
+    <div class="field"><label>Name</label><input id="edit-feature-name" value="${esc(trait.name)}"></div>
+    <div class="field"><label>Description</label><input id="edit-feature-desc" value="${esc(trait.desc || "")}"></div>
     <div class="field"><label>Effects</label></div>
     <div id="feature-effects-list"></div>
     <button class="add-link" id="add-feature-effect-button">+ Add Effect</button>
@@ -3070,10 +3070,10 @@ function renderSpellRow(spell) {
     <div class="atk-row" data-spell-view="${spell.id}">
       ${spell.level > 0 ? `<div class="prof-dot ${spell.prepared ? "prof" : ""}" data-spell-prep="${spell.id}"></div>` : ""}
       <div style="flex:1;">
-        <div class="atk-name">${spell.name}</div>
-        ${showClassTag ? `<div class="atk-range">${spell.classSource}</div>` : ""}
+        <div class="atk-name">${esc(spell.name)}</div>
+        ${showClassTag ? `<div class="atk-range">${esc(spell.classSource)}</div>` : ""}
       </div>
-      <div class="spell-tag">${spell.castingTime}</div>
+      <div class="spell-tag">${esc(spell.castingTime)}</div>
       ${spell.level > 0 ? `<button class="atk-pill" data-spell-cast="${spell.id}">Cast</button>` : ""}
     </div>
   `;
@@ -3086,11 +3086,11 @@ function renderSpellsTab() {
     const atk = calculateSpellAttack(character, cls.ability);
     const dc = calculateSpellDC(character, cls.ability);
     return `
-      ${classes.length > 1 ? `<div style="text-align:center;font-weight:bold;font-size:13px;color:#F5C37A;margin-top:14px;">${cls.name}</div>` : ""}
+      ${classes.length > 1 ? `<div style="text-align:center;font-weight:bold;font-size:13px;color:#F5C37A;margin-top:14px;">${esc(cls.name)}</div>` : ""}
       <div class="stat-grid" style="${classes.length > 1 ? "margin-top:6px;" : ""}">
         <div class="stat-box"><div class="stat-label">Ability</div><div class="stat-value">${cls.ability}</div></div>
-        <div class="stat-box" data-spell-atk="${cls.name}"><div class="stat-label">Spell Attack</div><div class="stat-value">${formatModifier(atk.total)}</div></div>
-        <div class="stat-box" data-spell-dc="${cls.name}"><div class="stat-label">Spell DC</div><div class="stat-value">${dc.total}</div></div>
+        <div class="stat-box" data-spell-atk="${esc(cls.name)}"><div class="stat-label">Spell Attack</div><div class="stat-value">${formatModifier(atk.total)}</div></div>
+        <div class="stat-box" data-spell-dc="${esc(cls.name)}"><div class="stat-label">Spell DC</div><div class="stat-value">${dc.total}</div></div>
       </div>
     `;
   }).join("");
@@ -3105,7 +3105,7 @@ function renderSpellsTab() {
     const slot = character.spellSlots[lvl];
     return `
       <div class="section-head-row" data-spelllevel-toggle="${lvl}" style="cursor:pointer;margin-top:16px;">
-        <div class="section-head" style="font-size:14px;margin:0;">${levelLabel(lvl)}</div>
+        <div class="section-head" style="font-size:14px;margin:0;">${esc(levelLabel(lvl))}</div>
         <div style="display:flex;align-items:center;gap:10px;">
           ${slot ? `<button class="mini-edit" data-edit-slots="${lvl}">\u270E</button><span style="color:#9C9186;font-size:12px;">${slot.current}/${slot.max} slots</span>` : ""}
           <span style="color:#9C9186;font-size:12px;">${isOpen ? "\u2212" : "+"}</span>
@@ -3156,13 +3156,13 @@ function castSpell(spellId) {
 
 function wireSpellsTab() {
   character.spellcasting.classes.forEach(cls => {
-    const atkBox = document.querySelector(`[data-spell-atk="${cls.name}"]`);
+    const atkBox = document.querySelector(`[data-spell-atk="${esc(cls.name)}"]`);
     if (atkBox) atkBox.addEventListener("click", () => {
       const atk = calculateSpellAttack(character, cls.ability);
       openBreakdownModal(cls.name + " Spell Attack", formatModifier(atk.total), "", atk.sources,
         { label: cls.name + " Spell Attack", notation: "1d20" + formatModifier(atk.total), kind: "attack" });
     });
-    const dcBox = document.querySelector(`[data-spell-dc="${cls.name}"]`);
+    const dcBox = document.querySelector(`[data-spell-dc="${esc(cls.name)}"]`);
     if (dcBox) dcBox.addEventListener("click", () => {
       const dc = calculateSpellDC(character, cls.ability);
       openBreakdownModal(cls.name + " Spell DC", dc.total, "", dc.sources);
@@ -3238,7 +3238,7 @@ function openEditSlotsModal(level) {
 function spellFormFieldsHtml(spell) {
   const classOptions = character.spellcasting.classes.map(c => c.name);
   return `
-    <div class="field"><label>Name</label><input id="spell-form-name" value="${spell ? spell.name : ""}" placeholder="e.g. Fireball"></div>
+    <div class="field"><label>Name</label><input id="spell-form-name" value="${esc(spell ? spell.name : "")}" placeholder="e.g. Fireball"></div>
     <div class="field-row">
       <div class="field"><label>Level</label>
         <select id="spell-form-level">
@@ -3256,7 +3256,7 @@ function spellFormFieldsHtml(spell) {
       </select>
     </div>
     <div class="toggle-line"><span>Requires spell attack roll</span><div class="switch ${spell && spell.attackRoll ? "on" : ""}" id="spell-form-attack-switch"><div class="knob"></div></div></div>
-    <div class="field"><label>Description</label><input id="spell-form-desc" value="${spell ? (spell.desc || "") : ""}" placeholder="Optional"></div>
+    <div class="field"><label>Description</label><input id="spell-form-desc" value="${esc(spell ? (spell.desc || "") : "")}" placeholder="Optional"></div>
   `;
 }
 
@@ -3343,7 +3343,7 @@ function renderInventoryTab() {
     </div>
     ${bonuses.length ? `
       <div class="chip-row" style="margin-top:10px;">
-        ${bonuses.map(bonus => `<div class="chip chip-stat"><span class="chip-value">${bonus.value}</span>${bonus.name}</div>`).join("")}
+        ${bonuses.map(bonus => `<div class="chip chip-stat"><span class="chip-value">${esc(bonus.value)}</span>${esc(bonus.name)}</div>`).join("")}
       </div>` : ""}
 
     <div id="inventory-sections">
@@ -3351,18 +3351,18 @@ function renderInventoryTab() {
         const isOpen = openInvCategories[cat] !== false;
         const items = character.inventory.filter(i => i.category === cat);
         return `
-          <div class="section-head-row" data-cat-card="${cat}" data-inv-cat-toggle="${cat}" style="cursor:pointer;touch-action:none;">
-            <div class="section-head">${cat}</div>
+          <div class="section-head-row" data-cat-card="${esc(cat)}" data-inv-cat-toggle="${esc(cat)}" style="cursor:pointer;touch-action:none;">
+            <div class="section-head">${esc(cat)}</div>
             <div style="display:flex;align-items:center;gap:10px;">
-              <button class="mini-edit" data-edit-category="${cat}">\u270E</button>
+              <button class="mini-edit" data-edit-category="${esc(cat)}">\u270E</button>
               <span style="color:#9C9186;font-size:12px;">${isOpen ? "\u2212" : "+"}</span>
             </div>
           </div>
-          <div data-cat-body="${cat}" style="${isOpen ? "" : "display:none;"}">
+          <div data-cat-body="${esc(cat)}" style="${isOpen ? "" : "display:none;"}">
             ${items.map(item => `
               <div class="item-row" data-item-view="${item.id}" data-item-id="${item.id}" style="touch-action:none;">
                 <div style="flex:1;">
-                  <div class="item-name">${item.name}${item.qty > 1 ? " \u00D7" + item.qty : ""}</div>
+                  <div class="item-name">${esc(item.name)}${item.qty > 1 ? " \u00D7" + item.qty : ""}</div>
                   ${(character.categoryRules[cat].appliesEffects && (item.acBonus || item.attackBonus)) ? `<div class="item-effect">${item.acBonus ? formatModifier(item.acBonus) + " AC " : ""}${item.attackBonus ? formatModifier(item.attackBonus) + " Attack " : ""}</div>` : ""}
                   <div class="item-meta">${character.categoryRules[cat].countsWeight ? item.weight + " lb" : "No weight"}</div>
                 </div>
@@ -3550,13 +3550,13 @@ function commonItemFieldsHtml(item) {
   item = item || {};
   const categories = Object.keys(character.categoryRules);
   return `
-    <div class="field"><label>Name</label><input id="if-name" value="${item.name || ""}" placeholder="e.g. Potion of Healing"></div>
+    <div class="field"><label>Name</label><input id="if-name" value="${esc(item.name || "")}" placeholder="e.g. Potion of Healing"></div>
     ${selectFieldHtml("if-category", "Category", categories, item.category || categories[0])}
     <div class="field-row">
       <div class="field"><label>Weight (lb)</label><input id="if-weight" type="number" value="${item.weight != null ? item.weight : 1}"></div>
       <div class="field"><label>Quantity</label><input id="if-qty" type="number" value="${item.qty || 1}"></div>
     </div>
-    <div class="field"><label>Description (optional)</label><textarea id="if-desc" placeholder="What it is, what it does">${item.description || ""}</textarea></div>
+    <div class="field"><label>Description (optional)</label><textarea id="if-desc" placeholder="What it is, what it does">${esc(item.description || "")}</textarea></div>
     <div class="field-row">
       <div class="field"><label>AC Bonus</label><input id="if-ac" type="number" value="${item.acBonus || 0}"></div>
       <div class="field"><label>Attack Bonus</label><input id="if-atkb" type="number" value="${item.attackBonus || 0}"></div>
@@ -3584,7 +3584,7 @@ function weaponFieldsHtml(weapon) {
     </div>
     <div class="field-row">
       ${selectFieldHtml("wf-type", "Attack Type", [{ value: "melee", label: "Melee" }, { value: "ranged", label: "Ranged" }], weapon.weaponType || "melee")}
-      <div class="field"><label>Range</label><input id="wf-range" value="${weapon.range || ""}" placeholder="5 ft"></div>
+      <div class="field"><label>Range</label><input id="wf-range" value="${esc(weapon.range || "")}" placeholder="5 ft"></div>
     </div>
     <div class="field-row">
       ${comboFieldHtml("wf-req", "Requires Proficiency", "None", weapon.proficiencyRequired)}
@@ -3598,7 +3598,7 @@ function weaponFieldsHtml(weapon) {
     <div class="field" style="margin-top:16px;"><label>Properties</label></div>
     <div id="property-picker"></div>
     ${comboFieldHtml("wf-ammo", "Spends Ammunition From", "None", weapon.ammunition)}
-    <div class="field"><label>Source (optional — leave blank for "Custom")</label><input id="wf-source" value="${weapon.customSource || ""}"></div>`;
+    <div class="field"><label>Source (optional — leave blank for "Custom")</label><input id="wf-source" value="${esc(weapon.customSource || "")}"></div>`;
 }
 
 function wireWeaponFields(state) {
@@ -3804,7 +3804,7 @@ function openEditCategoryModal(category) {
 
   openModal("sheet", `
     <div class="modal-heading">Edit Category</div>
-    <div class="field"><label>Name</label><input id="edit-cat-name" value="${category}"></div>
+    <div class="field"><label>Name</label><input id="edit-cat-name" value="${esc(category)}"></div>
     <div class="toggle-line"><span>Counts toward carry weight</span><div class="switch ${weightOn ? "on" : ""}" id="sw-edit-weight"><div class="knob"></div></div></div>
     <div class="toggle-line"><span>Applies item effects (like Worn/Equipped)</span><div class="switch ${effectsOn ? "on" : ""}" id="sw-edit-effects"><div class="knob"></div></div></div>
     <div class="btn-row-2">
@@ -3836,8 +3836,8 @@ function openEditCategoryModal(category) {
   document.getElementById("remove-cat-button").addEventListener("click", () => {
     const count = character.inventory.filter(i => i.category === category).length;
     const warning = count > 0
-      ? `This category contains ${count} item${count === 1 ? "" : "s"} that will also be deleted. Remove "${category}"?`
-      : `Remove empty category "${category}"?`;
+      ? `This category contains ${count} item${count === 1 ? "" : "s"} that will also be deleted. Remove "${esc(category)}"?`
+      : `Remove empty category "${esc(category)}"?`;
     if (!confirm(warning)) return;
     delete character.categoryRules[category];
     character.inventory = character.inventory.filter(i => i.category !== category);
@@ -3892,7 +3892,7 @@ function openItemDetailModal(itemId) {
 
 function confirmDeleteItem(item) {
   openModal("center", `
-    <div class="modal-heading">Remove ${item.name}?</div>
+    <div class="modal-heading">Remove ${esc(item.name)}?</div>
     <div class="breakdown-source" style="margin-bottom:14px;">This can't be undone.</div>
     <button class="btn-primary" id="confirm-remove-item-button" style="background:#5A2C29;color:#F0908A;margin-bottom:8px;">Remove</button>
     <button class="btn-secondary" id="cancel-remove-item-button">Cancel</button>
@@ -3951,7 +3951,7 @@ function openGiveToModal(item, qty) {
           <div class="recipient-left">
             <div class="char-avatar">${m.name.charAt(0).toUpperCase()}</div>
             <div>
-              <div class="recipient-name">${m.name}</div>
+              <div class="recipient-name">${esc(m.name)}</div>
               <div class="recipient-role">${m.role}</div>
             </div>
           </div>
@@ -4028,7 +4028,7 @@ function renderNoteSectionBlock(sec) {
   const notes = sortNotesForDisplay(character.notes.filter(n => n.sectionId === sec.id));
   return `
     <div class="section-head-row" data-note-sec-card="${sec.id}" data-note-sec-toggle="${sec.id}" style="cursor:pointer;touch-action:none;">
-      <div class="section-head">${sec.name}${sec.receiveFrom ? `<span class="receive-dot" title="Receiving shared notes here"></span>` : ""}</div>
+      <div class="section-head">${esc(sec.name)}${sec.receiveFrom ? `<span class="receive-dot" title="Receiving shared notes here"></span>` : ""}</div>
       <div style="display:flex;align-items:center;gap:10px;">
         <button class="add-link" data-add-note="${sec.id}">+ Add</button>
         <button class="mini-edit" data-edit-section="${sec.id}">\u270E</button>
@@ -4047,13 +4047,13 @@ function renderNoteRow(n) {
   if (n.sharing) {
     tag = n.sharing.sharedByMe
       ? `<span class="share-tag share-tag-out">\u2191 Sharing</span>`
-      : `<span class="share-tag share-tag-in">\u2193 ${n.sharing.sharedByName}</span>`;
+      : `<span class="share-tag share-tag-in">\u2193 ${esc(n.sharing.sharedByName)}</span>`;
   }
   return `
     <div class="item-row note-row" data-note-view="${n.id}" data-note-id="${n.id}" style="touch-action:none;">
       <div style="flex:1;">
-        <div class="item-name">${n.title || "Untitled"}${tag}</div>
-        ${preview ? `<div class="item-meta">${preview}</div>` : ""}
+        <div class="item-name">${esc(n.title || "Untitled")}${esc(tag)}</div>
+        ${preview ? `<div class="item-meta">${esc(preview)}</div>` : ""}
       </div>
     </div>
   `;
@@ -4246,7 +4246,7 @@ function openEditSectionModal(sectionId) {
 
   openModal("sheet", `
     <div class="modal-heading">Edit Section</div>
-    <div class="field"><label>Name</label><input id="edit-sec-name" value="${section.name}"></div>
+    <div class="field"><label>Name</label><input id="edit-sec-name" value="${esc(section.name)}"></div>
     <div class="toggle-line"><span>Auto-share notes added here</span><div class="switch ${autoShare ? "on" : ""}" id="sw-edit-autoshare"><div class="knob"></div></div></div>
     <div class="toggle-line"><span>Receive shared notes here</span><div class="switch ${receiveFrom ? "on" : ""}" id="sw-edit-receive"><div class="knob"></div></div></div>
     <div class="btn-row-2">
@@ -4281,8 +4281,8 @@ function openEditSectionModal(sectionId) {
   document.getElementById("remove-sec-button").addEventListener("click", () => {
     const count = character.notes.filter(n => n.sectionId === sectionId).length;
     const warning = count > 0
-      ? `This section contains ${count} note${count === 1 ? "" : "s"} that will also be deleted. Remove "${section.name}"?`
-      : `Remove empty section "${section.name}"?`;
+      ? `This section contains ${count} note${count === 1 ? "" : "s"} that will also be deleted. Remove "${esc(section.name)}"?`
+      : `Remove empty section "${esc(section.name)}"?`;
     if (!confirm(warning)) return;
     character.noteSections = character.noteSections.filter(s => s.id !== sectionId);
     character.notes = character.notes.filter(n => n.sectionId !== sectionId);
@@ -4301,22 +4301,22 @@ function openNoteEditorModal(noteId) {
   let shareLine = "";
   if (note.sharing) {
     if (note.sharing.sharedByMe) {
-      const names = note.sharing.sharedWith.map(m => `${m.name} (${m.permission})`).join(", ");
-      shareLine = `<div class="share-info">\u2191 Sharing with ${names}${note.sharing.continuous ? "" : " \u00B7 snapshot"}</div>`;
+      const names = note.sharing.sharedWith.map(m => `${esc(m.name)} (${m.permission})`).join(", ");
+      shareLine = `<div class="share-info">\u2191 Sharing with ${esc(names)}${note.sharing.continuous ? "" : " \u00B7 snapshot"}</div>`;
     } else {
-      shareLine = `<div class="share-info">\u2193 Shared by ${note.sharing.sharedByName}${note.sharing.permission === "view" ? " \u00B7 view only" : ""}</div>`;
+      shareLine = `<div class="share-info">\u2193 Shared by ${esc(note.sharing.sharedByName)}${note.sharing.permission === "view" ? " \u00B7 view only" : ""}</div>`;
     }
   }
 
   openModal("full", `
     <div class="modal-heading" style="display:flex;justify-content:space-between;align-items:center;">
-      <span>${section.name}</span>
+      <span>${esc(section.name)}</span>
       <button class="add-link" id="note-menu-button" style="font-size:20px;line-height:1;">\u22EF</button>
     </div>
-    <input id="note-title-input" class="note-title-field" placeholder="Title" value="${(note.title || "").replace(/"/g, "&quot;")}" ${isReadOnly ? "readonly" : ""}>
+    <input id="note-title-input" class="note-title-field" placeholder="Title" value="${esc(note.title)}" ${isReadOnly ? "readonly" : ""}>
     <div class="item-meta" style="margin-bottom:10px;">${new Date(note.updatedAt).toLocaleString()}</div>
     ${shareLine}
-    <textarea id="note-body-input" class="note-body-field" placeholder="Note" ${isReadOnly ? "readonly" : ""}>${note.body || ""}</textarea>
+    <textarea id="note-body-input" class="note-body-field" placeholder="Note" ${isReadOnly ? "readonly" : ""}>${esc(note.body)}</textarea>
     <button class="btn-primary" id="save-note-button" style="margin-top:10px;">Save</button>
   `);
 
@@ -4403,8 +4403,8 @@ function openShareModal(noteId) {
         const label = perm === "off" ? "Not shared" : (perm === "edit" ? "Can Edit" : "Can View");
         return `
           <div class="member-row">
-            <span>${m}</span>
-            <button class="toggle-btn" data-perm="${perm}" data-member-btn="${m}">${label}</button>
+            <span>${esc(m)}</span>
+            <button class="toggle-btn" data-perm="${perm}" data-member-btn="${esc(m)}">${esc(label)}</button>
           </div>
         `;
       }).join("")}

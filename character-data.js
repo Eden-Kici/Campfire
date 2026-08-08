@@ -267,6 +267,23 @@ const ABILITY_FULL_NAMES = {
   INT: "Intelligence", WIS: "Wisdom", CHA: "Charisma"
 };
 
+/* Every view in this app is built by interpolating into template literals and
+   assigning innerHTML, so any user-authored text has to be escaped on the way
+   in. Without it a name containing a quote truncates the input it is rendered
+   into -- value="Sword "Widowmaker"" parses as value="Sword " -- and saving
+   then writes the truncated name back. Angle brackets are worse.
+
+   The proper fix is to stop building markup from strings; this is the fix that
+   fits the current architecture. */
+function esc(text) {
+  return String(text === null || text === undefined ? "" : text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function formatModifier(number) {
   return number >= 0 ? "+" + number : "" + number;
 }
