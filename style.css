@@ -76,6 +76,8 @@ body {
 .hp-label { font-size: 13px; color: #9C9186; margin-bottom: 8px; }
 .hp-bar-track { position: relative; height: 32px; background: black; border-radius: 10px; overflow: hidden; }
 .hp-bar-fill { position: absolute; top: 0; left: 0; bottom: 0; background: #C1443C; }
+/* temp HP rides on top of the red fill, in the same yellow as the "+n temp" label */
+.hp-bar-temp { position: absolute; top: 0; bottom: 0; background: #F5C37A; }
 .hp-bar-text { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 6px; font-weight: bold; font-size: 14px; }
 .hp-temp { color: #F5C37A; font-size: 11.5px; }
 
@@ -138,6 +140,10 @@ body {
 .res-tag { font-size: 10px; color: #6E655B; font-weight: bold; margin-left: 6px; padding: 1px 5px; border-radius: 6px; }
 .res-count { font-weight: bold; font-size: 13px; color: #9C9186; min-width: 34px; text-align: center; }
 
+.hitdice-row { display: flex; align-items: center; gap: 10px; background: #242019; border-radius: 12px; padding: 9px 12px; margin-bottom: 8px; }
+.hitdice-die { font-weight: bold; font-size: 14px; min-width: 34px; }
+.hitdice-count { font-size: 12px; color: #9C9186; flex: 1; }
+
 .stepper { display: flex; align-items: center; gap: 10px; }
 .stepper button {
   width: 26px; height: 26px; border-radius: 50%; border: none;
@@ -174,12 +180,16 @@ body {
 .ability-name { font-size: 11px; color: #9C9186; font-weight: bold; }
 .ability-mod { font-size: 22px; font-weight: bold; color: #E8843A; margin: 2px 0; }
 .ability-score { font-size: 11px; color: #6E655B; }
+/* Static by default. This used to be absolute with a couple of `position:
+   static` overrides, which meant any new container that forgot the override
+   sent its edit button to the top-right of .phone -- every Features & Traits
+   category was stacking one on top of another up there. Only .ability-box
+   actually wants the corner treatment, so only it opts in. */
 .mini-edit {
-  position: absolute; top: 6px; right: 8px; background: none; border: none;
-  color: #6E655B; font-size: 11px; cursor: pointer; padding: 2px;
+  position: static; margin-left: 2px; background: none; border: none;
+  color: #6E655B; font-size: 11px; cursor: pointer; padding: 2px 0 2px 4px;
 }
-.skill-row .mini-edit { position: static; margin-left: 2px; padding: 2px 0 2px 4px; }
-.section-head-row .mini-edit { position: static; margin-left: 2px; padding: 2px 0 2px 4px; }
+.ability-box .mini-edit { position: absolute; top: 6px; right: 8px; margin-left: 0; padding: 2px; }
 
 
 /* -------------------- saving throws + skills -------------------- */
@@ -234,11 +244,26 @@ body {
 .modal-overlay { position: absolute; inset: 0; background: rgba(0, 0, 0, .6); z-index: 100; display: flex; }
 .modal-center { align-items: center; justify-content: center; }
 .modal-sheet, .modal-full { align-items: flex-end; justify-content: center; }
+.modal-drawer { align-items: stretch; justify-content: flex-end; }
 
 .modal-box { background: #1C1815; width: 100%; overflow-y: auto; }
 .modal-center .modal-box { width: 85%; border-radius: 16px; padding: 16px; }
 .modal-sheet .modal-box { border-radius: 20px 20px 0 0; max-height: 65%; padding: 8px 18px 24px; }
 .modal-full .modal-box { border-radius: 20px 20px 0 0; max-height: 94%; height: 94%; padding: 8px 18px 24px; }
+.modal-drawer .modal-box {
+  width: 74%; height: 100%; border-radius: 0; padding: 14px 18px 24px;
+  animation: drawer-in .18s ease-out;
+}
+@keyframes drawer-in { from { transform: translateX(100%); } to { transform: translateX(0); } }
+
+.drawer-section { font-size: 11px; font-weight: bold; color: #6E655B; text-transform: uppercase; margin: 20px 0 8px; }
+.drawer-item {
+  display: flex; align-items: center; justify-content: space-between; width: 100%;
+  background: none; border: none; color: #FAF6F0; font-family: inherit; font-size: 14px;
+  text-align: left; padding: 12px 0; cursor: pointer; border-bottom: 1px solid #332C24;
+}
+.drawer-item:last-child { border-bottom: none; }
+.drawer-item .drawer-hint { font-size: 11px; color: #6E655B; }
 
 .modal-handle { width: 40px; height: 5px; background: #6E655B; border-radius: 3px; margin: 10px auto 14px; cursor: pointer; }
 .modal-close-x { background: none; border: none; color: #9C9186; font-size: 16px; cursor: pointer; float: right; }

@@ -403,6 +403,27 @@ function calculateSpeed(character) {
   return { total, sources };
 }
 
+// An ability check is just the modifier, but the modifier moves in steps of one
+// per two points of score, so effects can't be shown as flat addends. Each
+// source reports the change it actually made to the modifier, which telescopes
+// to the right total.
+function calculateAbilityCheck(character, ability) {
+  const baseScore = character.abilities[ability];
+  const sources = [{ label: "Base score " + baseScore, value: abilityModifier(baseScore) }];
+
+  let runningScore = baseScore;
+  effectsAffectingAbility(character, ability).forEach(effect => {
+    const before = abilityModifier(runningScore);
+    runningScore += effect.value.amount;
+    sources.push({
+      label: effectSourceLabel(effect) + " (" + formatModifier(effect.value.amount) + " score)",
+      value: abilityModifier(runningScore) - before
+    });
+  });
+
+  return { total: abilityModifier(runningScore), sources, score: runningScore };
+}
+
 function calculateSavingThrow(character, ability) {
   const override = character.savingThrowOverride[ability];
   if (override !== undefined && override !== null) {

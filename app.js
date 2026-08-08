@@ -108,6 +108,8 @@ function openModal(mode, contentHtml) {
   const overlay = document.createElement("div");
   overlay.id = "modal-overlay";
   overlay.className = "modal-overlay modal-" + mode;
+  // sheet/full slide up from the bottom and get a drag-to-dismiss handle;
+  // center and drawer get a close button instead
   const showHandle = mode === "sheet" || mode === "full";
 
   overlay.innerHTML = `
@@ -147,11 +149,14 @@ function makeDraggable(handleEl, boxEl) {
   handleEl.addEventListener("click", () => closeModal());
 }
 
+function breakdownRowsHtml(sources) {
+  return sources.map(s => `<div class="breakdown-row"><span>${s.label}</span><span>${formatModifier(s.value)}</span></div>`).join("");
+}
+
 function openBreakdownModal(title, total, suffix, sources, rollButton) {
-  const rows = sources.map(s => `<div class="breakdown-row"><span>${s.label}</span><span>${formatModifier(s.value)}</span></div>`).join("");
   openModal("center", `
     <div class="breakdown-title">${title}</div>
-    ${rows}
+    ${breakdownRowsHtml(sources)}
     <hr class="breakdown-divider">
     <div class="breakdown-total"><span>Total</span><span>${total}${suffix || ""}</span></div>
     ${rollButton ? `<button class="btn-primary" id="breakdown-roll-btn" style="margin-top:14px;">Roll ${rollButton.label}</button>` : ""}
@@ -1403,9 +1408,16 @@ function plural(n, word) {
   return n + " " + word + (n === 1 ? "" : "s");
 }
 
-function applyRest(kind) {
+function applyRest(kind, diceSpend) {
   const isLong = kind === "long";
   const summary = [];
+
+  // hit dice are spent as part of a short rest, before anything else, so the
+  // healing lands before we report on it
+  if (diceSpend) {
+    const spent = spendHitDice(diceSpend);
+    if (spent.dice) summary.push(plural(spent.dice, "hit die").replace("dies", "dice") + " for " + spent.healed + " HP");
+  }
 
   const resources = character.resources.filter(r => restoreOnRest(r, isLong)).length;
   if (resources) summary.push(plural(resources, "resource"));
@@ -1444,19 +1456,60 @@ function applyRest(kind) {
   showToast((isLong ? "Long rest" : "Short rest") + " · " + (summary.join(" · ") || "nothing to restore"));
 }
 
-function openAppMenu() {
+// Items marked data-stub are deliberate placeholders -- the drawer is the home
+// for app-level actions, and these mark out the shape of it before the features
+// behind them exist.
+const MENU_STUBS = [
+  { label: "Party", hint: "Not connected" },
+  { label: "Options", hint: "" },
+  { label: "Export Character", hint: "" },
+  { label: "Dice History", hint: "" },
+  { label: "Help & Rules", hint: "" }
+];
+
+function openShortRestModal() {
+  const pools = character.hitDice || [];
+  const spend = pools.map(() => 0);
+  const conMod = abilityModifier(effectiveAbilityScore(character, "CON"));
+
   openModal("sheet", `
-    <div class="modal-heading">Menu</div>
-    <button class="btn-primary" id="menu-short-rest">Short Rest</button>
-    <button class="btn-secondary" id="menu-long-rest">Long Rest</button>
-    <div class="menu-note">
-      Short rest restores anything tagged SR and clears short-term effects.
-      Long rest also restores LR items, all hit points, and half your spent hit dice.
-      Custom recharges are never restored automatically.
-    </div>
+    <div class="modal-heading">Short Rest</div>
+    ${pools.length ? `
+      <div class="breakdown-source">Spend hit dice to heal — each rolls its die ${formatModifier(conMod)} (your Constitution modifier).</div>
+      ${hitDiceRowsHtml("rest")}
+    ` : `<div class="empty-hint">No hit dice on this sheet.</div>`}
+    <div class="menu-note">Restores anything tagged SR, clears short-term effects, and breaks concentration.</div>
+    <button class="btn-primary" id="confirm-short-rest">Take Short Rest</button>
   `);
-  document.getElementById("menu-short-rest").addEventListener("click", () => applyRest("short"));
+
+  pools.forEach((pool, index) => {
+    const valueEl = document.querySelector(`[data-rest-die-value="${index}"]`);
+    const set = next => { spend[index] = Math.max(0, Math.min(pool.current, next)); valueEl.textContent = spend[index]; };
+    document.querySelector(`[data-rest-die-minus="${index}"]`).addEventListener("click", () => set(spend[index] - 1));
+    document.querySelector(`[data-rest-die-plus="${index}"]`).addEventListener("click", () => set(spend[index] + 1));
+  });
+
+  document.getElementById("confirm-short-rest").addEventListener("click", () => applyRest("short", spend));
+}
+
+function openAppMenu() {
+  openModal("drawer", `
+    <div class="modal-heading">Campfire</div>
+
+    <div class="drawer-section">Rest</div>
+    <button class="drawer-item" id="menu-short-rest">Short Rest<span class="drawer-hint">1 hour</span></button>
+    <button class="drawer-item" id="menu-long-rest">Long Rest<span class="drawer-hint">8 hours</span></button>
+
+    <div class="drawer-section">App</div>
+    ${MENU_STUBS.map(item => `
+      <button class="drawer-item" data-stub="${item.label}">${item.label}<span class="drawer-hint">${item.hint}</span></button>
+    `).join("")}
+  `);
+  document.getElementById("menu-short-rest").addEventListener("click", openShortRestModal);
   document.getElementById("menu-long-rest").addEventListener("click", () => applyRest("long"));
+  document.querySelectorAll("[data-stub]").forEach(button => {
+    button.addEventListener("click", () => { closeModal(); showToast(button.dataset.stub + " isn't built yet"); });
+  });
 }
 
 
@@ -1516,13 +1569,16 @@ function renderCombatTab() {
   const speed = calculateSpeed(character);
   const passivePerception = calculatePassivePerception(character);
   const profBonus = calculateProficiencyBonus(character);
-  const hpPercent = (character.hp.current / maxHP.total) * 100;
+  // temp HP sits above current HP on the same track, clipped at the far end
+  const hpPercent = Math.max(0, Math.min(100, (character.hp.current / maxHP.total) * 100));
+  const tempPercent = Math.min(100 - hpPercent, (character.hp.temp / maxHP.total) * 100);
 
   return `
     <div class="hp-card" id="hp-card">
       <div class="hp-label">Hit Points</div>
       <div class="hp-bar-track">
         <div class="hp-bar-fill" style="width: ${hpPercent}%"></div>
+        ${character.hp.temp ? `<div class="hp-bar-temp" style="left: ${hpPercent}%; width: ${tempPercent}%"></div>` : ""}
         <div class="hp-bar-text">${character.hp.current} / ${maxHP.total}${character.hp.temp ? ` <span class="hp-temp">+${character.hp.temp} temp</span>` : ""}</div>
       </div>
     </div>
@@ -1578,21 +1634,6 @@ function renderCombatTab() {
         <div class="stepper"><button data-res-minus="${r.id}">\u2212</button><span class="res-count">${r.current}/${r.max}</span><button data-res-plus="${r.id}">+</button></div>
       </div>
     `).join("")}
-
-    ${(character.hitDice && character.hitDice.length) ? `
-      <div class="section-head-row">
-        <div class="section-head">Hit Dice</div>
-      </div>
-      ${character.hitDice.map((pool, index) => `
-        <div class="res-row">
-          <div class="res-name-wrap"><span class="res-name">${pool.die}</span><span class="res-tag">½ LR</span></div>
-          <div class="stepper">
-            <span class="res-count">${pool.current}/${pool.total}</span>
-            <button class="atk-pill" data-spend-hitdie="${index}">Spend</button>
-          </div>
-        </div>
-      `).join("")}
-    ` : ""}
 
     <div class="section-head-row">
       <div class="section-head">Attacks</div>
@@ -1679,9 +1720,6 @@ function wireCombatTab() {
     el.addEventListener("click", () => openEditSlotsModal(parseInt(el.dataset.slotView)));
   });
 
-  document.querySelectorAll("[data-spend-hitdie]").forEach(button => {
-    button.addEventListener("click", () => spendHitDie(parseInt(button.dataset.spendHitdie)));
-  });
 
   document.querySelectorAll("[data-roll-tohit]").forEach(button => {
     button.addEventListener("click", (e) => {
@@ -1723,7 +1761,13 @@ function openHpCalculator() {
       <button class="calc-temp" data-hp="temp">TEMP</button>
       <button class="calc-damage" data-hp="damage">DAMAGE</button>
     </div>
+    ${(character.hitDice && character.hitDice.length) ? `
+      <div class="breakdown-subhead">Hit Dice</div>
+      <div id="hitdice-rows">${hitDiceRowsHtml("calc")}</div>
+    ` : ""}
   `);
+
+  wireHitDiceCalcRows();
 
   const exprLine = document.getElementById("calc-expr");
   function refresh() { exprLine.textContent = expr || "\u00A0"; }
@@ -1761,17 +1805,75 @@ function applyHp(type, amount) {
 
 /* ---------------- hit dice ---------------- */
 
-// same stance as casting with no slots: warn, but don't block. a table ruling
-// or homebrew feature can put a character outside the normal economy.
-function spendHitDie(index) {
-  const pool = character.hitDice[index];
-  if (pool.current <= 0) showToast("No " + pool.die + " hit dice left");
-  pool.current--;
-  const notation = "1" + pool.die + formatModifier(abilityModifier(effectiveAbilityScore(character, "CON")));
-  const result = rollNotation(notation);
-  applyHp("heal", result.total);
-  showRollToast("Hit Die – " + pool.die, notation);
-  renderContent();
+/* Spending is available two ways: as part of a short rest, and standalone from
+   the HP calculator. 5e only allows the former, but a POC gains little from
+   enforcing that and loses the ability to correct a miscount mid-session. */
+
+// diceSpend is an array parallel to character.hitDice: how many to spend from
+// each pool. Each die rolls separately and adds the CON modifier.
+function spendHitDice(diceSpend) {
+  const conMod = abilityModifier(effectiveAbilityScore(character, "CON"));
+  let healed = 0, dice = 0;
+  (character.hitDice || []).forEach((pool, index) => {
+    for (let n = 0; n < (diceSpend[index] || 0); n++) {
+      pool.current--;
+      healed += Math.max(0, rollNotation("1" + pool.die).total + conMod);
+      dice++;
+    }
+  });
+  if (healed) applyHp("heal", healed);
+  return { healed, dice };
+}
+
+// The calculator's rows are live: spending or correcting a count redraws just
+// this block, plus the sheet behind it, without closing the calculator.
+function wireHitDiceCalcRows() {
+  const wrap = document.getElementById("hitdice-rows");
+  if (!wrap) return;
+
+  function redraw() {
+    wrap.innerHTML = hitDiceRowsHtml("calc");
+    wireHitDiceCalcRows();
+    renderContent();
+  }
+
+  wrap.querySelectorAll("[data-hd-minus]").forEach(button => {
+    button.addEventListener("click", () => { character.hitDice[button.dataset.hdMinus].current--; redraw(); });
+  });
+  wrap.querySelectorAll("[data-hd-plus]").forEach(button => {
+    button.addEventListener("click", () => { character.hitDice[button.dataset.hdPlus].current++; redraw(); });
+  });
+  wrap.querySelectorAll("[data-hd-spend]").forEach(button => {
+    button.addEventListener("click", () => {
+      const index = parseInt(button.dataset.hdSpend);
+      const pool = character.hitDice[index];
+      if (pool.current <= 0) showToast("No " + pool.die + " hit dice left");
+      const spend = character.hitDice.map((p, i) => (i === index ? 1 : 0));
+      const result = spendHitDice(spend);
+      showRollToast("Hit Die – " + pool.die, "1" + pool.die + formatModifier(abilityModifier(effectiveAbilityScore(character, "CON"))));
+      redraw();
+    });
+  });
+}
+
+function hitDiceRowsHtml(mode) {
+  return (character.hitDice || []).map((pool, index) => `
+    <div class="hitdice-row">
+      <span class="hitdice-die">${pool.die}</span>
+      <span class="hitdice-count">${pool.current} of ${pool.total} left</span>
+      ${mode === "rest"
+        ? `<div class="stepper">
+             <button data-rest-die-minus="${index}">−</button>
+             <span class="res-count" data-rest-die-value="${index}">0</span>
+             <button data-rest-die-plus="${index}">+</button>
+           </div>`
+        : `<div class="stepper">
+             <button data-hd-minus="${index}">−</button>
+             <button data-hd-plus="${index}">+</button>
+             <button class="atk-pill" data-hd-spend="${index}">Spend</button>
+           </div>`}
+    </div>
+  `).join("");
 }
 
 
@@ -2133,11 +2235,15 @@ function wireCharacterTab() {
     });
   });
 
+  // abilities, saves and skills all open a breakdown with a roll button, the
+  // same pattern the Initiative and AC boxes already use
   document.querySelectorAll("[data-ability]").forEach(box => {
     box.addEventListener("click", (e) => {
       if (e.target.closest("[data-edit-ability]")) return;
       const a = box.dataset.ability;
-      showRollToast(ABILITY_FULL_NAMES[a] + " Check", "1d20" + formatModifier(abilityModifier(effectiveAbilityScore(character, a))));
+      const check = calculateAbilityCheck(character, a);
+      openBreakdownModal(ABILITY_FULL_NAMES[a] + " Check", formatModifier(check.total), "", check.sources,
+        { label: ABILITY_FULL_NAMES[a] + " Check", notation: "1d20" + formatModifier(check.total) });
     });
   });
   document.querySelectorAll("[data-edit-ability]").forEach(btn => btn.addEventListener("click", (e) => { e.stopPropagation(); openEditAbilityModal(btn.dataset.editAbility); }));
@@ -2147,7 +2253,8 @@ function wireCharacterTab() {
       if (e.target.closest("[data-edit-save]")) return;
       const a = row.dataset.save;
       const save = calculateSavingThrow(character, a);
-      showRollToast(ABILITY_FULL_NAMES[a] + " Save", "1d20" + formatModifier(save.total));
+      openBreakdownModal(ABILITY_FULL_NAMES[a] + " Save", formatModifier(save.total), "", save.sources,
+        { label: ABILITY_FULL_NAMES[a] + " Save", notation: "1d20" + formatModifier(save.total) });
     });
   });
   document.querySelectorAll("[data-edit-save]").forEach(btn => btn.addEventListener("click", (e) => { e.stopPropagation(); openEditSavingThrowModal(btn.dataset.editSave); }));
@@ -2155,8 +2262,10 @@ function wireCharacterTab() {
   document.querySelectorAll("[data-skill]").forEach(row => {
     row.addEventListener("click", (e) => {
       if (e.target.closest("[data-edit-skill]")) return;
-      const skill = calculateSkill(character, row.dataset.skill);
-      showRollToast(row.dataset.skill, "1d20" + formatModifier(skill.total));
+      const name = row.dataset.skill;
+      const skill = calculateSkill(character, name);
+      openBreakdownModal(name, formatModifier(skill.total), "", skill.sources,
+        { label: name, notation: "1d20" + formatModifier(skill.total) });
     });
   });
   document.querySelectorAll("[data-edit-skill]").forEach(btn => btn.addEventListener("click", (e) => { e.stopPropagation(); openEditSkillModal(btn.dataset.editSkill); }));
@@ -2183,9 +2292,14 @@ function wireCharacterTab() {
 }
 
 function openEditAbilityModal(ability) {
+  const check = calculateAbilityCheck(character, ability);
+
   openModal("center", `
     <div class="breakdown-title">${ABILITY_FULL_NAMES[ability]}</div>
-    <div class="field"><label>Score</label><input id="edit-ability-score" type="number" value="${character.abilities[ability]}"></div>
+    ${breakdownRowsHtml(check.sources)}
+    <hr class="breakdown-divider">
+    <div class="breakdown-total" style="margin-bottom:14px;"><span>Modifier</span><span>${formatModifier(check.total)}</span></div>
+    <div class="field"><label>Base Score</label><input id="edit-ability-score" type="number" value="${character.abilities[ability]}"></div>
     <button class="btn-primary" id="save-ability-button">Save</button>
   `);
   document.getElementById("save-ability-button").addEventListener("click", () => {
@@ -2200,8 +2314,13 @@ function openEditSavingThrowModal(ability) {
   const isOverridden = overrideVal !== undefined && overrideVal !== null;
   let overrideOn = isOverridden;
 
+  const current = calculateSavingThrow(character, ability);
+
   openModal("center", `
     <div class="breakdown-title">${ABILITY_FULL_NAMES[ability]} Save</div>
+    ${breakdownRowsHtml(current.sources)}
+    <hr class="breakdown-divider">
+    <div class="breakdown-total" style="margin-bottom:14px;"><span>Total</span><span>${formatModifier(current.total)}</span></div>
     <div class="field"><label>Proficient?</label>
       <select id="edit-save-prof"><option value="yes" ${character.savingThrowProficiency[ability] ? "selected" : ""}>Yes</option><option value="no" ${!character.savingThrowProficiency[ability] ? "selected" : ""}>No</option></select>
     </div>
@@ -2238,8 +2357,13 @@ function openEditSkillModal(skillName) {
   const isOverridden = overrideVal !== undefined && overrideVal !== null;
   let overrideOn = isOverridden;
 
+  const currentSkill = calculateSkill(character, skillName);
+
   openModal("center", `
     <div class="breakdown-title">${skillName}</div>
+    ${breakdownRowsHtml(currentSkill.sources)}
+    <hr class="breakdown-divider">
+    <div class="breakdown-total" style="margin-bottom:14px;"><span>Total</span><span>${formatModifier(currentSkill.total)}</span></div>
     <div class="field"><label>Proficiency</label>
       <select id="edit-skill-prof">
         <option value="0" ${current === 0 ? "selected" : ""}>None</option>
