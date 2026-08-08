@@ -31,6 +31,11 @@ const DAMAGE_TYPES = [
 // suggestions only -- the field is free text, so "Exotic" or "Firearms" work
 const WEAPON_PROFICIENCY_TYPES = ["Simple", "Martial"];
 
+const SRD_WEAPON_PROPERTIES = [
+  "Ammunition", "Finesse", "Heavy", "Light", "Loading",
+  "Range", "Reach", "Special", "Thrown", "Two-Handed", "Versatile"
+];
+
 const MODIFIER_STATS = ["AC", "Initiative", "Speed", "Attack Rolls", "Damage Rolls", "Proficiency Bonus", "Spell Attack", "Spell DC"];
 const EFFECT_CATEGORIES_GENERAL = ["Condition", "Ability Score", "Saving Throw", "Skill", "Bonus", "Advantage"];
 const EFFECT_CATEGORIES_FEATURE = ["Ability Score", "Saving Throw", "Skill", "Bonus", "Advantage"];
@@ -2406,8 +2411,10 @@ function openAddAttackModal() {
     <div id="damage-rows"></div>
     <button class="add-link" id="add-damage-button">+ Add Damage Type</button>
 
-    <div class="field" style="margin-top:14px;"><label>Properties (comma separated)</label><input id="new-atk-props" placeholder="Light, Thrown"></div>
-    <div class="field"><label>Source (optional \u2014 leave blank for "Custom")</label><input id="new-atk-source" placeholder="e.g. Innate, Warlock Pact"></div>
+    <div class="field" style="margin-top:14px;"><label>Properties</label></div>
+    <div id="property-picker"></div>
+
+    <div class="field" style="margin-top:14px;"><label>Source (optional \u2014 leave blank for "Custom")</label><input id="new-atk-source" placeholder="e.g. Innate, Warlock Pact"></div>
     <button class="btn-primary" id="save-atk-button">Add Attack</button>
   `);
 
@@ -2422,6 +2429,9 @@ function openAddAttackModal() {
     renderDamageRows(damageRows, parts);
   });
 
+  const properties = [];
+  renderPropertyPicker(document.getElementById("property-picker"), properties);
+
   document.getElementById("save-atk-button").addEventListener("click", () => {
     const newId = Math.max(0, ...character.inventory.map(i => i.id)) + 1;
     character.inventory.push({
@@ -2434,12 +2444,66 @@ function openAddAttackModal() {
       damage: readDamageRows(parts),
       weaponType: document.getElementById("new-atk-type").value,
       range: document.getElementById("new-atk-range").value.trim(),
-      properties: document.getElementById("new-atk-props").value.split(",").map(s => s.trim()).filter(Boolean),
+      properties: properties.slice(),
       customSource: document.getElementById("new-atk-source").value.trim()
     });
     closeModal();
     renderContent();
   });
+}
+
+/* Properties are free-form strings because several SRD ones carry a parameter
+   -- "Versatile (1d10)", "Thrown (range 20/60)". So rather than a fixed set of
+   checkboxes, the picker shows what's selected as removable chips and offers
+   the unused SRD names as a palette, with a free-text field for anything else.
+   A palette entry is considered used if its base name (the text before any
+   bracket) already appears, so "Versatile (1d10)" hides the plain "Versatile"
+   button instead of offering a duplicate. */
+function propertyBaseName(text) {
+  return String(text).split("(")[0].trim().toLowerCase();
+}
+
+function renderPropertyPicker(container, selected) {
+  const taken = selected.map(propertyBaseName);
+  const available = SRD_WEAPON_PROPERTIES.filter(name => !taken.includes(propertyBaseName(name)));
+
+  container.innerHTML = `
+    <div class="chip-row" style="margin-bottom:8px;">
+      ${selected.map((property, idx) => `
+        <div class="chip">${property}<button class="chip-remove" data-prop-remove="${idx}">✕</button></div>
+      `).join("") || `<div class="empty-hint" style="padding:2px 0;">No properties</div>`}
+    </div>
+    ${available.length ? `<div class="prop-palette">
+      ${available.map(name => `<button type="button" class="prop-add" data-prop-add="${name}">+ ${name}</button>`).join("")}
+    </div>` : ""}
+    <div class="field-row" style="margin-top:10px;">
+      <div class="field" style="margin-bottom:0;"><input id="prop-custom-input" placeholder="Anything else, e.g. Versatile (1d10)"></div>
+      <button type="button" class="btn-secondary prop-custom-add" id="prop-custom-add">Add</button>
+    </div>
+  `;
+
+  container.querySelectorAll("[data-prop-remove]").forEach(button => {
+    button.addEventListener("click", () => {
+      selected.splice(parseInt(button.dataset.propRemove), 1);
+      renderPropertyPicker(container, selected);
+    });
+  });
+  container.querySelectorAll("[data-prop-add]").forEach(button => {
+    button.addEventListener("click", () => {
+      selected.push(button.dataset.propAdd);
+      renderPropertyPicker(container, selected);
+    });
+  });
+
+  const customInput = container.querySelector("#prop-custom-input");
+  function addCustom() {
+    const value = customInput.value.trim();
+    if (!value) return;
+    selected.push(value);
+    renderPropertyPicker(container, selected);
+  }
+  container.querySelector("#prop-custom-add").addEventListener("click", addCustom);
+  customInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addCustom(); } });
 }
 
 /* Repeatable damage rows, so one weapon can deal several types. Same editing
@@ -2530,8 +2594,10 @@ function openAttackDetailModal(weaponId) {
     <div id="damage-rows"></div>
     <button class="add-link" id="add-damage-button">+ Add Damage Type</button>
 
-    <div class="field" style="margin-top:14px;"><label>Properties (comma separated)</label><input id="edit-atk-props" value="${(weapon.properties || []).join(", ")}"></div>
-    <div class="field"><label>Source (optional \u2014 leave blank for "Custom")</label><input id="edit-atk-source" value="${weapon.customSource || ""}"></div>
+    <div class="field" style="margin-top:14px;"><label>Properties</label></div>
+    <div id="property-picker"></div>
+
+    <div class="field" style="margin-top:14px;"><label>Source (optional \u2014 leave blank for "Custom")</label><input id="edit-atk-source" value="${weapon.customSource || ""}"></div>
 
     <div class="btn-row-2">
       <button class="btn-primary" id="save-edit-atk-button">Save Changes</button>
@@ -2551,12 +2617,15 @@ function openAttackDetailModal(weaponId) {
     renderDamageRows(damageRows, parts);
   });
 
+  const properties = (weapon.properties || []).slice();
+  renderPropertyPicker(document.getElementById("property-picker"), properties);
+
   document.getElementById("save-edit-atk-button").addEventListener("click", () => {
     weapon.name = document.getElementById("edit-atk-name").value.trim() || weapon.name;
     weapon.attackAbility = document.getElementById("edit-atk-ability").value;
     weapon.weaponType = document.getElementById("edit-atk-type").value;
     weapon.range = document.getElementById("edit-atk-range").value.trim();
-    weapon.properties = document.getElementById("edit-atk-props").value.split(",").map(s => s.trim()).filter(Boolean);
+    weapon.properties = properties.slice();
     weapon.customSource = document.getElementById("edit-atk-source").value.trim();
     weapon.magicBonus = parseInt(document.getElementById("edit-atk-magic").value) || 0;
     weapon.proficiencyRequired = document.getElementById("edit-atk-req").value.trim();
