@@ -2220,7 +2220,7 @@ function openAddEffectModal() {
       ], "Permanent")}
       <div class="field field-shrink">
         <label>Concentration</label>
-        <div class="switch" id="effect-conc-switch"><div class="knob"></div></div>
+        <div class="field-control"><div class="switch" id="effect-conc-switch"><div class="knob"></div></div></div>
       </div>
     </div>
     <div id="effect-duration-rounds"></div>

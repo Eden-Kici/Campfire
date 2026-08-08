@@ -365,10 +365,13 @@ body {
 .select-option:active, .select-option:hover { background: #242019; }
 .select-option.active { color: #E8843A; font-weight: bold; }
 
-/* a field that takes only the width it needs, for pairing a control with a
-   full-width one on the same row */
+/* A field that takes only the width it needs, for pairing a short control with
+   a full-width one on the same row. .field-control gives the short control the
+   same box height as an input or select trigger (10px padding + ~18px line),
+   so the two line up on their centres instead of their tops. */
 .field-shrink { flex: 0 0 auto; }
-.field-shrink .switch { margin-top: 4px; }
+.field-control { display: flex; align-items: center; min-height: 38px; }
+.field-shrink .field-control { justify-content: center; }
 
 .effect-note {
   font-size: 12px; color: #9C9186; line-height: 1.45;
