@@ -1492,6 +1492,20 @@ function openShortRestModal() {
   document.getElementById("confirm-short-rest").addEventListener("click", () => applyRest("short", spend));
 }
 
+function openLongRestModal() {
+  openModal("center", `
+    <div class="modal-heading">Take a Long Rest?</div>
+    <div class="menu-note" style="margin-top:0;">
+      Restores all hit points, every SR and LR resource, all spell slots, and half your spent hit dice.
+      Clears temporary hit points, breaks concentration, and ends anything lasting until a short or long rest.
+    </div>
+    <button class="btn-primary" id="confirm-long-rest" style="margin-top:16px;">Take Long Rest</button>
+    <button class="btn-secondary" id="cancel-long-rest">Cancel</button>
+  `);
+  document.getElementById("confirm-long-rest").addEventListener("click", () => applyRest("long"));
+  document.getElementById("cancel-long-rest").addEventListener("click", closeModal);
+}
+
 function openAppMenu() {
   openModal("drawer", `
     <div class="modal-heading">Campfire</div>
@@ -1506,7 +1520,7 @@ function openAppMenu() {
     `).join("")}
   `);
   document.getElementById("menu-short-rest").addEventListener("click", openShortRestModal);
-  document.getElementById("menu-long-rest").addEventListener("click", () => applyRest("long"));
+  document.getElementById("menu-long-rest").addEventListener("click", openLongRestModal);
   document.querySelectorAll("[data-stub]").forEach(button => {
     button.addEventListener("click", () => { closeModal(); showToast(button.dataset.stub + " isn't built yet"); });
   });
@@ -1569,9 +1583,13 @@ function renderCombatTab() {
   const speed = calculateSpeed(character);
   const passivePerception = calculatePassivePerception(character);
   const profBonus = calculateProficiencyBonus(character);
-  // temp HP sits above current HP on the same track, clipped at the far end
-  const hpPercent = Math.max(0, Math.min(100, (character.hp.current / maxHP.total) * 100));
-  const tempPercent = Math.min(100 - hpPercent, (character.hp.temp / maxHP.total) * 100);
+  /* Temp HP is a buffer on top of your maximum, not a slice of it -- so the bar
+     scales to (max + temp) while temp is up. Measuring temp against max alone
+     meant that at full health there was no room left to draw it, which is
+     exactly when you most often gain it. */
+  const hpPool = maxHP.total + character.hp.temp;
+  const hpPercent = hpPool > 0 ? Math.max(0, Math.min(100, (character.hp.current / hpPool) * 100)) : 0;
+  const tempPercent = hpPool > 0 ? Math.min(100 - hpPercent, (character.hp.temp / hpPool) * 100) : 0;
 
   return `
     <div class="hp-card" id="hp-card">
@@ -2248,13 +2266,14 @@ function wireCharacterTab() {
   });
   document.querySelectorAll("[data-edit-ability]").forEach(btn => btn.addEventListener("click", (e) => { e.stopPropagation(); openEditAbilityModal(btn.dataset.editAbility); }));
 
+  // rows in these two lists roll straight away -- the maths lives behind the
+  // pencil, so the common action stays one tap
   document.querySelectorAll("[data-save]").forEach(row => {
     row.addEventListener("click", (e) => {
       if (e.target.closest("[data-edit-save]")) return;
       const a = row.dataset.save;
       const save = calculateSavingThrow(character, a);
-      openBreakdownModal(ABILITY_FULL_NAMES[a] + " Save", formatModifier(save.total), "", save.sources,
-        { label: ABILITY_FULL_NAMES[a] + " Save", notation: "1d20" + formatModifier(save.total) });
+      showRollToast(ABILITY_FULL_NAMES[a] + " Save", "1d20" + formatModifier(save.total));
     });
   });
   document.querySelectorAll("[data-edit-save]").forEach(btn => btn.addEventListener("click", (e) => { e.stopPropagation(); openEditSavingThrowModal(btn.dataset.editSave); }));
@@ -2264,8 +2283,7 @@ function wireCharacterTab() {
       if (e.target.closest("[data-edit-skill]")) return;
       const name = row.dataset.skill;
       const skill = calculateSkill(character, name);
-      openBreakdownModal(name, formatModifier(skill.total), "", skill.sources,
-        { label: name, notation: "1d20" + formatModifier(skill.total) });
+      showRollToast(name, "1d20" + formatModifier(skill.total));
     });
   });
   document.querySelectorAll("[data-edit-skill]").forEach(btn => btn.addEventListener("click", (e) => { e.stopPropagation(); openEditSkillModal(btn.dataset.editSkill); }));

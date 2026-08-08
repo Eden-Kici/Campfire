@@ -409,7 +409,7 @@ function calculateSpeed(character) {
 // to the right total.
 function calculateAbilityCheck(character, ability) {
   const baseScore = character.abilities[ability];
-  const sources = [{ label: "Base score " + baseScore, value: abilityModifier(baseScore) }];
+  const sources = [{ label: ABILITY_FULL_NAMES[ability] + " (base " + baseScore + ")", value: abilityModifier(baseScore) }];
 
   let runningScore = baseScore;
   effectsAffectingAbility(character, ability).forEach(effect => {
@@ -429,8 +429,9 @@ function calculateSavingThrow(character, ability) {
   if (override !== undefined && override !== null) {
     return { total: override, sources: [{ label: "Manual override", value: override }], overridden: true };
   }
-  const sources = [];
-  sources.push({ label: ABILITY_FULL_NAMES[ability] + " modifier", value: abilityModifier(effectiveAbilityScore(character, ability)) });
+  // borrow the ability check's decomposition so a buff that raised the score
+  // shows up as its own line instead of disappearing into "Strength modifier"
+  const sources = calculateAbilityCheck(character, ability).sources.slice();
   if (character.savingThrowProficiency[ability]) {
     sources.push({ label: "Proficiency", value: calculateProficiencyBonus(character).total });
   }
@@ -445,8 +446,7 @@ function calculateSkill(character, skillName) {
     return { total: override, sources: [{ label: "Manual override", value: override }], overridden: true };
   }
   const ability = character.skillAbilityMap[skillName];
-  const sources = [];
-  sources.push({ label: ABILITY_FULL_NAMES[ability] + " modifier", value: abilityModifier(effectiveAbilityScore(character, ability)) });
+  const sources = calculateAbilityCheck(character, ability).sources.slice();
 
   const profLevel = character.skillProficiency[skillName] || 0;
   const profBonus = calculateProficiencyBonus(character).total;
