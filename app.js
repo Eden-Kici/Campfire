@@ -3447,20 +3447,22 @@ function renderInventoryTab() {
   const bonuses = [];
   character.inventory.forEach(item => {
     const rule = character.categoryRules[item.category];
-    if (rule && rule.appliesEffects) {
-      if (item.acBonus) bonuses.push(formatModifier(item.acBonus) + " AC (" + item.name + ")");
-      if (item.attackBonus) bonuses.push(formatModifier(item.attackBonus) + " Attack Rolls (" + item.name + ")");
-    }
+    if (!rule || !rule.appliesEffects) return;
+    if (item.acBonus) bonuses.push({ value: formatModifier(item.acBonus) + " AC", name: item.name });
+    if (item.attackBonus) bonuses.push({ value: formatModifier(item.attackBonus) + " Attack", name: item.name });
   });
   const weight = calculateCarriedWeight(character);
   const categories = Object.keys(character.categoryRules);
 
   return `
-    ${bonuses.length ? `<div class="bonus-banner">Active bonuses: ${bonuses.join(" \u00B7 ")}</div>` : ""}
     <div class="weight-line" style="display:flex;align-items:center;justify-content:space-between;">
       <span>Carried weight: <strong>${weight.total} lb</strong></span>
       <button class="add-link" id="add-inventory-button">+ Add</button>
     </div>
+    ${bonuses.length ? `
+      <div class="chip-row" style="margin-top:10px;">
+        ${bonuses.map(bonus => `<div class="chip chip-stat"><span class="chip-value">${bonus.value}</span>${bonus.name}</div>`).join("")}
+      </div>` : ""}
 
     <div id="inventory-sections">
       ${categories.map(cat => {
