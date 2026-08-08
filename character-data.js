@@ -479,7 +479,7 @@ function calculateAC(character) {
 
   let dexAllowed = dexModifier;
   if (worn) {
-    sources.push({ label: worn.name + " (base)", value: worn.armour.base || 0 });
+    sources.push({ label: worn.name, value: worn.armour.base || 0 });
     const cap = worn.armour.dexCap;
     if (cap !== null && cap !== undefined) dexAllowed = Math.min(dexModifier, cap);
   } else {
@@ -498,7 +498,7 @@ function calculateAC(character) {
 
   // flat bonuses from anything that isn't armour, e.g. a Cloak of Protection
   equippedEffectItems(character).forEach(item => {
-    if (item.acBonus && !item.armour) sources.push({ label: item.category + " \u2013 " + item.name, value: item.acBonus });
+    if (item.acBonus && !item.armour) sources.push({ label: item.name, value: item.acBonus });
   });
   effectsAffectingStat(character, "AC").forEach(e => sources.push({ label: effectSourceLabel(e), value: e.value.amount }));
 
@@ -669,7 +669,7 @@ function calculateAttack(character, weapon) {
 
   equippedEffectItems(character).forEach(item => {
     if (item.attackBonus && item.id !== weapon.id) {
-      toHitSources.push({ label: item.category + " \u2013 " + item.name, value: item.attackBonus });
+      toHitSources.push({ label: item.name, value: item.attackBonus });
     }
   });
   effectsAffectingStat(character, "Attack Rolls").forEach(e => toHitSources.push({ label: effectSourceLabel(e), value: e.value.amount }));
