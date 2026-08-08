@@ -555,41 +555,81 @@ function rechargeCustomFieldHtml(idPrefix, value) {
   `;
 }
 
-function rechargeFieldHtml(idPrefix, currentTag) {
-  const known = ["SR", "LR", "\u2014"];
-  const isKnown = known.includes(currentTag);
-  const selectedType = isKnown ? (currentTag === "\u2014" ? "None" : currentTag) : "Custom";
+function rechargeFieldHtml(idPrefix, recharge) {
+  recharge = recharge || { on: "SR", amount: "all" };
+  const known = ["SR", "LR", "none"];
+  const isKnown = known.includes(recharge.on);
+  const selectedOn = isKnown ? (recharge.on === "none" ? "None" : recharge.on) : "Custom";
+  const amount = recharge.amount === undefined ? "all" : recharge.amount;
+  const amountType = (amount === "all" || amount === "half") ? amount : "custom";
+
   return `
-    ${selectFieldHtml(idPrefix + "-tag-type", "Recharges", [
-      { value: "SR", label: "Short Rest" },
-      { value: "LR", label: "Long Rest" },
-      { value: "None", label: "Doesn't Recharge" },
-      { value: "Custom", label: "Custom" }
-    ], selectedType)}
+    <div class="field-row">
+      ${selectFieldHtml(idPrefix + "-tag-type", "Recharges", [
+        { value: "SR", label: "Short Rest" },
+        { value: "LR", label: "Long Rest" },
+        { value: "None", label: "Doesn't Recharge" },
+        { value: "Custom", label: "Custom" }
+      ], selectedOn)}
+      ${selectFieldHtml(idPrefix + "-amount-type", "Restores", [
+        { value: "all", label: "All" },
+        { value: "half", label: "Half" },
+        { value: "custom", label: "Custom" }
+      ], amountType)}
+    </div>
+    <div id="${idPrefix}-amount-custom-wrap">
+      ${amountType === "custom" ? rechargeAmountFieldHtml(idPrefix, amount) : ""}
+    </div>
     <div id="${idPrefix}-tag-custom-wrap">
-      ${selectedType === "Custom" ? rechargeCustomFieldHtml(idPrefix, isKnown ? "" : currentTag) : ""}
+      ${selectedOn === "Custom" ? rechargeCustomFieldHtml(idPrefix, isKnown ? "" : recharge.on) : ""}
     </div>
   `;
 }
 
+function rechargeAmountFieldHtml(idPrefix, amount) {
+  const value = (amount === "all" || amount === "half") ? "" : amount;
+  return `<div class="field"><label>How Much</label>
+    <input id="${idPrefix}-amount-custom" value="${esc(value)}" placeholder="a number, or dice like 1d4">
+  </div>`;
+}
+
 function wireRechargeField(idPrefix) {
   wireSelect(idPrefix + "-tag-type");
-  const select = document.getElementById(idPrefix + "-tag-type");
-  const wrap = document.getElementById(idPrefix + "-tag-custom-wrap");
-  select.addEventListener("change", () => {
-    wrap.innerHTML = select.value === "Custom" ? rechargeCustomFieldHtml(idPrefix, "") : "";
+  wireSelect(idPrefix + "-amount-type");
+
+  const onSelect = document.getElementById(idPrefix + "-tag-type");
+  const onWrap = document.getElementById(idPrefix + "-tag-custom-wrap");
+  onSelect.addEventListener("change", () => {
+    onWrap.innerHTML = onSelect.value === "Custom" ? rechargeCustomFieldHtml(idPrefix, "") : "";
+  });
+
+  const amountSelect = document.getElementById(idPrefix + "-amount-type");
+  const amountWrap = document.getElementById(idPrefix + "-amount-custom-wrap");
+  amountSelect.addEventListener("change", () => {
+    amountWrap.innerHTML = amountSelect.value === "custom" ? rechargeAmountFieldHtml(idPrefix, "") : "";
   });
 }
 
 function readRechargeValue(idPrefix) {
-  const type = document.getElementById(idPrefix + "-tag-type").value;
-  if (type === "Custom") {
+  const onType = document.getElementById(idPrefix + "-tag-type").value;
+  let on = onType;
+  if (onType === "None") on = "none";
+  else if (onType === "Custom") {
     const input = document.getElementById(idPrefix + "-tag-custom");
-    return input && input.value.trim() ? input.value.trim() : "Custom";
+    on = input && input.value.trim() ? input.value.trim() : "Custom";
   }
-  if (type === "None") return "\u2014";
-  return type;
+
+  const amountType = document.getElementById(idPrefix + "-amount-type").value;
+  let amount = amountType;
+  if (amountType === "custom") {
+    const input = document.getElementById(idPrefix + "-amount-custom");
+    const raw = input ? input.value.trim() : "";
+    amount = raw === "" ? "all" : (/^\d+$/.test(raw) ? parseInt(raw) : raw);
+  }
+
+  return { on, amount };
 }
+
 
 
 /* ============================================================
@@ -1716,25 +1756,26 @@ function wirePartyModal() {
      - Hit dice spending, which is a player choice rather than part of the
        automatic sweep. Spend them from the Hit Dice rows on the Combat tab. */
 
-function restoreOnRest(entry, isLong) {
-  const rule = (entry.tag || entry.recharge || "").toUpperCase();
-  if (rule !== "SR" && rule !== "LR") return false;      // custom / "—" never auto-restore
-  if (rule === "LR" && !isLong) return false;
-  if (entry.current === entry.max) return false;
-  entry.current = entry.max;
-  return true;
+/* Anything with a { recharge, current, max } shape restores the same way --
+   resources, spell slots and hit dice all go through here. `amount` is what
+   makes hit dice expressible: they return half on a long rest, which the old
+   single-string tag could only fake in its label. */
+function restoredValue(entry, ceiling) {
+  const amount = entry.recharge && entry.recharge.amount !== undefined ? entry.recharge.amount : "all";
+  if (amount === "all") return ceiling;
+  if (amount === "half") return Math.min(ceiling, entry.current + Math.max(1, Math.floor(ceiling / 2)));
+  if (typeof amount === "number") return Math.min(ceiling, entry.current + amount);
+  return Math.min(ceiling, entry.current + rollNotation(String(amount)).total);
 }
 
-// 5e: a long rest returns half your total hit dice, rounded down, minimum one.
-// The player picks which in the real rules; we fill the largest pools first.
-function regainHitDice() {
-  const pools = character.hitDice || [];
-  let budget = Math.max(1, Math.floor(pools.reduce((sum, p) => sum + p.total, 0) / 2));
-  let regained = 0;
-  pools.forEach(pool => {
-    while (budget > 0 && pool.current < pool.total) { pool.current++; budget--; regained++; }
-  });
-  return regained;
+function restoreOnRest(entry, isLong) {
+  const on = entry.recharge && entry.recharge.on;
+  if (on !== "SR" && on !== "LR") return false;         // custom and "none" never auto-restore
+  if (on === "LR" && !isLong) return false;
+  const ceiling = entry.max !== undefined ? entry.max : entry.total;
+  const before = entry.current;
+  entry.current = restoredValue(entry, ceiling);
+  return entry.current !== before;
 }
 
 function plural(n, word) {
@@ -1775,13 +1816,19 @@ function applyRest(kind, diceSpend) {
   if (cleared) summary.push(plural(cleared, "effect") + " cleared");
   if (stillConcentrating) summary.push("concentration broken");
 
+  // hit dice recharge through the same rule as everything else
+  let diceRegained = 0;
+  (character.hitDice || []).forEach(pool => {
+    const before = pool.current;
+    if (restoreOnRest(pool, isLong)) diceRegained += pool.current - before;
+  });
+  if (diceRegained) summary.push(plural(diceRegained, "hit die").replace("dies", "dice"));
+
   if (isLong) {
     const maxHP = calculateMaxHP(character);
     if (character.hp.current !== maxHP.total) summary.push("HP restored");
     character.hp.current = maxHP.total;
     character.hp.temp = 0;                                // temp HP ends on a long rest
-    const dice = regainHitDice();
-    if (dice) summary.push(plural(dice, "hit die").replace("dies", "dice"));
   }
 
   closeModal();
@@ -1973,14 +2020,14 @@ function renderCombatTab() {
       const slot = character.spellSlots[lvl];
       return `
       <div class="res-row">
-        <div class="res-name-wrap" data-slot-view="${lvl}"><span class="res-name">${slotRowName(lvl)}</span><span class="res-tag">${slot.recharge || "LR"}</span></div>
+        <div class="res-name-wrap" data-slot-view="${lvl}"><span class="res-name">${slotRowName(lvl)}</span><span class="res-tag">${esc(rechargeLabel(slot.recharge))}</span></div>
         <div class="stepper"><button data-slot-minus="${lvl}">\u2212</button><span class="res-count">${slot.current}/${slot.max}</span><button data-slot-plus="${lvl}">+</button></div>
       </div>
     `;
     }).join("")}
     ${character.resources.map(r => `
       <div class="res-row">
-        <div class="res-name-wrap" data-resource-view="${r.id}"><span class="res-name">${esc(r.name)}</span><span class="res-tag">${esc(r.tag)}</span></div>
+        <div class="res-name-wrap" data-resource-view="${r.id}"><span class="res-name">${esc(r.name)}</span><span class="res-tag">${esc(rechargeLabel(r.recharge))}</span></div>
         <div class="stepper"><button data-res-minus="${r.id}">\u2212</button><span class="res-count">${r.current}/${r.max}</span><button data-res-plus="${r.id}">+</button></div>
       </div>
     `).join("")}
@@ -2237,8 +2284,8 @@ function wireHitDiceCalcRows() {
 function hitDiceRowsHtml(mode) {
   return (character.hitDice || []).map((pool, index) => `
     <div class="hitdice-row">
-      <span class="hitdice-die">${pool.die}</span>
-      <span class="hitdice-count">${pool.current} of ${pool.total} left</span>
+      <span class="hitdice-die">${esc(pool.die)}</span>
+      <span class="hitdice-count">${pool.current} of ${pool.total} left<span class="res-tag">${esc(rechargeLabel(pool.recharge))}</span></span>
       ${mode === "rest"
         ? `<div class="stepper">
              <button data-rest-die-minus="${index}">−</button>
@@ -2367,16 +2414,16 @@ function openAddResourceModal() {
     <div class="modal-heading">New Resource</div>
     <div class="field"><label>Name</label><input id="new-res-name" placeholder="e.g. Bardic Inspiration"></div>
     <div class="field"><label>Max Uses</label><input id="new-res-max" type="number" value="1"></div>
-    ${rechargeFieldHtml("new-res", "SR")}
+    ${rechargeFieldHtml("new-res")}
     <button class="btn-primary" id="save-res-button">Add Resource</button>
   `);
   wireRechargeField("new-res");
   document.getElementById("save-res-button").addEventListener("click", () => {
     const name = document.getElementById("new-res-name").value.trim() || "New Resource";
     const max = parseInt(document.getElementById("new-res-max").value) || 1;
-    const tag = readRechargeValue("new-res");
+    const recharge = readRechargeValue("new-res");
     const newId = Math.max(0, ...character.resources.map(r => r.id)) + 1;
-    character.resources.push({ id: newId, name, tag, current: max, max });
+    character.resources.push({ id: newId, name, recharge, current: max, max });
     closeModal();
     renderContent();
   });
@@ -2388,7 +2435,7 @@ function openResourceDetailModal(resourceId) {
     <div class="modal-heading">Edit Resource</div>
     <div class="field"><label>Name</label><input id="edit-res-name" value="${esc(r.name)}"></div>
     <div class="field"><label>Max Uses</label><input id="edit-res-max" type="number" value="${r.max}"></div>
-    ${rechargeFieldHtml("edit-res", r.tag)}
+    ${rechargeFieldHtml("edit-res", r.recharge)}
     <div class="btn-row-2">
       <button class="btn-primary" id="save-edit-res-button">Save Changes</button>
       <button class="btn-primary" id="remove-res-button" style="background:#5A2C29;color:#F0908A;">Remove</button>
@@ -2398,7 +2445,7 @@ function openResourceDetailModal(resourceId) {
   document.getElementById("save-edit-res-button").addEventListener("click", () => {
     r.name = document.getElementById("edit-res-name").value.trim() || r.name;
     r.max = parseInt(document.getElementById("edit-res-max").value) || r.max;
-    r.tag = readRechargeValue("edit-res");
+    r.recharge = readRechargeValue("edit-res");
     closeModal();
     renderContent();
   });

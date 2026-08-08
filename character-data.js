@@ -29,11 +29,11 @@ const character = {
   maxHpModifiers: [],
 
   // hit dice are per class in 5e -- Fighter 5 / Rogue 2 means 5d10 + 2d8.
-  // spent individually to heal (die + CON modifier); a long rest gives back
-  // half your total, rounded down, minimum one.
+  // spent individually to heal (die + CON modifier). Their recharge is the
+  // reason `amount` exists: a long rest returns half, not all.
   hitDice: [
-    { die: "d10", total: 5, current: 4 },
-    { die: "d8", total: 2, current: 2 }
+    { die: "d10", total: 5, current: 4, recharge: { on: "LR", amount: "half" } },
+    { die: "d8", total: 2, current: 2, recharge: { on: "LR", amount: "half" } }
   ],
 
   // Effects are grouped by their cause. One spell or condition often produces
@@ -59,12 +59,18 @@ const character = {
     }
   ],
 
-  // tag can be "SR", "LR", "\u2014" (doesn't recharge), or any custom text.
-  // spell slots deliberately do NOT live here -- see spellSlots below.
+  /* recharge is { on, amount }:
+       on     "SR" | "LR" | "none" | any custom text (custom never auto-restores)
+       amount "all" | "half" | a number | a dice string like "1d4"
+     Splitting the trigger from the quantity is what lets a rest express things
+     like hit dice (half on a long rest) or Arcane Recovery without the label
+     lying about what actually happens.
+
+     Spell slots deliberately do NOT live here -- see spellSlots below. */
   resources: [
-    { id: 3, name: "Action Surge", tag: "SR", current: 1, max: 1 },
-    { id: 4, name: "Second Wind", tag: "LR", current: 2, max: 2 },
-    { id: 5, name: "Arrows", tag: "\u2014", current: 20, max: 20 }
+    { id: 3, name: "Action Surge", recharge: { on: "SR", amount: "all" }, current: 1, max: 1 },
+    { id: 4, name: "Second Wind", recharge: { on: "LR", amount: "all" }, current: 2, max: 2 },
+    { id: 5, name: "Arrows", recharge: { on: "none", amount: "all" }, current: 20, max: 20 }
   ],
 
   // Weapons declare what they need (proficiencyRequired); this is what the
@@ -196,9 +202,9 @@ const character = {
   // here -- a Warlock's slots recharge on SR *and* live in a separate pool from
   // the shared multiclass pool. That needs its own structure; see notes.
   spellSlots: {
-    1: { current: 3, max: 4, recharge: "LR" },
-    2: { current: 2, max: 3, recharge: "LR" },
-    3: { current: 1, max: 2, recharge: "LR" }
+    1: { current: 3, max: 4, recharge: { on: "LR", amount: "all" } },
+    2: { current: 2, max: 3, recharge: { on: "LR", amount: "all" } },
+    3: { current: 1, max: 2, recharge: { on: "LR", amount: "all" } }
   },
 
   // maxPreparedByClass is also a raw ingredient (not calculated from level/ability)
@@ -275,6 +281,15 @@ const ABILITY_FULL_NAMES = {
 
    The proper fix is to stop building markup from strings; this is the fix that
    fits the current architecture. */
+// short tag shown next to a resource: "SR", "LR", "½ LR", "1d4 SR", "—"
+function rechargeLabel(recharge) {
+  if (!recharge || !recharge.on || recharge.on === "none") return "—";
+  const amount = recharge.amount === undefined ? "all" : recharge.amount;
+  if (amount === "all") return recharge.on;
+  if (amount === "half") return "½ " + recharge.on;
+  return amount + " " + recharge.on;
+}
+
 function esc(text) {
   return String(text === null || text === undefined ? "" : text)
     .replace(/&/g, "&amp;")
