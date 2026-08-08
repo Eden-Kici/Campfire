@@ -23,6 +23,14 @@ const CONDITION_ROLL_EFFECTS = {
   Exhaustion: [{ applies: "check", mode: "disadvantage" }]
 };
 
+const DAMAGE_TYPES = [
+  "Slashing", "Piercing", "Bludgeoning", "Acid", "Cold", "Fire", "Force",
+  "Lightning", "Necrotic", "Poison", "Psychic", "Radiant", "Thunder"
+];
+
+// suggestions only -- the field is free text, so "Exotic" or "Firearms" work
+const WEAPON_PROFICIENCY_TYPES = ["Simple", "Martial"];
+
 const MODIFIER_STATS = ["AC", "Initiative", "Speed", "Attack Rolls", "Damage Rolls", "Proficiency Bonus", "Spell Attack", "Spell DC"];
 const EFFECT_CATEGORIES_GENERAL = ["Condition", "Ability Score", "Saving Throw", "Skill", "Bonus", "Advantage"];
 const EFFECT_CATEGORIES_FEATURE = ["Ability Score", "Saving Throw", "Skill", "Bonus", "Advantage"];
@@ -104,18 +112,30 @@ function maxNotation(notation) {
   return evaluateNotation(notation, sides => sides).total;
 }
 
+// A roll is one or more parts summed together. Single-notation rolls are just
+// the one-part case, so damage that deals several types shares this path.
+function rollParts(parts) {
+  const results = parts.map(part => Object.assign({}, part, { result: rollNotation(part.notation) }));
+  return { total: results.reduce((sum, r) => sum + r.result.total, 0), parts: results };
+}
+
+function rollPartsFor(config) {
+  return rollParts(config.parts && config.parts.length ? config.parts : [{ notation: config.notation }]);
+}
+
 // 5e resolves advantage on the d20, but every other term is constant, so
 // picking the better of two whole evaluations gives the same answer.
-function rollWithMode(notation, mode) {
-  const first = rollNotation(notation);
-  if (mode === "normal") return { result: first, rolls: [first] };
-  const second = rollNotation(notation);
+function rollWithMode(config, mode) {
+  const first = rollPartsFor(config);
+  if (mode === "normal") return { outcome: first };
+  const second = rollPartsFor(config);
   const keepFirst = mode === "advantage" ? first.total >= second.total : first.total <= second.total;
-  return {
-    result: keepFirst ? first : second,
-    dropped: keepFirst ? second : first,
-    rolls: [first, second]
-  };
+  return { outcome: keepFirst ? first : second, dropped: keepFirst ? second : first };
+}
+
+function maxFor(config) {
+  const parts = config.parts && config.parts.length ? config.parts : [{ notation: config.notation }];
+  return parts.reduce((sum, part) => sum + maxNotation(part.notation), 0);
 }
 
 // Advantage and disadvantage don't stack in 5e -- any of each cancels to a
@@ -199,13 +219,13 @@ let rollState = null;
 function showRoll(config) {
   const derived = derivedRollMode(character, config.kind, config.ability);
   rollState = { config, derived, mode: derived.mode, manual: false };
-  rollState.outcome = rollWithMode(config.notation, rollState.mode);
+  Object.assign(rollState, rollWithMode(config, rollState.mode));
   openModal("center", rollWindowHtml());
   wireRollWindow();
 }
 
 function rerollCurrent() {
-  rollState.outcome = rollWithMode(rollState.config.notation, rollState.mode);
+  Object.assign(rollState, { dropped: null }, rollWithMode(rollState.config, rollState.mode));
   redrawRollWindow();
 }
 
@@ -235,13 +255,19 @@ function rollModeExplanation() {
 }
 
 function rollWindowHtml() {
-  const { config, outcome, mode } = rollState;
+  const { config, outcome, dropped, mode } = rollState;
   const isDamage = config.kind === "damage";
-  const total = outcome.result.total;
+  const total = outcome.total;
 
-  // the notation is already printed above, so drop the "1d8" prefix and leave
-  // just what each term contributed: "(7) + 3"
-  const dice = outcome.result.breakdown.replace(/\d+d\d+\(/g, "(");
+  /* One line per part. The notation is already printed above, so the "1d8"
+     prefix is dropped and only what each term contributed is left: "(7) + 3".
+     A multi-type damage roll gets one line each, labelled with its type. */
+  const dice = outcome.parts.map(part => {
+    const detail = part.result.breakdown.replace(/\d+d\d+\(/g, "(");
+    return outcome.parts.length > 1
+      ? `<div class="roll-part"><span>${detail}</span><span class="roll-part-total">${part.result.total} ${part.label || ""}</span></div>`
+      : `<div>${detail}</div>`;
+  }).join("");
 
   const chips = (config.sources || [])
     .filter(source => source.value !== 0)
@@ -255,11 +281,11 @@ function rollWindowHtml() {
     <div class="roll-values">
       <div class="roll-side">${isDamage ? `<div class="roll-side-label">½</div><div class="roll-side-value">${Math.floor(total / 2)}</div>` : ""}</div>
       <div class="roll-total">${total}</div>
-      <div class="roll-side">${isDamage ? `<div class="roll-side-label">MAX</div><div class="roll-side-value">${maxNotation(config.notation)}</div>` : ""}</div>
+      <div class="roll-side">${isDamage ? `<div class="roll-side-label">MAX</div><div class="roll-side-value">${maxFor(config)}</div>` : ""}</div>
     </div>
 
     <div class="roll-dice">${dice}</div>
-    ${outcome.dropped ? `<div class="roll-dropped">dropped ${outcome.dropped.total}</div>` : ""}
+    ${dropped ? `<div class="roll-dropped">dropped ${dropped.total}</div>` : ""}
 
     ${chips ? `<div class="roll-chips">${chips}</div>` : ""}
 
@@ -1959,15 +1985,16 @@ function renderCombatTab() {
     </div>
     ${weaponList(character).map(weapon => {
       const atk = calculateAttack(character, weapon);
-      const damageNotation = atk.damageDice + (atk.damageBonusTotal ? formatModifier(atk.damageBonusTotal) : "");
       const icon = weapon.weaponType === "ranged" ? "\uD83C\uDFF9" : "\u2694\uFE0F";
       return `
         <div class="atk-row" data-atk-detail="${weapon.id}">
           <div class="atk-icon">${icon}</div>
-          <div class="atk-name">${weapon.name}</div>
-          <div class="atk-range">${weapon.range || ""}</div>
+          <div style="flex:1;min-width:0;">
+            <div class="atk-name">${weapon.name}${atk.proficiency.proficient ? "" : `<span class="atk-warn" title="Not proficient">!</span>`}</div>
+            <div class="atk-range">${[weapon.range, atk.damage.map(d => d.type).filter(Boolean).join(" + ")].filter(Boolean).join(" \u00B7 ")}</div>
+          </div>
           <button class="atk-pill" data-roll-tohit="${weapon.id}">${formatModifier(atk.toHitTotal)}</button>
-          <button class="atk-pill" data-roll-damage="${weapon.id}">${damageNotation}</button>
+          <button class="atk-pill" data-roll-damage="${weapon.id}">${atk.damageNotation}</button>
         </div>
       `;
     }).join("")}
@@ -2053,8 +2080,13 @@ function wireCombatTab() {
       e.stopPropagation();
       const weapon = character.inventory.find(i => i.id == button.dataset.rollDamage);
       const atk = calculateAttack(character, weapon);
-      showRoll({ label: weapon.name + " Damage", notation: atk.damageDice + formatModifier(atk.damageBonusTotal),
-                 sources: atk.damageSources, kind: "damage" });
+      showRoll({
+        label: weapon.name + " Damage",
+        notation: atk.damageNotation,
+        parts: atk.damage.map(part => ({ notation: part.notation, label: part.type })),
+        sources: atk.damage.reduce((all, part) => all.concat(part.sources), []),
+        kind: "damage"
+      });
     });
   });
   document.querySelectorAll("[data-atk-detail]").forEach(row => row.addEventListener("click", () => openAttackDetailModal(row.dataset.atkDetail)));
@@ -2355,100 +2387,185 @@ function openResourceDetailModal(resourceId) {
 /* ---------------- attacks ---------------- */
 
 function openAddAttackModal() {
+  const parts = [{ dice: "1d4", type: DAMAGE_TYPES[0], ability: "STR" }];
+
   openModal("full", `
     <div class="modal-heading">New Attack</div>
     <div class="field"><label>Weapon Name</label><input id="new-atk-name" placeholder="e.g. Dagger"></div>
     <div class="field-row">
-      <div class="field"><label>Attack Ability</label><select id="new-atk-ability"><option>STR</option><option>DEX</option></select></div>
-      <div class="field"><label>Damage Dice</label><input id="new-atk-dice" placeholder="1d4"></div>
+      ${selectFieldHtml("new-atk-ability", "Attack Ability", Object.keys(ABILITY_FULL_NAMES), "STR")}
+      <div class="field"><label>Magic Bonus</label><input id="new-atk-magic" type="number" value="0"></div>
     </div>
     <div class="field-row">
-      <div class="field"><label>Type</label><select id="new-atk-type"><option value="melee">Melee</option><option value="ranged">Ranged</option></select></div>
+      ${selectFieldHtml("new-atk-type", "Type", [{ value: "melee", label: "Melee" }, { value: "ranged", label: "Ranged" }], "melee")}
       <div class="field"><label>Range</label><input id="new-atk-range" placeholder="5 ft"></div>
     </div>
-    <div class="field"><label>Properties (comma separated)</label><input id="new-atk-props" placeholder="Light, Thrown"></div>
+    ${comboFieldHtml("new-atk-req", "Requires Proficiency", "None")}
+
+    <div class="field"><label>Damage</label></div>
+    <div id="damage-rows"></div>
+    <button class="add-link" id="add-damage-button">+ Add Damage Type</button>
+
+    <div class="field" style="margin-top:14px;"><label>Properties (comma separated)</label><input id="new-atk-props" placeholder="Light, Thrown"></div>
     <div class="field"><label>Source (optional \u2014 leave blank for "Custom")</label><input id="new-atk-source" placeholder="e.g. Innate, Warlock Pact"></div>
     <button class="btn-primary" id="save-atk-button">Add Attack</button>
   `);
+
+  wireSelect("new-atk-ability");
+  wireSelect("new-atk-type");
+  wireCombo("new-atk-req", WEAPON_PROFICIENCY_TYPES);
+
+  const damageRows = document.getElementById("damage-rows");
+  renderDamageRows(damageRows, parts);
+  document.getElementById("add-damage-button").addEventListener("click", () => {
+    parts.push({ dice: "1d4", type: DAMAGE_TYPES[0] });
+    renderDamageRows(damageRows, parts);
+  });
+
   document.getElementById("save-atk-button").addEventListener("click", () => {
-    const name = document.getElementById("new-atk-name").value.trim() || "New Weapon";
-    const ability = document.getElementById("new-atk-ability").value;
-    const dice = document.getElementById("new-atk-dice").value.trim() || "1d4";
-    const weaponType = document.getElementById("new-atk-type").value;
-    const range = document.getElementById("new-atk-range").value.trim();
-    const properties = document.getElementById("new-atk-props").value.split(",").map(s => s.trim()).filter(Boolean);
-    const customSource = document.getElementById("new-atk-source").value.trim();
     const newId = Math.max(0, ...character.inventory.map(i => i.id)) + 1;
     character.inventory.push({
-      id: newId, name, category: "Equipped", weight: 1, qty: 1,
-      isWeapon: true, damageDice: dice, attackAbility: ability, damageAbility: ability,
-      proficientWithWeapon: true, magicBonus: 0, weaponType, range, properties, customSource
+      id: newId,
+      name: document.getElementById("new-atk-name").value.trim() || "New Weapon",
+      category: "Equipped", weight: 1, qty: 1, isWeapon: true,
+      attackAbility: document.getElementById("new-atk-ability").value,
+      proficiencyRequired: document.getElementById("new-atk-req").value.trim(),
+      magicBonus: parseInt(document.getElementById("new-atk-magic").value) || 0,
+      damage: readDamageRows(parts),
+      weaponType: document.getElementById("new-atk-type").value,
+      range: document.getElementById("new-atk-range").value.trim(),
+      properties: document.getElementById("new-atk-props").value.split(",").map(s => s.trim()).filter(Boolean),
+      customSource: document.getElementById("new-atk-source").value.trim()
     });
     closeModal();
     renderContent();
   });
 }
 
+/* Repeatable damage rows, so one weapon can deal several types. Same editing
+   shape as the effect modifier list: a card per entry, add and remove links. */
+function renderDamageRows(container, parts) {
+  const abilityOptions = [{ value: "", label: "None" }]
+    .concat(Object.keys(ABILITY_FULL_NAMES).map(a => ({ value: a, label: a })));
+
+  container.innerHTML = parts.map((part, idx) => `
+    <div class="feature-effect-row">
+      <div class="field-row">
+        <div class="field" style="flex:0 0 84px;"><label>Dice</label><input id="dmg-dice-${idx}" value="${part.dice || ""}" placeholder="1d6"></div>
+        ${selectFieldHtml("dmg-type-" + idx, "Damage Type", DAMAGE_TYPES, part.type)}
+        <button class="chip-remove" data-remove-damage="${idx}">\u2715</button>
+      </div>
+      ${selectFieldHtml("dmg-ability-" + idx, "Adds ability modifier", abilityOptions, part.ability || "")}
+    </div>
+  `).join("") || `<div class="empty-hint">No damage \u2014 this attack rolls to hit only.</div>`;
+
+  wireSelectsIn(container);
+  container.querySelectorAll("[data-remove-damage]").forEach(button => {
+    button.addEventListener("click", () => {
+      parts.splice(parseInt(button.dataset.removeDamage), 1);
+      renderDamageRows(container, parts);
+    });
+  });
+}
+
+function readDamageRows(parts) {
+  return parts.map((part, idx) => {
+    const entry = { dice: document.getElementById("dmg-dice-" + idx).value.trim() || "1d4" };
+    const type = document.getElementById("dmg-type-" + idx).value;
+    const ability = document.getElementById("dmg-ability-" + idx).value;
+    if (type) entry.type = type;
+    if (ability) entry.ability = ability;
+    return entry;
+  });
+}
+
 function openAttackDetailModal(weaponId) {
   const weapon = character.inventory.find(i => i.id == weaponId);
   const atk = calculateAttack(character, weapon);
+  const parts = JSON.parse(JSON.stringify(weapon.damage || []));
+
+  const profValue = weapon.proficientOverride === undefined || weapon.proficientOverride === null
+    ? "derived" : (weapon.proficientOverride ? "yes" : "no");
 
   openModal("full", `
     <div class="modal-heading">${weapon.name}</div>
     <div class="breakdown-source">${atk.source}${weapon.range ? " \u00B7 " + weapon.range : ""}</div>
     ${weapon.properties && weapon.properties.length ? `<div class="breakdown-source">${weapon.properties.join(", ")}</div>` : ""}
+    <div class="breakdown-source">
+      ${atk.proficiency.required ? "Requires " + atk.proficiency.required + " \u2014 " : ""}${atk.proficiency.proficient ? "proficient" : "not proficient"}${atk.proficiency.overridden ? " (set manually)" : ""}
+    </div>
 
-    <div class="breakdown-subhead">To Hit \u2014 ${formatModifier(atk.toHitTotal)}</div>
-    ${atk.toHitSources.map(s => `<div class="breakdown-row"><span>${s.label}</span><span>${formatModifier(s.value)}</span></div>`).join("")}
+    <div class="breakdown-subhead">To Hit</div>
+    ${breakdownRowsHtml(atk.toHitSources)}
+    <hr class="breakdown-divider">
+    <div class="breakdown-total"><span>Total</span><span>${formatModifier(atk.toHitTotal)}</span></div>
 
-    <div class="breakdown-subhead">Damage \u2014 ${atk.damageDice}${formatModifier(atk.damageBonusTotal)}</div>
-    ${atk.damageSources.map(s => `<div class="breakdown-row"><span>${s.label}</span><span>${formatModifier(s.value)}</span></div>`).join("")}
+    ${atk.damage.map(part => `
+      <div class="breakdown-subhead">${part.type || "Damage"}</div>
+      <div class="breakdown-row"><span>Dice</span><span>${part.dice}</span></div>
+      ${breakdownRowsHtml(part.sources)}
+      <hr class="breakdown-divider">
+      <div class="breakdown-total"><span>Total</span><span>${part.notation}</span></div>
+    `).join("")}
 
-    <div class="modal-heading" style="margin-top:20px;">Edit</div>
+    <div class="modal-heading" style="margin-top:24px;">Edit</div>
     <div class="field"><label>Name</label><input id="edit-atk-name" value="${weapon.name}"></div>
     <div class="field-row">
-      <div class="field"><label>Attack Ability</label>
-        <select id="edit-atk-ability">
-          <option ${weapon.attackAbility === "STR" ? "selected" : ""}>STR</option>
-          <option ${weapon.attackAbility === "DEX" ? "selected" : ""}>DEX</option>
-        </select>
-      </div>
-      <div class="field"><label>Damage Dice</label><input id="edit-atk-dice" value="${weapon.damageDice}"></div>
+      ${selectFieldHtml("edit-atk-ability", "Attack Ability", Object.keys(ABILITY_FULL_NAMES), weapon.attackAbility)}
+      <div class="field"><label>Magic Bonus</label><input id="edit-atk-magic" type="number" value="${weapon.magicBonus || 0}"></div>
     </div>
     <div class="field-row">
-      <div class="field"><label>Type</label>
-        <select id="edit-atk-type">
-          <option value="melee" ${weapon.weaponType === "melee" ? "selected" : ""}>Melee</option>
-          <option value="ranged" ${weapon.weaponType === "ranged" ? "selected" : ""}>Ranged</option>
-        </select>
-      </div>
+      ${selectFieldHtml("edit-atk-type", "Type", [{ value: "melee", label: "Melee" }, { value: "ranged", label: "Ranged" }], weapon.weaponType)}
       <div class="field"><label>Range</label><input id="edit-atk-range" value="${weapon.range || ""}"></div>
     </div>
-    <div class="field"><label>Properties (comma separated)</label><input id="edit-atk-props" value="${(weapon.properties || []).join(", ")}"></div>
-    <div class="field"><label>Source (optional \u2014 leave blank for "Custom")</label><input id="edit-atk-source" value="${weapon.customSource || ""}"></div>
+
     <div class="field-row">
-      <div class="field"><label>Magic Bonus</label><input id="edit-atk-magic" type="number" value="${weapon.magicBonus}"></div>
-      <div class="field"><label>Proficient?</label>
-        <select id="edit-atk-prof"><option value="yes" ${weapon.proficientWithWeapon ? "selected" : ""}>Yes</option><option value="no" ${!weapon.proficientWithWeapon ? "selected" : ""}>No</option></select>
-      </div>
+      ${comboFieldHtml("edit-atk-req", "Requires Proficiency", "None", weapon.proficiencyRequired)}
+      ${selectFieldHtml("edit-atk-prof", "Proficient?", [
+        { value: "derived", label: "Auto" }, { value: "yes", label: "Yes" }, { value: "no", label: "No" }
+      ], profValue)}
     </div>
+
+    <div class="field"><label>Damage</label></div>
+    <div id="damage-rows"></div>
+    <button class="add-link" id="add-damage-button">+ Add Damage Type</button>
+
+    <div class="field" style="margin-top:14px;"><label>Properties (comma separated)</label><input id="edit-atk-props" value="${(weapon.properties || []).join(", ")}"></div>
+    <div class="field"><label>Source (optional \u2014 leave blank for "Custom")</label><input id="edit-atk-source" value="${weapon.customSource || ""}"></div>
+
     <div class="btn-row-2">
       <button class="btn-primary" id="save-edit-atk-button">Save Changes</button>
       <button class="btn-primary" id="remove-atk-button" style="background:#5A2C29;color:#F0908A;">Remove</button>
     </div>
   `);
 
+  wireSelect("edit-atk-ability");
+  wireSelect("edit-atk-type");
+  wireSelect("edit-atk-prof");
+  wireCombo("edit-atk-req", WEAPON_PROFICIENCY_TYPES);
+
+  const damageRows = document.getElementById("damage-rows");
+  renderDamageRows(damageRows, parts);
+  document.getElementById("add-damage-button").addEventListener("click", () => {
+    parts.push({ dice: "1d4", type: DAMAGE_TYPES[0] });
+    renderDamageRows(damageRows, parts);
+  });
+
   document.getElementById("save-edit-atk-button").addEventListener("click", () => {
     weapon.name = document.getElementById("edit-atk-name").value.trim() || weapon.name;
     weapon.attackAbility = document.getElementById("edit-atk-ability").value;
-    weapon.damageAbility = weapon.attackAbility;
-    weapon.damageDice = document.getElementById("edit-atk-dice").value.trim() || weapon.damageDice;
     weapon.weaponType = document.getElementById("edit-atk-type").value;
     weapon.range = document.getElementById("edit-atk-range").value.trim();
     weapon.properties = document.getElementById("edit-atk-props").value.split(",").map(s => s.trim()).filter(Boolean);
     weapon.customSource = document.getElementById("edit-atk-source").value.trim();
     weapon.magicBonus = parseInt(document.getElementById("edit-atk-magic").value) || 0;
-    weapon.proficientWithWeapon = document.getElementById("edit-atk-prof").value === "yes";
+    weapon.proficiencyRequired = document.getElementById("edit-atk-req").value.trim();
+    weapon.damage = readDamageRows(parts);
+
+    const prof = document.getElementById("edit-atk-prof").value;
+    if (prof === "derived") delete weapon.proficientOverride;
+    else weapon.proficientOverride = prof === "yes";
+
     closeModal();
     renderContent();
   });

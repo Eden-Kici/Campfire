@@ -67,6 +67,14 @@ const character = {
     { id: 5, name: "Arrows", tag: "\u2014", current: 20, max: 20 }
   ],
 
+  // Weapons declare what they need (proficiencyRequired); this is what the
+  // character actually has. Proficiency on an attack is derived from the two,
+  // with a per-weapon override -- the same shape as skills and saves.
+  // NOTE: traits > Proficiencies > Weapons still says "Simple, martial" as
+  // flavour text. That text is decorative and this list is authoritative; they
+  // can drift. Armour and tool proficiencies have no model yet.
+  weaponProficiencies: ["Simple", "Martial"],
+
   savingThrowProficiency: { STR: 1, DEX: 0, CON: 1, INT: 0, WIS: 0, CHA: 0 },
   // present only for a save that's been manually overridden; value replaces the calculated total
   savingThrowOverride: {},
@@ -118,17 +126,32 @@ const character = {
   inventory: [
     { id: 1, name: "Chain Shirt", category: "Worn", weight: 20, qty: 1, acBonus: 3 },
     { id: 2, name: "Cloak of Protection", category: "Worn", weight: 1, qty: 1, acBonus: 1 },
+    // damage is a list, so one weapon can deal several types at once. Only a
+    // part that names an `ability` adds that modifier; extra dice (poison,
+    // sneak attack, elemental riders) normally don't get it.
     {
       id: 3, name: "Longsword", category: "Equipped", weight: 3, qty: 1,
-      isWeapon: true, isDefaultLoadout: true, damageDice: "1d8", attackAbility: "STR", damageAbility: "STR",
-      proficientWithWeapon: true, magicBonus: 0,
+      isWeapon: true, isDefaultLoadout: true, attackAbility: "STR",
+      proficiencyRequired: "Martial", magicBonus: 0,
+      damage: [{ dice: "1d8", type: "Slashing", ability: "STR" }],
       weaponType: "melee", range: "5 ft", properties: ["Versatile (1d10)"]
     },
     {
       id: 4, name: "Shortbow", category: "Equipped", weight: 2, qty: 1,
-      isWeapon: true, isDefaultLoadout: true, damageDice: "1d6", attackAbility: "DEX", damageAbility: "DEX",
-      proficientWithWeapon: true, magicBonus: 0,
+      isWeapon: true, isDefaultLoadout: true, attackAbility: "DEX",
+      proficiencyRequired: "Simple", magicBonus: 0,
+      damage: [{ dice: "1d6", type: "Piercing", ability: "DEX" }],
       weaponType: "ranged", range: "80/320 ft", properties: ["Ammunition", "Two-Handed"]
+    },
+    {
+      id: 8, name: "Serpent's Fang", category: "Equipped", weight: 1, qty: 1,
+      isWeapon: true, isDefaultLoadout: true, attackAbility: "DEX",
+      proficiencyRequired: "Exotic", magicBonus: 1,
+      damage: [
+        { dice: "1d4", type: "Piercing", ability: "DEX" },
+        { dice: "1d6", type: "Poison" }
+      ],
+      weaponType: "melee", range: "5 ft", properties: ["Finesse", "Light"]
     },
     { id: 5, name: "Ring of Precision", category: "Worn", weight: 0, qty: 1, attackBonus: 1 },
     { id: 6, name: "Bag of Holding", category: "Carrying", weight: 15, qty: 1 },
@@ -514,13 +537,38 @@ function calculatePreparedSpellCount(character) {
   return { count, max };
 }
 
+// Proficiency with a weapon is derived from what the weapon requires against
+// what the character actually has, with an explicit per-weapon override --
+// the same derived-plus-override shape as skills and saving throws. A weapon
+// that requires nothing is always proficient.
+function weaponProficiency(character, weapon) {
+  const required = (weapon.proficiencyRequired || "").trim();
+  if (weapon.proficientOverride !== undefined && weapon.proficientOverride !== null) {
+    return { proficient: !!weapon.proficientOverride, overridden: true, required };
+  }
+  if (!required) return { proficient: true, overridden: false, required: "" };
+  const held = character.weaponProficiencies || [];
+  return {
+    proficient: held.some(p => p.toLowerCase() === required.toLowerCase()),
+    overridden: false,
+    required
+  };
+}
+
 function calculateAttack(character, weapon) {
+  const proficiency = weaponProficiency(character, weapon);
+
   const toHitSources = [];
   toHitSources.push({
     label: ABILITY_FULL_NAMES[weapon.attackAbility] + " modifier",
     value: abilityModifier(effectiveAbilityScore(character, weapon.attackAbility))
   });
-  if (weapon.proficientWithWeapon) toHitSources.push({ label: "Proficiency", value: calculateProficiencyBonus(character).total });
+  if (proficiency.proficient) {
+    toHitSources.push({
+      label: "Proficiency" + (proficiency.required ? " (" + proficiency.required + ")" : ""),
+      value: calculateProficiencyBonus(character).total
+    });
+  }
   if (weapon.magicBonus) toHitSources.push({ label: weapon.name + " (magic bonus)", value: weapon.magicBonus });
 
   equippedEffectItems(character).forEach(item => {
@@ -532,15 +580,32 @@ function calculateAttack(character, weapon) {
 
   const toHitTotal = toHitSources.reduce((sum, s) => sum + s.value, 0);
 
-  const damageSources = [];
-  damageSources.push({
-    label: ABILITY_FULL_NAMES[weapon.damageAbility] + " modifier",
-    value: abilityModifier(effectiveAbilityScore(character, weapon.damageAbility))
-  });
-  if (weapon.magicBonus) damageSources.push({ label: weapon.name + " (magic bonus)", value: weapon.magicBonus });
-  effectsAffectingStat(character, "Damage Rolls").forEach(e => damageSources.push({ label: effectSourceLabel(e), value: e.value.amount }));
+  /* A magic bonus and any blanket "Damage Rolls" effect apply once per attack,
+     not once per damage type, so they land on the first part only. A part adds
+     an ability modifier only if it names one -- rider dice like poison or sneak
+     attack normally don't get it. */
+  const onceOnly = [];
+  if (weapon.magicBonus) onceOnly.push({ label: weapon.name + " (magic bonus)", value: weapon.magicBonus });
+  effectsAffectingStat(character, "Damage Rolls").forEach(e => onceOnly.push({ label: effectSourceLabel(e), value: e.value.amount }));
 
-  const damageBonusTotal = damageSources.reduce((sum, s) => sum + s.value, 0);
+  const damage = (weapon.damage || []).map((part, index) => {
+    const sources = [];
+    if (part.ability) {
+      sources.push({
+        label: ABILITY_FULL_NAMES[part.ability] + " modifier",
+        value: abilityModifier(effectiveAbilityScore(character, part.ability))
+      });
+    }
+    if (index === 0) onceOnly.forEach(s => sources.push(s));
+    const bonusTotal = sources.reduce((sum, s) => sum + s.value, 0);
+    return {
+      dice: part.dice,
+      type: part.type || "",
+      bonusTotal,
+      sources,
+      notation: part.dice + (bonusTotal ? formatModifier(bonusTotal) : "")
+    };
+  });
 
   // custom source: user-typed label wins; otherwise pre-seeded weapons keep
   // their "Category – Name" label, anything newly added just says "Custom"
@@ -549,9 +614,9 @@ function calculateAttack(character, weapon) {
     : (weapon.isDefaultLoadout ? weapon.category + " \u2013 " + weapon.name : "Custom");
 
   return {
-    source,
+    source, proficiency,
     toHitTotal, toHitSources,
-    damageDice: weapon.damageDice,
-    damageBonusTotal, damageSources
+    damage,
+    damageNotation: damage.map(d => d.notation).join(" + ") || "—"
   };
 }
