@@ -324,8 +324,19 @@ function effectSourceLabel(effect) {
   return effect.note && effect.note.trim() ? effect.note : effect.category;
 }
 
+function rollTypeLabel(rollType) {
+  const match = ROLL_TYPES.find(t => t.value === rollType);
+  return match ? match.label : rollType;
+}
+
+function advantageLabel(effect) {
+  const mode = effect.value.mode === "disadvantage" ? "Disadvantage" : "Advantage";
+  return mode + " on " + rollTypeLabel(effect.value.rollType);
+}
+
 function effectSummaryLabel(effect) {
   if (effect.category === "Condition") return effect.value.condition;
+  if (effect.category === "Advantage") return advantageLabel(effect);
   if (effect.category === "Ability Score") return formatModifier(effect.value.amount) + " " + effect.value.ability;
   if (effect.category === "Saving Throw") return formatModifier(effect.value.amount) + " " + effect.value.ability + " Save";
   if (effect.category === "Skill") return formatModifier(effect.value.amount) + " " + effect.value.skill;
@@ -342,6 +353,7 @@ function durationLabel(effect) {
 }
 
 function featureEffectSummary(effect) {
+  if (effect.category === "Advantage") return advantageLabel(effect);
   if (effect.category === "Ability Score") return formatModifier(effect.value.amount) + " " + effect.value.ability;
   if (effect.category === "Saving Throw") return formatModifier(effect.value.amount) + " " + effect.value.ability + " Save";
   if (effect.category === "Skill") return formatModifier(effect.value.amount) + " " + effect.value.skill;

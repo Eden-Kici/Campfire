@@ -343,6 +343,21 @@ body {
 .field-row { display: flex; gap: 10px; align-items: flex-start; }
 .field-row .field { flex: 1; }
 
+/* in-app suggestion list, in place of a native <datalist> dropdown */
+.combo-list {
+  margin-top: 6px; background: #1C1815; border: 1px solid #332C24;
+  border-radius: 10px; max-height: 176px; overflow-y: auto;
+}
+.combo-list[hidden] { display: none; }
+.combo-option {
+  display: block; width: 100%; text-align: left; background: none; border: none;
+  color: #FAF6F0; font-family: inherit; font-size: 13.5px;
+  padding: 11px 12px; cursor: pointer; border-bottom: 1px solid #262019;
+}
+.combo-option:last-child { border-bottom: none; }
+.combo-option:active, .combo-option:hover { background: #242019; color: #F5C37A; }
+.combo-empty { padding: 11px 12px; font-size: 11.5px; color: #6E655B; line-height: 1.4; }
+
 .avatar-edit-row { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
 .char-avatar-lg { width: 64px; height: 64px; font-size: 22px; }
 .avatar-edit-actions { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }

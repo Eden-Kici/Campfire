@@ -24,8 +24,18 @@ const CONDITION_ROLL_EFFECTS = {
 };
 
 const MODIFIER_STATS = ["AC", "Initiative", "Speed", "Attack Rolls", "Damage Rolls", "Proficiency Bonus", "Spell Attack", "Spell DC"];
-const EFFECT_CATEGORIES_GENERAL = ["Condition", "Ability Score", "Saving Throw", "Skill", "Bonus"];
-const EFFECT_CATEGORIES_FEATURE = ["Ability Score", "Saving Throw", "Skill", "Bonus"];
+const EFFECT_CATEGORIES_GENERAL = ["Condition", "Ability Score", "Saving Throw", "Skill", "Bonus", "Advantage"];
+const EFFECT_CATEGORIES_FEATURE = ["Ability Score", "Saving Throw", "Skill", "Bonus", "Advantage"];
+
+// what an "Advantage" effect can apply to. these values match the `kind` passed
+// to showRoll, so a custom effect and the condition table speak the same language.
+const ROLL_TYPES = [
+  { value: "attack", label: "Attack Rolls" },
+  { value: "check", label: "Ability Checks" },
+  { value: "save", label: "Saving Throws" },
+  { value: "damage", label: "Damage Rolls" },
+  { value: "all", label: "All Rolls" }
+];
 
 
 /* ============================================================
@@ -113,17 +123,22 @@ function rollWithMode(notation, mode) {
 // window can explain what happened rather than just showing "normal".
 function derivedRollMode(character, kind, ability) {
   const reasons = { advantage: [], disadvantage: [] };
+  const note = (mode, label) => { if (!reasons[mode].includes(label)) reasons[mode].push(label); };
 
-  character.activeEffects.forEach(group => {
-    (group.effects || []).forEach(effect => {
-      if (effect.category !== "Condition") return;
+  // getAllEffects covers both active effect groups and permanent feature
+  // effects, so a feat that grants advantage counts the same as a condition
+  getAllEffects(character).forEach(effect => {
+    if (effect.category === "Condition") {
       (CONDITION_ROLL_EFFECTS[effect.value.condition] || []).forEach(rule => {
         if (rule.applies !== kind) return;
         if (rule.ability && rule.ability !== ability) return;
-        const label = effectGroupLabel(group);
-        if (!reasons[rule.mode].includes(label)) reasons[rule.mode].push(label);
+        note(rule.mode, effectSourceLabel(effect));
       });
-    });
+    } else if (effect.category === "Advantage") {
+      if (effect.value.rollType === "all" || effect.value.rollType === kind) {
+        note(effect.value.mode, effectSourceLabel(effect));
+      }
+    }
   });
 
   let mode = "normal";
@@ -343,14 +358,58 @@ function openBreakdownModal(title, total, suffix, sources, rollButton) {
     showRoll({ label: rollButton.label, notation: rollButton.notation, sources, kind: rollButton.kind || "check", ability: rollButton.ability }));
 }
 
+/* A text field with its own suggestion list. Replaces <datalist>, which renders
+   as an OS-native dropdown -- fine on desktop, wrong for something that ships
+   as a mobile app. Free text still wins, so non-SRD names work. The list sits
+   in normal flow rather than floating, so it can't be clipped by a modal. */
+function comboFieldHtml(id, label, placeholder, value) {
+  return `
+    <div class="field combo">
+      <label>${label}</label>
+      <input id="${id}" autocomplete="off" placeholder="${placeholder}" value="${value || ""}">
+      <div class="combo-list" id="${id}-list" hidden></div>
+    </div>`;
+}
+
+function wireCombo(id, options) {
+  const input = document.getElementById(id);
+  const list = document.getElementById(id + "-list");
+  if (!input || !list) return;
+
+  function draw() {
+    const query = input.value.trim().toLowerCase();
+    const matches = options.filter(option => option.toLowerCase().includes(query));
+    list.innerHTML = matches.length
+      ? matches.map(option => `<button type="button" class="combo-option" data-pick="${option}">${option}</button>`).join("")
+      : `<div class="combo-empty">No match — "${input.value.trim()}" will be used as a custom entry</div>`;
+
+    // pointerdown fires before the input loses focus, on both touch and mouse
+    list.querySelectorAll("[data-pick]").forEach(button => {
+      button.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        input.value = button.dataset.pick;
+        list.hidden = true;
+      });
+    });
+  }
+
+  input.addEventListener("focus", () => { draw(); list.hidden = false; });
+  input.addEventListener("input", draw);
+  input.addEventListener("blur", () => setTimeout(() => { list.hidden = true; }, 150));
+}
+
 function effectSubfieldsHtml(category, idPrefix) {
-  // a datalist rather than a select: the 16 standard conditions are suggested,
-  // but homebrew and non-SRD statuses can just be typed in. no extra wiring,
-  // which matters because this markup gets re-rendered on every category change.
   if (category === "Condition") {
-    return `<div class="field"><label>Condition</label>
-      <input id="${idPrefix}-condition" list="condition-options" placeholder="Choose one, or type your own">
-      <datalist id="condition-options">${ALL_CONDITIONS.map(c => `<option value="${c}">`).join("")}</datalist>
+    return comboFieldHtml(idPrefix + "-condition", "Condition", "Choose one, or type your own");
+  }
+  if (category === "Advantage") {
+    return `<div class="field-row">
+      <div class="field"><label>Applies To</label>
+        <select id="${idPrefix}-rolltype">${ROLL_TYPES.map(t => `<option value="${t.value}">${t.label}</option>`).join("")}</select>
+      </div>
+      <div class="field"><label>Effect</label>
+        <select id="${idPrefix}-mode"><option value="advantage">Advantage</option><option value="disadvantage">Disadvantage</option></select>
+      </div>
     </div>`;
   }
   if (category === "Ability Score" || category === "Saving Throw") {
@@ -373,6 +432,12 @@ function effectSubfieldsHtml(category, idPrefix) {
 
 function readEffectValueFromForm(category, idPrefix) {
   if (category === "Condition") return { condition: document.getElementById(idPrefix + "-condition").value.trim() };
+  if (category === "Advantage") {
+    return {
+      rollType: document.getElementById(idPrefix + "-rolltype").value,
+      mode: document.getElementById(idPrefix + "-mode").value
+    };
+  }
   if (category === "Ability Score" || category === "Saving Throw") {
     return { ability: document.getElementById(idPrefix + "-ability").value, amount: parseInt(document.getElementById(idPrefix + "-amount").value) || 0 };
   }
@@ -384,7 +449,8 @@ function readEffectValueFromForm(category, idPrefix) {
 
 function prefillEffectSubfields(eff, idPrefix) {
   if (!eff.value) return;
-  const map = { ability: "-ability", skill: "-skill", stat: "-stat", amount: "-amount", condition: "-condition" };
+  const map = { ability: "-ability", skill: "-skill", stat: "-stat", amount: "-amount", condition: "-condition",
+                rollType: "-rolltype", mode: "-mode" };
   Object.keys(map).forEach(key => {
     if (eff.value[key] !== undefined) {
       const el = document.getElementById(idPrefix + map[key]);
@@ -2087,8 +2153,7 @@ function openAddEffectModal() {
 
   openModal("full", `
     <div class="modal-heading">Add Effect</div>
-    <div class="field"><label>Name</label><input id="effect-name" list="condition-options" placeholder="e.g. Bless, Prone, Hexed"></div>
-    <datalist id="condition-options">${ALL_CONDITIONS.map(c => `<option value="${c}">`).join("")}</datalist>
+    ${comboFieldHtml("effect-name", "Name", "e.g. Bless, Prone, Hexed")}
     <div class="field"><label>Duration</label>
       <select id="effect-duration-type">
         <option value="Rounds">Rounds</option><option value="Short Rest">Until Short Rest</option>
@@ -2103,6 +2168,8 @@ function openAddEffectModal() {
     <div class="menu-note">Leave the list empty for a label-only reminder with no mechanical effect.</div>
     <button class="btn-primary" id="save-effect-button" style="margin-top:14px;">Add Effect</button>
   `);
+
+  wireCombo("effect-name", ALL_CONDITIONS);
 
   const durationTypeSelect = document.getElementById("effect-duration-type");
   const roundsField = document.getElementById("effect-duration-rounds");
@@ -2658,6 +2725,7 @@ function renderFeatureEffectsList(container, formEffects, categories) {
     const subEl = container.querySelector(`[data-subfields-index="${idx}"]`);
     subEl.innerHTML = effectSubfieldsHtml(eff.category, "feature-effect-" + idx);
     prefillEffectSubfields(eff, "feature-effect-" + idx);
+    wireCombo("feature-effect-" + idx + "-condition", ALL_CONDITIONS);
   });
 
   container.querySelectorAll("[data-eff-category]").forEach(sel => {
