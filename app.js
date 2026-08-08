@@ -8,6 +8,21 @@ const ALL_CONDITIONS = [
   "Poisoned", "Prone", "Restrained", "Stunned", "Unconscious"
 ];
 
+/* Which conditions bend a roll, and which rolls they touch. Only conditions on
+   *this* character are modelled -- the many 5e rules keyed to the target's
+   condition ("advantage against a prone creature") need a target, which the
+   sheet has no concept of. A homebrew or non-SRD condition simply won't appear
+   here, which is what the manual override on the roll window is for. */
+const CONDITION_ROLL_EFFECTS = {
+  Blinded:    [{ applies: "attack", mode: "disadvantage" }],
+  Frightened: [{ applies: "attack", mode: "disadvantage" }, { applies: "check", mode: "disadvantage" }],
+  Invisible:  [{ applies: "attack", mode: "advantage" }],
+  Poisoned:   [{ applies: "attack", mode: "disadvantage" }, { applies: "check", mode: "disadvantage" }],
+  Prone:      [{ applies: "attack", mode: "disadvantage" }],
+  Restrained: [{ applies: "attack", mode: "disadvantage" }, { applies: "save", ability: "DEX", mode: "disadvantage" }],
+  Exhaustion: [{ applies: "check", mode: "disadvantage" }]
+};
+
 const MODIFIER_STATS = ["AC", "Initiative", "Speed", "Attack Rolls", "Damage Rolls", "Proficiency Bonus", "Spell Attack", "Spell DC"];
 const EFFECT_CATEGORIES_GENERAL = ["Condition", "Ability Score", "Saving Throw", "Skill", "Bonus"];
 const EFFECT_CATEGORIES_FEATURE = ["Ability Score", "Saving Throw", "Skill", "Bonus"];
@@ -21,7 +36,9 @@ function rollDie(sides) {
   return Math.floor(Math.random() * sides) + 1;
 }
 
-function rollNotation(notation) {
+// dieValue decides what each die contributes, so the same parser can roll a
+// notation, or report the best it could possibly do (for the MAX readout).
+function evaluateNotation(notation, dieValue) {
   const tokens = notation.match(/(\d*d\d+|\d+\.?\d*|[+\-*/])/gi) || [];
   const resolvedTokens = [];
   const values = [];
@@ -37,7 +54,7 @@ function rollNotation(notation) {
         const count = parseInt(diceMatch[1] || "1");
         const sides = parseInt(diceMatch[2]);
         let rolled = 0;
-        for (let i = 0; i < count; i++) rolled += rollDie(sides);
+        for (let i = 0; i < count; i++) rolled += dieValue(sides);
         values.push(rolled);
         resolvedTokens.push(count + "d" + sides + "(" + rolled + ")");
       } else {
@@ -59,11 +76,62 @@ function rollNotation(notation) {
   }
   let total = vals.length ? vals[0] : 0;
   for (let i = 0; i < operators.length; i++) {
-    if (operators[i] === "+") total += vals[i + 1];
-    else if (operators[i] === "-") total -= vals[i + 1];
+    // a trailing operator ("5+") leaves no right-hand value; treat it as zero
+    // rather than propagating NaN into the character's hit points
+    const next = vals[i + 1] === undefined || isNaN(vals[i + 1]) ? 0 : vals[i + 1];
+    if (operators[i] === "+") total += next;
+    else if (operators[i] === "-") total -= next;
   }
+  if (isNaN(total)) total = 0;
   return { total: Math.round(total * 100) / 100, breakdown: resolvedTokens.join(" ") };
 }
+
+function rollNotation(notation) {
+  return evaluateNotation(notation, sides => rollDie(sides));
+}
+
+function maxNotation(notation) {
+  return evaluateNotation(notation, sides => sides).total;
+}
+
+// 5e resolves advantage on the d20, but every other term is constant, so
+// picking the better of two whole evaluations gives the same answer.
+function rollWithMode(notation, mode) {
+  const first = rollNotation(notation);
+  if (mode === "normal") return { result: first, rolls: [first] };
+  const second = rollNotation(notation);
+  const keepFirst = mode === "advantage" ? first.total >= second.total : first.total <= second.total;
+  return {
+    result: keepFirst ? first : second,
+    dropped: keepFirst ? second : first,
+    rolls: [first, second]
+  };
+}
+
+// Advantage and disadvantage don't stack in 5e -- any of each cancels to a
+// straight roll, however many sources are involved. Both lists are kept so the
+// window can explain what happened rather than just showing "normal".
+function derivedRollMode(character, kind, ability) {
+  const reasons = { advantage: [], disadvantage: [] };
+
+  character.activeEffects.forEach(group => {
+    (group.effects || []).forEach(effect => {
+      if (effect.category !== "Condition") return;
+      (CONDITION_ROLL_EFFECTS[effect.value.condition] || []).forEach(rule => {
+        if (rule.applies !== kind) return;
+        if (rule.ability && rule.ability !== ability) return;
+        const label = effectGroupLabel(group);
+        if (!reasons[rule.mode].includes(label)) reasons[rule.mode].push(label);
+      });
+    });
+  });
+
+  let mode = "normal";
+  if (reasons.advantage.length && !reasons.disadvantage.length) mode = "advantage";
+  else if (reasons.disadvantage.length && !reasons.advantage.length) mode = "disadvantage";
+  return { mode, reasons };
+}
+
 
 let activeToasts = [];
 
@@ -95,6 +163,116 @@ function repositionToasts() {
     toast.style.zIndex = 200 - index;
     toast.style.opacity = index === 0 ? "1" : (1 - index * 0.25);
   });
+}
+
+
+/* ============================================================
+   ROLL WINDOW
+   ============================================================ */
+
+/* Every roll opens the same window, with the same controls in the same places.
+   Only the readouts flanking the total change: damage rolls show half (for
+   resistance) and the maximum the notation could produce; other rolls leave
+   those two cells empty so nothing below them shifts.
+
+   config: { label, notation, sources, kind, ability }
+   kind is one of "attack" | "check" | "save" | "damage", and decides both the
+   flanking readouts and which conditions are consulted. */
+
+let rollState = null;
+
+function showRoll(config) {
+  const derived = derivedRollMode(character, config.kind, config.ability);
+  rollState = { config, derived, mode: derived.mode, manual: false };
+  rollState.outcome = rollWithMode(config.notation, rollState.mode);
+  openModal("center", rollWindowHtml());
+  wireRollWindow();
+}
+
+function rerollCurrent() {
+  rollState.outcome = rollWithMode(rollState.config.notation, rollState.mode);
+  redrawRollWindow();
+}
+
+function setRollMode(mode) {
+  rollState.mode = mode;
+  rollState.manual = mode !== rollState.derived.mode;
+  rerollCurrent();
+}
+
+function rollModeExplanation() {
+  const { derived, manual, mode } = rollState;
+  const advantage = derived.reasons.advantage;
+  const disadvantage = derived.reasons.disadvantage;
+
+  if (manual) {
+    const wouldBe = derived.mode === "normal"
+      ? "no conditions apply"
+      : derived.mode + " from " + derived.reasons[derived.mode].join(", ");
+    return "Set to " + mode + " manually — " + wouldBe;
+  }
+  if (advantage.length && disadvantage.length) {
+    return "Cancels out — advantage from " + advantage.join(", ") + ", disadvantage from " + disadvantage.join(", ");
+  }
+  if (advantage.length) return "Advantage from " + advantage.join(", ");
+  if (disadvantage.length) return "Disadvantage from " + disadvantage.join(", ");
+  return "No conditions affect this roll";
+}
+
+function rollWindowHtml() {
+  const { config, outcome, mode } = rollState;
+  const isDamage = config.kind === "damage";
+  const total = outcome.result.total;
+
+  // the notation is already printed above, so drop the "1d8" prefix and leave
+  // just what each term contributed: "(7) + 3"
+  const dice = outcome.result.breakdown.replace(/\d+d\d+\(/g, "(");
+
+  const chips = (config.sources || [])
+    .filter(source => source.value !== 0)
+    .map(source => `<span class="roll-chip ${source.value > 0 ? "pos" : "neg"}">${source.label} ${formatModifier(source.value)}</span>`)
+    .join("");
+
+  return `
+    <div class="roll-title">${config.label}</div>
+    <div class="roll-notation">${config.notation}</div>
+
+    <div class="roll-values">
+      <div class="roll-side">${isDamage ? `<div class="roll-side-label">½</div><div class="roll-side-value">${Math.floor(total / 2)}</div>` : ""}</div>
+      <div class="roll-total">${total}</div>
+      <div class="roll-side">${isDamage ? `<div class="roll-side-label">MAX</div><div class="roll-side-value">${maxNotation(config.notation)}</div>` : ""}</div>
+    </div>
+
+    <div class="roll-dice">${dice}</div>
+    ${outcome.dropped ? `<div class="roll-dropped">dropped ${outcome.dropped.total}</div>` : ""}
+
+    ${chips ? `<div class="roll-chips">${chips}</div>` : ""}
+
+    <div class="roll-mode-row">
+      ${["advantage", "normal", "disadvantage"].map(option => `
+        <button class="roll-mode-btn ${mode === option ? "active " + option : ""}" data-roll-mode="${option}">
+          ${option === "advantage" ? "ADV" : option === "normal" ? "NORMAL" : "DIS"}
+        </button>
+      `).join("")}
+    </div>
+    <div class="roll-why">${rollModeExplanation()}</div>
+
+    <button class="roll-reroll" id="roll-reroll">↻</button>
+  `;
+}
+
+function redrawRollWindow() {
+  const box = document.querySelector("#modal-overlay .modal-content");
+  if (!box) return;
+  box.innerHTML = rollWindowHtml();
+  wireRollWindow();
+}
+
+function wireRollWindow() {
+  document.querySelectorAll("[data-roll-mode]").forEach(button => {
+    button.addEventListener("click", () => setRollMode(button.dataset.rollMode));
+  });
+  document.getElementById("roll-reroll").addEventListener("click", rerollCurrent);
 }
 
 
@@ -161,7 +339,8 @@ function openBreakdownModal(title, total, suffix, sources, rollButton) {
     <div class="breakdown-total"><span>Total</span><span>${total}${suffix || ""}</span></div>
     ${rollButton ? `<button class="btn-primary" id="breakdown-roll-btn" style="margin-top:14px;">Roll ${rollButton.label}</button>` : ""}
   `);
-  if (rollButton) document.getElementById("breakdown-roll-btn").addEventListener("click", () => showRollToast(rollButton.label, rollButton.notation));
+  if (rollButton) document.getElementById("breakdown-roll-btn").addEventListener("click", () =>
+    showRoll({ label: rollButton.label, notation: rollButton.notation, sources, kind: rollButton.kind || "check", ability: rollButton.ability }));
 }
 
 function effectSubfieldsHtml(category, idPrefix) {
@@ -1743,7 +1922,8 @@ function wireCombatTab() {
       e.stopPropagation();
       const weapon = character.inventory.find(i => i.id == button.dataset.rollTohit);
       const atk = calculateAttack(character, weapon);
-      showRollToast(weapon.name + " \u2013 To Hit", "1d20" + formatModifier(atk.toHitTotal));
+      showRoll({ label: weapon.name + " \u2013 To Hit", notation: "1d20" + formatModifier(atk.toHitTotal),
+                 sources: atk.toHitSources, kind: "attack" });
     });
   });
   document.querySelectorAll("[data-roll-damage]").forEach(button => {
@@ -1751,7 +1931,8 @@ function wireCombatTab() {
       e.stopPropagation();
       const weapon = character.inventory.find(i => i.id == button.dataset.rollDamage);
       const atk = calculateAttack(character, weapon);
-      showRollToast(weapon.name + " \u2013 Damage", atk.damageDice + formatModifier(atk.damageBonusTotal));
+      showRoll({ label: weapon.name + " Damage", notation: atk.damageDice + formatModifier(atk.damageBonusTotal),
+                 sources: atk.damageSources, kind: "damage" });
     });
   });
   document.querySelectorAll("[data-atk-detail]").forEach(row => row.addEventListener("click", () => openAttackDetailModal(row.dataset.atkDetail)));
@@ -2260,7 +2441,7 @@ function wireCharacterTab() {
       const a = box.dataset.ability;
       const check = calculateAbilityCheck(character, a);
       openBreakdownModal(ABILITY_FULL_NAMES[a] + " Check", formatModifier(check.total), "", check.sources,
-        { label: ABILITY_FULL_NAMES[a] + " Check", notation: "1d20" + formatModifier(check.total) });
+        { label: ABILITY_FULL_NAMES[a] + " Check", notation: "1d20" + formatModifier(check.total), kind: "check" });
     });
   });
   document.querySelectorAll("[data-edit-ability]").forEach(btn => btn.addEventListener("click", (e) => { e.stopPropagation(); openEditAbilityModal(btn.dataset.editAbility); }));
@@ -2272,7 +2453,8 @@ function wireCharacterTab() {
       if (e.target.closest("[data-edit-save]")) return;
       const a = row.dataset.save;
       const save = calculateSavingThrow(character, a);
-      showRollToast(ABILITY_FULL_NAMES[a] + " Save", "1d20" + formatModifier(save.total));
+      showRoll({ label: ABILITY_FULL_NAMES[a] + " Save", notation: "1d20" + formatModifier(save.total),
+                 sources: save.sources, kind: "save", ability: a });
     });
   });
   document.querySelectorAll("[data-edit-save]").forEach(btn => btn.addEventListener("click", (e) => { e.stopPropagation(); openEditSavingThrowModal(btn.dataset.editSave); }));
@@ -2282,7 +2464,8 @@ function wireCharacterTab() {
       if (e.target.closest("[data-edit-skill]")) return;
       const name = row.dataset.skill;
       const skill = calculateSkill(character, name);
-      showRollToast(name, "1d20" + formatModifier(skill.total));
+      showRoll({ label: name, notation: "1d20" + formatModifier(skill.total),
+                 sources: skill.sources, kind: "check" });
     });
   });
   document.querySelectorAll("[data-edit-skill]").forEach(btn => btn.addEventListener("click", (e) => { e.stopPropagation(); openEditSkillModal(btn.dataset.editSkill); }));
@@ -2720,7 +2903,8 @@ function castSpell(spellId) {
   if (spell.attackRoll) {
     const cls = character.spellcasting.classes.find(c => c.name === spell.classSource);
     const atk = calculateSpellAttack(character, cls.ability);
-    showRollToast(spell.name, "1d20" + formatModifier(atk.total));
+    showRoll({ label: spell.name, notation: "1d20" + formatModifier(atk.total),
+               sources: atk.sources, kind: "attack" });
   }
   renderContent();
 }
@@ -2731,7 +2915,7 @@ function wireSpellsTab() {
     if (atkBox) atkBox.addEventListener("click", () => {
       const atk = calculateSpellAttack(character, cls.ability);
       openBreakdownModal(cls.name + " Spell Attack", formatModifier(atk.total), "", atk.sources,
-        { label: cls.name + " Spell Attack", notation: "1d20" + formatModifier(atk.total) });
+        { label: cls.name + " Spell Attack", notation: "1d20" + formatModifier(atk.total), kind: "attack" });
     });
     const dcBox = document.querySelector(`[data-spell-dc="${cls.name}"]`);
     if (dcBox) dcBox.addEventListener("click", () => {
@@ -2776,7 +2960,8 @@ function wireSpellsTab() {
       if (spell.level === 0 && spell.attackRoll) {
         const cls = character.spellcasting.classes.find(c => c.name === spell.classSource);
         const atk = calculateSpellAttack(character, cls.ability);
-        showRollToast(spell.name, "1d20" + formatModifier(atk.total));
+        showRoll({ label: spell.name, notation: "1d20" + formatModifier(atk.total),
+                   sources: atk.sources, kind: "attack" });
       } else {
         openSpellDetailModal(spell.id);
       }
