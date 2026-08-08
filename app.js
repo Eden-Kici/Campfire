@@ -1583,21 +1583,20 @@ function renderCombatTab() {
   const speed = calculateSpeed(character);
   const passivePerception = calculatePassivePerception(character);
   const profBonus = calculateProficiencyBonus(character);
-  /* Temp HP is a buffer on top of your maximum, not a slice of it -- so the bar
-     scales to (max + temp) while temp is up. Measuring temp against max alone
-     meant that at full health there was no room left to draw it, which is
-     exactly when you most often gain it. */
-  const hpPool = maxHP.total + character.hp.temp;
-  const hpPercent = hpPool > 0 ? Math.max(0, Math.min(100, (character.hp.current / hpPool) * 100)) : 0;
-  const tempPercent = hpPool > 0 ? Math.min(100 - hpPercent, (character.hp.temp / hpPool) * 100) : 0;
+  /* The track always represents max HP, so the red fill never moves when temp
+     HP comes or goes. Temp draws as a shield layer over the left of the bar,
+     sized against max and capped at full width -- visible at any HP level,
+     including full, which is where the earlier versions broke. */
+  const hpPercent = maxHP.total > 0 ? Math.max(0, Math.min(100, (character.hp.current / maxHP.total) * 100)) : 0;
+  const tempPercent = maxHP.total > 0 ? Math.min(100, (character.hp.temp / maxHP.total) * 100) : 0;
 
   return `
     <div class="hp-card" id="hp-card">
-      <div class="hp-label">Hit Points</div>
+      <div class="hp-label">Hit Points${character.hp.temp ? `<span class="hp-temp">+${character.hp.temp} temp</span>` : ""}</div>
       <div class="hp-bar-track">
         <div class="hp-bar-fill" style="width: ${hpPercent}%"></div>
-        ${character.hp.temp ? `<div class="hp-bar-temp" style="left: ${hpPercent}%; width: ${tempPercent}%"></div>` : ""}
-        <div class="hp-bar-text">${character.hp.current} / ${maxHP.total}${character.hp.temp ? ` <span class="hp-temp">+${character.hp.temp} temp</span>` : ""}</div>
+        ${character.hp.temp ? `<div class="hp-bar-temp" style="width: ${tempPercent}%"></div>` : ""}
+        <div class="hp-bar-text">${character.hp.current} / ${maxHP.total}</div>
       </div>
     </div>
 

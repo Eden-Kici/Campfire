@@ -73,13 +73,24 @@ body {
 /* -------------------- HP -------------------- */
 
 .hp-card { background: #1C1815; border-radius: 16px; padding: 14px 16px; cursor: pointer; }
-.hp-label { font-size: 13px; color: #9C9186; margin-bottom: 8px; }
+.hp-label { font-size: 13px; color: #9C9186; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: baseline; }
 .hp-bar-track { position: relative; height: 32px; background: black; border-radius: 10px; overflow: hidden; }
 .hp-bar-fill { position: absolute; top: 0; left: 0; bottom: 0; background: #C1443C; }
-/* temp HP rides on top of the red fill, in the same yellow as the "+n temp" label */
-.hp-bar-temp { position: absolute; top: 0; bottom: 0; background: #F5C37A; }
-.hp-bar-text { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 6px; font-weight: bold; font-size: 14px; }
-.hp-temp { color: #F5C37A; font-size: 11.5px; }
+/* A shield layer over the left of the track, in the same yellow as the
+   "+n temp" label. Slightly inset and translucent so the red underneath stays
+   readable through it. */
+.hp-bar-temp {
+  position: absolute; top: 0; left: 0; bottom: 0;
+  background: #F5C37A; opacity: .85;
+  border-right: 2px solid #0a0908;
+}
+/* the readout sits over both the red and yellow segments, so it carries a
+   shadow rather than relying on any one background for contrast */
+.hp-bar-text {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-weight: bold; font-size: 14px; text-shadow: 0 1px 3px rgba(0, 0, 0, .85);
+}
+.hp-temp { color: #F5C37A; font-size: 11.5px; font-weight: bold; }
 
 
 /* -------------------- stat grid -------------------- */
