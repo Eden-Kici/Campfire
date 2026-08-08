@@ -50,6 +50,7 @@ const character = {
     },
     {
       id: 2, name: "Bless", concentration: true,
+      note: "Cast by Aldric before the goblin camp. Ends if he takes damage and fails the save.",
       duration: { type: "Rounds", rounds: 10 },
       effects: [
         { category: "Bonus", value: { stat: "Attack Rolls", amount: 1 } },
@@ -256,7 +257,7 @@ function allFeatureEffects(character) {
     character.traits[category].forEach(trait => {
       if (trait.effects) {
         trait.effects.forEach(effect => {
-          all.push({ category: effect.category, value: effect.value, note: trait.name });
+          all.push({ category: effect.category, value: effect.value, source: trait.name });
         });
       }
     });
@@ -273,13 +274,15 @@ function effectGroupLabel(group) {
   return first ? effectSummaryLabel(first) : "Effect";
 }
 
-// Flattens groups into the { category, value, note } shape the calculation
+// Flattens groups into the { category, value, source } shape the calculation
 // layer expects, tagging each modifier with the name of whatever caused it.
+// `source` here is the causing group's name, distinct from group.note, which
+// is the player's own free-text remark about the effect.
 function activeEffectModifiers(character) {
   const modifiers = [];
   character.activeEffects.forEach(group => {
     (group.effects || []).forEach(effect => {
-      modifiers.push({ category: effect.category, value: effect.value, note: effectGroupLabel(group) });
+      modifiers.push({ category: effect.category, value: effect.value, source: effectGroupLabel(group) });
     });
   });
   return modifiers;
@@ -321,7 +324,7 @@ function hasCondition(character, conditionName) {
 }
 
 function effectSourceLabel(effect) {
-  return effect.note && effect.note.trim() ? effect.note : effect.category;
+  return effect.source && effect.source.trim() ? effect.source : effect.category;
 }
 
 function rollTypeLabel(rollType) {

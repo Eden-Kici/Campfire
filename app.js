@@ -358,6 +358,63 @@ function openBreakdownModal(title, total, suffix, sources, rollButton) {
     showRoll({ label: rollButton.label, notation: rollButton.notation, sources, kind: rollButton.kind || "check", ability: rollButton.ability }));
 }
 
+/* An in-app replacement for <select>, which renders as an OS picker on mobile.
+
+   It keeps a hidden <input> carrying the real id, so everything that already
+   reads `getElementById(id).value` or listens for "change" keeps working
+   untouched -- picking an option writes the input and dispatches a change
+   event by hand. That makes converting the remaining native selects a
+   markup-only job. */
+function selectFieldHtml(id, label, options, value) {
+  const items = options.map(option => (typeof option === "string" ? { value: option, label: option } : option));
+  const selected = items.find(item => item.value === value) || items[0];
+
+  return `
+    <div class="field">
+      ${label ? `<label>${label}</label>` : ""}
+      <div class="select" data-select="${id}">
+        <input type="hidden" id="${id}" value="${selected ? selected.value : ""}">
+        <button type="button" class="select-trigger">
+          <span class="select-value">${selected ? selected.label : ""}</span>
+          <span class="select-caret">⌄</span>
+        </button>
+        <div class="select-list" hidden>
+          ${items.map(item => `
+            <button type="button" class="select-option ${selected && item.value === selected.value ? "active" : ""}" data-value="${item.value}">${item.label}</button>
+          `).join("")}
+        </div>
+      </div>
+    </div>`;
+}
+
+function wireSelect(id) {
+  const wrap = document.querySelector(`[data-select="${id}"]`);
+  if (!wrap) return;
+  const input = document.getElementById(id);
+  const trigger = wrap.querySelector(".select-trigger");
+  const list = wrap.querySelector(".select-list");
+
+  trigger.addEventListener("click", () => {
+    const opening = list.hidden;
+    document.querySelectorAll(".select-list").forEach(other => { other.hidden = true; });
+    list.hidden = !opening;
+  });
+
+  list.querySelectorAll(".select-option").forEach(option => {
+    option.addEventListener("click", () => {
+      input.value = option.dataset.value;
+      wrap.querySelector(".select-value").textContent = option.textContent.trim();
+      list.querySelectorAll(".select-option").forEach(other => other.classList.toggle("active", other === option));
+      list.hidden = true;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  });
+}
+
+function wireSelectsIn(root) {
+  (root || document).querySelectorAll("[data-select]").forEach(wrap => wireSelect(wrap.dataset.select));
+}
+
 /* A text field with its own suggestion list. Replaces <datalist>, which renders
    as an OS-native dropdown -- fine on desktop, wrong for something that ships
    as a mobile app. Free text still wins, so non-SRD names work. The list sits
@@ -404,28 +461,27 @@ function effectSubfieldsHtml(category, idPrefix) {
   }
   if (category === "Advantage") {
     return `<div class="field-row">
-      <div class="field"><label>Applies To</label>
-        <select id="${idPrefix}-rolltype">${ROLL_TYPES.map(t => `<option value="${t.value}">${t.label}</option>`).join("")}</select>
-      </div>
-      <div class="field"><label>Effect</label>
-        <select id="${idPrefix}-mode"><option value="advantage">Advantage</option><option value="disadvantage">Disadvantage</option></select>
-      </div>
+      ${selectFieldHtml(idPrefix + "-rolltype", "Applies To", ROLL_TYPES)}
+      ${selectFieldHtml(idPrefix + "-mode", "Effect", [
+        { value: "advantage", label: "Advantage" },
+        { value: "disadvantage", label: "Disadvantage" }
+      ])}
     </div>`;
   }
   if (category === "Ability Score" || category === "Saving Throw") {
     return `<div class="field-row">
-      <div class="field"><label>Ability</label><select id="${idPrefix}-ability">${Object.keys(ABILITY_FULL_NAMES).map(a => `<option>${a}</option>`).join("")}</select></div>
+      ${selectFieldHtml(idPrefix + "-ability", "Ability", Object.keys(ABILITY_FULL_NAMES))}
       <div class="field"><label>Amount</label><input id="${idPrefix}-amount" type="number" value="-2"></div>
     </div>`;
   }
   if (category === "Skill") {
     return `<div class="field-row">
-      <div class="field"><label>Skill</label><select id="${idPrefix}-skill">${Object.keys(character.skillAbilityMap).map(s => `<option>${s}</option>`).join("")}</select></div>
+      ${selectFieldHtml(idPrefix + "-skill", "Skill", Object.keys(character.skillAbilityMap))}
       <div class="field"><label>Amount</label><input id="${idPrefix}-amount" type="number" value="2"></div>
     </div>`;
   }
   return `<div class="field-row">
-    <div class="field"><label>Stat</label><select id="${idPrefix}-stat">${MODIFIER_STATS.map(s => `<option>${s}</option>`).join("")}</select></div>
+    ${selectFieldHtml(idPrefix + "-stat", "Stat", MODIFIER_STATS)}
     <div class="field"><label>Amount</label><input id="${idPrefix}-amount" type="number" value="1"></div>
   </div>`;
 }
@@ -2154,14 +2210,25 @@ function openAddEffectModal() {
   openModal("full", `
     <div class="modal-heading">Add Effect</div>
     ${comboFieldHtml("effect-name", "Name", "e.g. Bless, Prone, Hexed")}
-    <div class="field"><label>Duration</label>
-      <select id="effect-duration-type">
-        <option value="Rounds">Rounds</option><option value="Short Rest">Until Short Rest</option>
-        <option value="Long Rest">Until Long Rest</option><option value="Permanent">Permanent</option>
-      </select>
+
+    <div class="field-row">
+      ${selectFieldHtml("effect-duration-type", "Duration", [
+        { value: "Rounds", label: "Rounds" },
+        { value: "Short Rest", label: "Until Short Rest" },
+        { value: "Long Rest", label: "Until Long Rest" },
+        { value: "Permanent", label: "Permanent" }
+      ], "Permanent")}
+      <div class="field field-shrink">
+        <label>Concentration</label>
+        <div class="switch" id="effect-conc-switch"><div class="knob"></div></div>
+      </div>
     </div>
     <div id="effect-duration-rounds"></div>
-    <div class="toggle-line"><span>Requires concentration</span><div class="switch" id="effect-conc-switch"><div class="knob"></div></div></div>
+
+    <div class="field"><label>Note (optional)</label>
+      <textarea id="effect-note" placeholder="Anything that won't fit in the name — who cast it, what ends it, table rulings"></textarea>
+    </div>
+
     <div class="field" style="margin-top:14px;"><label>Modifiers</label></div>
     <div id="effect-effects-list"></div>
     <button class="add-link" id="add-effect-row-button">+ Add Modifier</button>
@@ -2170,6 +2237,7 @@ function openAddEffectModal() {
   `);
 
   wireCombo("effect-name", ALL_CONDITIONS);
+  wireSelect("effect-duration-type");
 
   const durationTypeSelect = document.getElementById("effect-duration-type");
   const roundsField = document.getElementById("effect-duration-rounds");
@@ -2199,6 +2267,7 @@ function openAddEffectModal() {
     character.activeEffects.push({
       id: newId,
       name: document.getElementById("effect-name").value.trim(),
+      note: document.getElementById("effect-note").value.trim(),
       concentration,
       duration: {
         type: durationType,
@@ -2218,6 +2287,7 @@ function openEffectDetailModal(effectId) {
     <div class="breakdown-title">${effectGroupLabel(group)}</div>
     <div class="breakdown-row"><span>Duration</span><span>${durationLabel(group)}</span></div>
     ${group.concentration ? `<div class="breakdown-row"><span>Concentration</span><span>Required</span></div>` : ""}
+    ${group.note ? `<div class="effect-note">${group.note}</div>` : ""}
     ${modifiers.length ? `
       <div class="breakdown-subhead">Modifiers</div>
       ${modifiers.map(e => `<div class="breakdown-row"><span>${e.category}</span><span>${effectSummaryLabel(e)}</span></div>`).join("")}
@@ -2712,9 +2782,7 @@ function renderFeatureEffectsList(container, formEffects, categories) {
   container.innerHTML = formEffects.map((eff, idx) => `
     <div class="feature-effect-row">
       <div class="field-row">
-        <div class="field"><label>Effect Category</label>
-          <select data-eff-category="${idx}">${categories.map(c => `<option ${c === eff.category ? "selected" : ""}>${c}</option>`).join("")}</select>
-        </div>
+        ${selectFieldHtml("eff-category-" + idx, "Effect Category", categories, eff.category)}
         <button class="chip-remove" data-remove-effect="${idx}">\u2715</button>
       </div>
       <div data-subfields-index="${idx}"></div>
@@ -2726,12 +2794,13 @@ function renderFeatureEffectsList(container, formEffects, categories) {
     subEl.innerHTML = effectSubfieldsHtml(eff.category, "feature-effect-" + idx);
     prefillEffectSubfields(eff, "feature-effect-" + idx);
     wireCombo("feature-effect-" + idx + "-condition", ALL_CONDITIONS);
+    wireSelectsIn(subEl);
   });
 
-  container.querySelectorAll("[data-eff-category]").forEach(sel => {
-    sel.addEventListener("change", () => {
-      const idx = parseInt(sel.dataset.effCategory);
-      formEffects[idx].category = sel.value;
+  formEffects.forEach((eff, idx) => {
+    wireSelect("eff-category-" + idx);
+    document.getElementById("eff-category-" + idx).addEventListener("change", (e) => {
+      formEffects[idx].category = e.target.value;
       formEffects[idx].value = {};
       renderFeatureEffectsList(container, formEffects, categories);
     });
