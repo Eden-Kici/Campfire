@@ -111,10 +111,8 @@ function partyModalHtml() {
   // host-form
   return `
     <div class="modal-heading">Host a Party</div>
-    <div class="field" style="margin-top:10px;">
-      <label>Party Name</label>
-      <input id="host-party-name-input" type="text" placeholder="e.g. The Rusty Blades">
-    </div>
+    ${textFieldHtml("host-party-name-input", "Party Name", "",
+      { placeholder: "e.g. The Rusty Blades", style: "margin-top:10px;" })}
     <button class="btn-primary" id="start-hosting-button">Start Hosting</button>
     <button class="btn-secondary" id="party-back-button">Back</button>
   `;

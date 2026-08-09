@@ -197,6 +197,22 @@ function wireInventoryTab() {
   wireItemDragging();
 }
 
+/* The same three rules define a category whether you're creating one or
+   editing one, and they were written out twice with the labels typed by hand
+   in both. One list now, two forms reading it. */
+const CATEGORY_RULE_FIELDS = [
+  { key: "countsWeight", suffix: "weight", label: "Counts toward carry weight" },
+  { key: "appliesEffects", suffix: "effects", label: "Applies item effects (like Worn/Equipped)" },
+  { key: "providesAttacks", suffix: "attacks", label: "Weapons here appear under Attacks" }
+];
+
+function categoryRuleTogglesHtml(idPrefix, rule) {
+  return CATEGORY_RULE_FIELDS
+    .map(field => toggleLineHtml(idPrefix + field.suffix, field.label, rule ? !!rule[field.key] : false))
+    .join("\n    ");
+}
+
+
 /* ---------- shared item form ----------
 
    Weapons, armour and gear are all inventory entries, so there is one form for
@@ -217,31 +233,27 @@ function commonItemFieldsHtml(item) {
   item = item || {};
   const categories = Object.keys(character.categoryRules);
   return `
-    <div class="field"><label>Name</label><input id="if-name" value="${esc(item.name || "")}" placeholder="e.g. Potion of Healing"></div>
+    ${textFieldHtml("if-name", "Name", item.name, { placeholder: "e.g. Potion of Healing" })}
     ${selectFieldHtml("if-category", "Category", categories, item.category || categories[0])}
     <div class="field-row">
-      <div class="field"><label>Weight (lb)</label><input id="if-weight" type="number" value="${item.weight != null ? item.weight : 1}"></div>
-      <div class="field"><label>Quantity</label><input id="if-qty" type="number" value="${item.qty || 1}"></div>
+      ${numberFieldHtml("if-weight", "Weight (lb)", item.weight != null ? item.weight : 1)}
+      ${numberFieldHtml("if-qty", "Quantity", item.qty || 1)}
     </div>
-    <div class="field"><label>Description (optional)</label><textarea id="if-desc" placeholder="What it is, what it does">${esc(item.description || "")}</textarea></div>
+    ${textAreaFieldHtml("if-desc", "Description (optional)", item.description, { placeholder: "What it is, what it does" })}
     <div class="field-row">
-      <div class="field"><label>AC Bonus</label><input id="if-ac" type="number" value="${item.acBonus || 0}"></div>
-      <div class="field"><label>Attack Bonus</label><input id="if-atkb" type="number" value="${item.attackBonus || 0}"></div>
+      ${numberFieldHtml("if-ac", "AC Bonus", item.acBonus || 0)}
+      ${numberFieldHtml("if-atkb", "Attack Bonus", item.attackBonus || 0)}
     </div>
-    <div class="toggle-line">
-      <span>Track under Resources<div class="atk-range">for things you spend, like arrows</div></span>
-      <div class="switch ${item.resource ? "on" : ""}" id="if-resource-switch"><div class="knob"></div></div>
-    </div>
+    ${toggleLineHtml("if-resource-switch", "Track under Resources", item.resource,
+      { hint: "for things you spend, like arrows" })}
     <div id="if-resource-fields">${item.resource ? itemResourceFieldsHtml(item.resource) : ""}</div>`;
 }
 
 function itemResourceFieldsHtml(resource) {
   resource = resource || {};
   return `
-    <div class="field"><label>Capacity</label>
-      <input id="if-res-max" type="number" value="${resource.max != null ? resource.max : 0}" placeholder="0">
-      <div class="atk-range" style="margin-top:4px;">Leave at 0 for an uncapped stack — it'll show a bare count.</div>
-    </div>
+    ${numberFieldHtml("if-res-max", "Capacity", resource.max != null ? resource.max : 0,
+      { placeholder: "0", hint: "Leave at 0 for an uncapped stack — it'll show a bare count." })}
     ${(resource.max || 0) === 0 && ["all", "half"].includes(resource.recharge && resource.recharge.amount)
       ? `<div class="form-warning">An uncapped stack has no full amount to restore to, so "All" and "Half" do nothing here. Give it a capacity, or set a specific amount.</div>` : ""}
     ${comboFieldHtml("if-res-refill", "Refills From (optional)", "e.g. Arrows", resource.refillFrom)}
@@ -303,11 +315,11 @@ function weaponFieldsHtml(weapon) {
   return `
     <div class="field-row">
       ${selectFieldHtml("wf-ability", "Attack Ability", Object.keys(ABILITY_FULL_NAMES), weapon.attackAbility || "STR")}
-      <div class="field"><label>Magic Bonus</label><input id="wf-magic" type="number" value="${weapon.magicBonus || 0}"></div>
+      ${numberFieldHtml("wf-magic", "Magic Bonus", weapon.magicBonus || 0)}
     </div>
     <div class="field-row">
       ${selectFieldHtml("wf-type", "Attack Type", [{ value: "melee", label: "Melee" }, { value: "ranged", label: "Ranged" }], weapon.weaponType || "melee")}
-      <div class="field"><label>Range</label><input id="wf-range" value="${esc(weapon.range || "")}" placeholder="5 ft"></div>
+      ${textFieldHtml("wf-range", "Range", weapon.range, { placeholder: "5 ft" })}
     </div>
     <div class="field-row">
       ${comboFieldHtml("wf-req", "Requires Proficiency", "None", weapon.proficiencyRequired)}
@@ -315,13 +327,13 @@ function weaponFieldsHtml(weapon) {
         { value: "derived", label: "Auto" }, { value: "yes", label: "Yes" }, { value: "no", label: "No" }
       ], profValue)}
     </div>
-    <div class="field"><label>Damage</label></div>
+    ${fieldLabelHtml("Damage")}
     <div id="damage-rows"></div>
     <button class="add-link" id="add-damage-button">+ Add Damage Type</button>
-    <div class="field" style="margin-top:16px;"><label>Properties</label></div>
+    ${fieldLabelHtml("Properties", { style: "margin-top:16px;" })}
     <div id="property-picker"></div>
     ${comboFieldHtml("wf-ammo", "Spends Ammunition From", "None", weapon.ammunition)}
-    <div class="field"><label>Source (optional — leave blank for "Custom")</label><input id="wf-source" value="${esc(weapon.customSource || "")}"></div>`;
+    ${textFieldHtml("wf-source", 'Source (optional — leave blank for "Custom")', weapon.customSource)}`;
 }
 
 function wireWeaponFields(state) {
@@ -361,12 +373,11 @@ function armourFieldsHtml(item) {
   const armour = (item && item.armour) || {};
   return `
     <div class="field-row">
-      <div class="field"><label>Base AC</label><input id="af-base" type="number" value="${armour.base != null ? armour.base : 11}"></div>
+      ${numberFieldHtml("af-base", "Base AC", armour.base != null ? armour.base : 11)}
       ${selectFieldHtml("af-kind", "Armour Type", ARMOUR_KINDS, armour.kind || "light")}
     </div>
-    <div class="field"><label>Max Dexterity Bonus</label>
-      <input id="af-dexcap" type="number" value="${armour.dexCap != null ? armour.dexCap : ""}" placeholder="Blank for no limit">
-    </div>
+    ${numberFieldHtml("af-dexcap", "Max Dexterity Bonus", armour.dexCap,
+      { placeholder: "Blank for no limit" })}
     <div class="menu-note" style="margin-top:0;">A shield's base is the bonus it adds and stacks with worn armour. Anything else replaces the unarmoured 10.</div>`;
 }
 
@@ -488,10 +499,8 @@ function openAddInventoryModal(presetCategory, presetType) {
 
   function renderCategoryBody() {
     body.innerHTML = `
-      <div class="field"><label>Name</label><input id="new-cat-name" placeholder="e.g. Familiar's Pouch"></div>
-      <div class="toggle-line"><span>Counts toward carry weight</span><div class="switch" id="sw-weight"><div class="knob"></div></div></div>
-      <div class="toggle-line"><span>Applies item effects (like Worn/Equipped)</span><div class="switch" id="sw-effects"><div class="knob"></div></div></div>
-      <div class="toggle-line"><span>Weapons here appear under Attacks</span><div class="switch" id="sw-attacks"><div class="knob"></div></div></div>
+      ${textFieldHtml("new-cat-name", "Name", "", { placeholder: "e.g. Familiar's Pouch" })}
+      ${categoryRuleTogglesHtml("sw-", null)}
       <button class="btn-primary" id="save-cat-button">Create Category</button>
     `;
     let weightOn = false, effectsOn = false, attacksOn = false;
@@ -532,10 +541,8 @@ function openEditCategoryModal(category) {
 
   openModal("sheet", `
     <div class="modal-heading">Edit Category</div>
-    <div class="field"><label>Name</label><input id="edit-cat-name" value="${esc(category)}"></div>
-    <div class="toggle-line"><span>Counts toward carry weight</span><div class="switch ${weightOn ? "on" : ""}" id="sw-edit-weight"><div class="knob"></div></div></div>
-    <div class="toggle-line"><span>Applies item effects (like Worn/Equipped)</span><div class="switch ${effectsOn ? "on" : ""}" id="sw-edit-effects"><div class="knob"></div></div></div>
-    <div class="toggle-line"><span>Weapons here appear under Attacks</span><div class="switch ${attacksOn ? "on" : ""}" id="sw-edit-attacks"><div class="knob"></div></div></div>
+    ${textFieldHtml("edit-cat-name", "Name", category)}
+    ${categoryRuleTogglesHtml("sw-edit-", rule)}
     <div class="btn-row-2">
       <button class="btn-primary" id="save-cat-edit-button">Save Changes</button>
       <button class="btn-primary" id="remove-cat-button" style="background:var(--danger-surface);color:var(--danger-text);">Remove</button>

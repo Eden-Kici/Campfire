@@ -48,6 +48,30 @@ module.exports = function (suite) {
     .map(name => name + " (" + [...new Set(declarations[name])].join(", ") + ")");
   suite.is("every top-level name is declared once", clashes, []);
 
+  /* The form primitives only help if they're used. A hand-written field is a
+     field whose value nobody remembered to escape, whose margin doesn't match
+     its neighbour, and which won't pick up the next change to what a field
+     looks like. ui.js is where the markup is allowed to exist. */
+  suite.section("form markup is built, not typed");
+  ["field", "toggle-line"].forEach(className => {
+    const offenders = listed
+      .filter(file => file !== "ui.js")
+      .filter(file => harness.readFile(file).includes('class="' + className + '"'));
+    suite.is("no file hand-writes a " + className, offenders, []);
+  });
+
+  suite.section("the primitives escape what they're given");
+  const app = harness.loadApp();
+  const HOSTILE = '<img src=x onerror=alert(1)>';
+  [["textFieldHtml", app.textFieldHtml("i", HOSTILE, HOSTILE, { placeholder: HOSTILE, hint: HOSTILE })],
+   ["numberFieldHtml", app.numberFieldHtml("i", HOSTILE, HOSTILE, { placeholder: HOSTILE })],
+   ["textAreaFieldHtml", app.textAreaFieldHtml("i", HOSTILE, HOSTILE, { placeholder: HOSTILE })],
+   ["toggleLineHtml", app.toggleLineHtml("i", HOSTILE, true, { note: HOSTILE, hint: HOSTILE })],
+   ["fieldLabelHtml", app.fieldLabelHtml(HOSTILE)]]
+    .forEach(([name, html]) => {
+      suite.ok(name, !html.includes("<img src=x"), "raw markup survived");
+    });
+
   suite.section("nothing grew back into a monolith");
   const sizes = listed.map(file => ({ file, lines: harness.readFile(file).split("\n").length }));
   const worst = sizes.reduce((a, b) => (b.lines > a.lines ? b : a));

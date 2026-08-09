@@ -65,6 +65,77 @@ function openBreakdownModal(title, total, suffix, sources, rollButton) {
     showRoll({ label: rollButton.label, notation: rollButton.notation, sources, kind: rollButton.kind || "check", ability: rollButton.ability }));
 }
 
+/* ============================================================
+   FORM PRIMITIVES
+
+   A field is a label above a control, and the app has sixty-odd of them. Half
+   were already components -- selects and combos had to be, because they
+   replace native controls with real behaviour -- and half were hand-written
+   markup repeated at every call site. That split is how one field ends up
+   without an esc() around its value, or with a different margin than the one
+   next to it, and nobody notices until it's on screen.
+
+   So the plain ones get built here too. Escaping stops being a thing anyone
+   has to remember, and what a field looks like is one edit rather than sixty.
+
+   `opts` carries the occasional extra: a placeholder, a note under the
+   control, an inline style for fields that size themselves inside a row.
+   ============================================================ */
+
+function fieldHtml(label, inner, opts) {
+  const { style, hint, className } = opts || {};
+  return `<div class="field${className ? " " + className : ""}"${style ? ` style="${style}"` : ""}>` +
+    (label ? `<label>${esc(label)}</label>` : "") +
+    inner +
+    (hint ? `<div class="field-hint">${esc(hint)}</div>` : "") +
+    "</div>";
+}
+
+// a label with no control under it, used to title the blocks that build
+// themselves -- damage rows, properties, the effects list
+function fieldLabelHtml(label, opts) {
+  return fieldHtml(label, "", opts);
+}
+
+function textFieldHtml(id, label, value, opts) {
+  const { placeholder } = opts || {};
+  return fieldHtml(label, `<input id="${id}" type="text" value="${esc(value == null ? "" : value)}"` +
+    (placeholder ? ` placeholder="${esc(placeholder)}"` : "") + ">", opts);
+}
+
+/* Numbers are kept as text on the way in and parsed on the way out, so an
+   empty box stays empty rather than becoming a zero -- several fields here
+   mean "no limit" when blank. */
+function numberFieldHtml(id, label, value, opts) {
+  const { placeholder, min, max } = opts || {};
+  return fieldHtml(label, `<input id="${id}" type="number" value="${esc(value == null ? "" : value)}"` +
+    (min !== undefined ? ` min="${min}"` : "") +
+    (max !== undefined ? ` max="${max}"` : "") +
+    (placeholder ? ` placeholder="${esc(placeholder)}"` : "") + ">", opts);
+}
+
+function textAreaFieldHtml(id, label, value, opts) {
+  const { placeholder, large } = opts || {};
+  return fieldHtml(label, `<textarea id="${id}"${large ? ` class="field-textarea-lg"` : ""}` +
+    (placeholder ? ` placeholder="${esc(placeholder)}"` : "") + `>${esc(value == null ? "" : value)}</textarea>`, opts);
+}
+
+/* A switch with its label. `on` is the starting state; the caller wires the
+   click, because what a toggle does varies far more than how it looks.
+
+   `note` is a short aside on the same line, `hint` a second line beneath. Both
+   are escaped, so neither is a way to smuggle markup back in. */
+function toggleLineHtml(id, label, on, opts) {
+  const { note, hint, style } = opts || {};
+  return `<div class="toggle-line"${style ? ` style="${style}"` : ""}>` +
+    `<span>${esc(label)}` +
+      (note ? ` <span class="field-hint inline">${esc(note)}</span>` : "") +
+      (hint ? `<div class="field-hint">${esc(hint)}</div>` : "") +
+    "</span>" +
+    `<div class="switch ${on ? "on" : ""}" id="${id}"><div class="knob"></div></div>` +
+    "</div>";
+}
+
 /* An in-app replacement for <select>, which renders as an OS picker on mobile.
 
    It keeps a hidden <input> carrying the real id, so everything that already
@@ -76,9 +147,7 @@ function selectFieldHtml(id, label, options, value) {
   const items = options.map(option => (typeof option === "string" ? { value: option, label: option } : option));
   const selected = items.find(item => item.value === value) || items[0];
 
-  return `
-    <div class="field">
-      ${label ? `<label>${esc(label)}</label>` : ""}
+  return fieldHtml(label, `
       <div class="select" data-select="${id}">
         <input type="hidden" id="${id}" value="${esc(selected ? selected.value : "")}">
         <button type="button" class="select-trigger">
@@ -90,8 +159,7 @@ function selectFieldHtml(id, label, options, value) {
             <button type="button" class="select-option ${selected && item.value === selected.value ? "active" : ""}" data-value="${esc(item.value)}">${esc(item.label)}</button>
           `).join("")}
         </div>
-      </div>
-    </div>`;
+      </div>`);
 }
 
 function wireSelect(id) {
@@ -177,11 +245,8 @@ function wireConditionField(idPrefix, existingValue) {
     if (document.getElementById(idPrefix + "-condition-level")) return;   // already shown
 
     const level = existingValue && existingValue.level ? existingValue.level : 1;
-    extra.innerHTML = `
-      <div class="field"><label>Exhaustion Level</label>
-        <input id="${idPrefix}-condition-level" type="number" min="1" max="6" value="${level}">
-        <div class="atk-range" style="margin-top:4px;">Each level adds to the ones below it. A long rest removes one.</div>
-      </div>`;
+    extra.innerHTML = numberFieldHtml(idPrefix + "-condition-level", "Exhaustion Level", level,
+      { min: 1, max: 6, hint: "Each level adds to the ones below it. A long rest removes one." });
   }
 
   wireCombo(idPrefix + "-condition", ALL_CONDITIONS, reveal);
@@ -205,18 +270,18 @@ function effectSubfieldsHtml(category, idPrefix) {
   if (category === "Ability Score" || category === "Saving Throw") {
     return `<div class="field-row">
       ${selectFieldHtml(idPrefix + "-ability", "Ability", Object.keys(ABILITY_FULL_NAMES))}
-      <div class="field"><label>Amount</label><input id="${idPrefix}-amount" type="number" value="-2"></div>
+      ${numberFieldHtml(idPrefix + "-amount", "Amount", -2)}
     </div>`;
   }
   if (category === "Skill") {
     return `<div class="field-row">
       ${selectFieldHtml(idPrefix + "-skill", "Skill", Object.keys(character.skillAbilityMap))}
-      <div class="field"><label>Amount</label><input id="${idPrefix}-amount" type="number" value="2"></div>
+      ${numberFieldHtml(idPrefix + "-amount", "Amount", 2)}
     </div>`;
   }
   return `<div class="field-row">
     ${selectFieldHtml(idPrefix + "-stat", "Stat", MODIFIER_STATS)}
-    <div class="field"><label>Amount</label><input id="${idPrefix}-amount" type="number" value="1"></div>
+    ${numberFieldHtml(idPrefix + "-amount", "Amount", 1)}
   </div>`;
 }
 
@@ -260,7 +325,7 @@ function prefillEffectSubfields(eff, idPrefix) {
 // player's to track, so the form says so plainly at the point of choosing it.
 function rechargeCustomFieldHtml(idPrefix, value) {
   return `
-    <div class="field"><label>Custom Label</label><input id="${idPrefix}-tag-custom" value="${esc(value || "")}" placeholder="e.g. Per Day"></div>
+    ${textFieldHtml(idPrefix + "-tag-custom", "Custom Label", value, { placeholder: "e.g. Per Day" })}
     <div class="form-warning">Custom recharges aren't restored by a Short or Long Rest \u2014 you'll need to reset this one yourself.</div>
   `;
 }
@@ -298,9 +363,8 @@ function rechargeFieldHtml(idPrefix, recharge) {
 
 function rechargeAmountFieldHtml(idPrefix, amount) {
   const value = (amount === "all" || amount === "half") ? "" : amount;
-  return `<div class="field"><label>How Much</label>
-    <input id="${idPrefix}-amount-custom" value="${esc(value)}" placeholder="a number, or dice like 1d4">
-  </div>`;
+  return textFieldHtml(idPrefix + "-amount-custom", "How Much", value,
+    { placeholder: "a number, or dice like 1d4" });
 }
 
 function wireRechargeField(idPrefix) {

@@ -366,9 +366,8 @@ function levelUpHtml() {
         </div>
       ` : ""}
       ${levelUpState.hpMode === "manual" ? `
-        <div class="field"><label>Hit points gained, before Constitution</label>
-          <input id="levelup-manual" type="number" value="${levelUpState.hpManual === null ? "" : levelUpState.hpManual}" placeholder="1 to ${hitDieSize(target.hitDie)}">
-        </div>
+        ${numberFieldHtml("levelup-manual", "Hit points gained, before Constitution", levelUpState.hpManual,
+          { placeholder: "1 to " + hitDieSize(target.hitDie) })}
         <div id="levelup-limit">${levelUpOverLimitHtml(target)}</div>
       ` : ""}
 

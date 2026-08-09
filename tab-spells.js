@@ -171,8 +171,8 @@ function openEditSlotsModal(level) {
   openModal("center", `
     <div class="breakdown-title">${levelLabel(level)} Slots</div>
     <div class="field-row">
-      <div class="field"><label>Current</label><input id="edit-slot-current" type="number" value="${slot.current}"></div>
-      <div class="field"><label>Max</label><input id="edit-slot-max" type="number" value="${slot.max}"></div>
+      ${numberFieldHtml("edit-slot-current", "Current", slot.current)}
+      ${numberFieldHtml("edit-slot-max", "Max", slot.max)}
     </div>
     <button class="btn-primary" id="save-slot-button">Save</button>
   `);
@@ -187,7 +187,7 @@ function openEditSlotsModal(level) {
 function spellFormFieldsHtml(spell) {
   const classOptions = character.spellcasting.classes.map(c => c.name);
   return `
-    <div class="field"><label>Name</label><input id="spell-form-name" value="${esc(spell ? spell.name : "")}" placeholder="e.g. Fireball"></div>
+    ${textFieldHtml("spell-form-name", "Name", spell ? spell.name : "", { placeholder: "e.g. Fireball" })}
     <div class="field-row">
       ${selectFieldHtml("spell-form-level", "Level",
         [{ value: "0", label: "Cantrip" }].concat([1, 2, 3, 4, 5, 6, 7, 8, 9].map(l => ({ value: String(l), label: levelLabel(l) }))),
@@ -197,8 +197,8 @@ function spellFormFieldsHtml(spell) {
     ${selectFieldHtml("spell-form-time", "Casting Time", [
       { value: "A", label: "Action" }, { value: "B", label: "Bonus Action" }, { value: "R", label: "Reaction" }
     ], spell ? spell.castingTime : "A")}
-    <div class="toggle-line"><span>Requires spell attack roll</span><div class="switch ${spell && spell.attackRoll ? "on" : ""}" id="spell-form-attack-switch"><div class="knob"></div></div></div>
-    <div class="field"><label>Description</label><input id="spell-form-desc" value="${esc(spell ? (spell.desc || "") : "")}" placeholder="Optional"></div>
+    ${toggleLineHtml("spell-form-attack-switch", "Requires spell attack roll", spell && spell.attackRoll)}
+    ${textFieldHtml("spell-form-desc", "Description", spell ? spell.desc : "", { placeholder: "Optional" })}
   `;
 }
 

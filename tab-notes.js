@@ -229,9 +229,9 @@ function maybeSyncNoteSharingToSection(note, targetSection) {
 function openAddSectionModal() {
   openModal("sheet", `
     <div class="modal-heading">New Section</div>
-    <div class="field"><label>Name</label><input id="new-sec-name" placeholder="e.g. Quest Log"></div>
-    <div class="toggle-line"><span>Auto-share notes added here</span><div class="switch" id="sw-autoshare"><div class="knob"></div></div></div>
-    <div class="toggle-line"><span>Receive shared notes here</span><div class="switch" id="sw-receive"><div class="knob"></div></div></div>
+    ${textFieldHtml("new-sec-name", "Name", "", { placeholder: "e.g. Quest Log" })}
+    ${toggleLineHtml("sw-autoshare", "Auto-share notes added here", false)}
+    ${toggleLineHtml("sw-receive", "Receive shared notes here", false)}
     <button class="btn-primary" id="save-sec-button">Create Section</button>
   `);
   let autoShare = false, receiveFrom = false;
@@ -256,9 +256,9 @@ function openEditSectionModal(sectionId) {
 
   openModal("sheet", `
     <div class="modal-heading">Edit Section</div>
-    <div class="field"><label>Name</label><input id="edit-sec-name" value="${esc(section.name)}"></div>
-    <div class="toggle-line"><span>Auto-share notes added here</span><div class="switch ${autoShare ? "on" : ""}" id="sw-edit-autoshare"><div class="knob"></div></div></div>
-    <div class="toggle-line"><span>Receive shared notes here</span><div class="switch ${receiveFrom ? "on" : ""}" id="sw-edit-receive"><div class="knob"></div></div></div>
+    ${textFieldHtml("edit-sec-name", "Name", section.name)}
+    ${toggleLineHtml("sw-edit-autoshare", "Auto-share notes added here", autoShare)}
+    ${toggleLineHtml("sw-edit-receive", "Receive shared notes here", receiveFrom)}
     <div class="btn-row-2">
       <button class="btn-primary" id="save-sec-edit-button">Save Changes</button>
       <button class="btn-primary" id="remove-sec-button" style="background:var(--danger-surface);color:var(--danger-text);">Remove</button>
@@ -405,8 +405,8 @@ function openShareModal(noteId) {
 
   openModal("full", `
     <div class="modal-heading">Share Note</div>
-    <div class="toggle-line"><span>Keep updated for everyone (continuous)</span><div class="switch ${continuous ? "on" : ""}" id="sw-continuous"><div class="knob"></div></div></div>
-    <div class="field" style="margin-top:14px;"><label>Party</label></div>
+    ${toggleLineHtml("sw-continuous", "Keep updated for everyone (continuous)", continuous)}
+    ${fieldLabelHtml("Party", { style: "margin-top:14px;" })}
     <div id="share-member-list">
       ${character.partyMembers.map(m => {
         const perm = existing[m] || "off";

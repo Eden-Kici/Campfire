@@ -179,8 +179,8 @@ function openEditProficiencyModal() {
     ${breakdownRowsHtml(bonus.sources)}
     <hr class="breakdown-divider">
     <div class="breakdown-total" style="margin-bottom:14px;"><span>Total</span><span>${formatModifier(bonus.total)}</span></div>
-    <div class="field"><label>Base</label><input id="edit-prof-base" type="number" value="${bonus.sources[0].value}"></div>
-    <div class="toggle-line"><span>Set it manually</span><div class="switch ${bonus.overridden ? "on" : ""}" id="prof-override-switch"><div class="knob"></div></div></div>
+    ${numberFieldHtml("edit-prof-base", "Base", bonus.sources[0].value)}
+    ${toggleLineHtml("prof-override-switch", "Set it manually", bonus.overridden)}
     <div class="menu-note" style="margin-top:0;">Normally ${proficiencyBonusForLevel(bonus.level)} at level ${bonus.level}. Set it manually for homebrew or a table ruling. Anything granting a bonus adds on top either way.</div>
     <button class="btn-primary" id="save-prof-button" style="margin-top:14px;">Save</button>
   `);
@@ -208,7 +208,7 @@ function openEditAbilityModal(ability) {
     ${breakdownRowsHtml(check.sources)}
     <hr class="breakdown-divider">
     <div class="breakdown-total" style="margin-bottom:14px;"><span>Modifier</span><span>${formatModifier(check.total)}</span></div>
-    <div class="field"><label>Base Score</label><input id="edit-ability-score" type="number" value="${character.abilities[ability]}"></div>
+    ${numberFieldHtml("edit-ability-score", "Base Score", character.abilities[ability])}
     <button class="btn-primary" id="save-ability-button">Save</button>
   `);
   document.getElementById("save-ability-button").addEventListener("click", () => {
@@ -230,11 +230,9 @@ function openEditSavingThrowModal(ability) {
     ${breakdownRowsHtml(current.sources)}
     <hr class="breakdown-divider">
     <div class="breakdown-total" style="margin-bottom:14px;"><span>Total</span><span>${formatModifier(current.total)}</span></div>
-    <div class="field"><label>Proficient?</label>
-      ${selectFieldHtml("edit-save-prof", "", [{ value: "yes", label: "Yes" }, { value: "no", label: "No" }], character.savingThrowProficiency[ability] ? "yes" : "no")}
-    </div>
-    <div class="toggle-line"><span>Override bonus</span><div class="switch ${isOverridden ? "on" : ""}" id="save-override-switch"><div class="knob"></div></div></div>
-    <div id="save-override-wrap">${isOverridden ? `<div class="field"><label>Bonus</label><input id="edit-save-override-value" type="number" value="${overrideVal}"></div>` : ""}</div>
+    ${fieldHtml("Proficient?", selectFieldHtml("edit-save-prof", "", [{ value: "yes", label: "Yes" }, { value: "no", label: "No" }], character.savingThrowProficiency[ability] ? "yes" : "no"))}
+    ${toggleLineHtml("save-override-switch", "Override bonus", isOverridden)}
+    <div id="save-override-wrap">${isOverridden ? numberFieldHtml("edit-save-override-value", "Bonus", overrideVal) : ""}</div>
     <button class="btn-primary" id="save-save-button">Save</button>
   `);
 
@@ -246,7 +244,7 @@ function openEditSavingThrowModal(ability) {
     overrideOn = !overrideOn;
     switchEl.classList.toggle("on", overrideOn);
     const startVal = isOverridden ? overrideVal : calculateSavingThrow(character, ability).total;
-    wrap.innerHTML = overrideOn ? `<div class="field"><label>Bonus</label><input id="edit-save-override-value" type="number" value="${startVal}"></div>` : "";
+    wrap.innerHTML = overrideOn ? numberFieldHtml("edit-save-override-value", "Bonus", startVal) : "";
   });
 
   document.getElementById("save-save-button").addEventListener("click", () => {
@@ -278,8 +276,8 @@ function openEditSkillModal(skillName) {
     ${selectFieldHtml("edit-skill-prof", "Proficiency", [
       { value: "0", label: "None" }, { value: "1", label: "Proficient" }, { value: "2", label: "Expertise" }
     ], String(current))}
-    <div class="toggle-line"><span>Override bonus</span><div class="switch ${isOverridden ? "on" : ""}" id="skill-override-switch"><div class="knob"></div></div></div>
-    <div id="skill-override-wrap">${isOverridden ? `<div class="field"><label>Bonus</label><input id="edit-skill-override-value" type="number" value="${overrideVal}"></div>` : ""}</div>
+    ${toggleLineHtml("skill-override-switch", "Override bonus", isOverridden)}
+    <div id="skill-override-wrap">${isOverridden ? numberFieldHtml("edit-skill-override-value", "Bonus", overrideVal) : ""}</div>
     <button class="btn-primary" id="save-skill-button">Save</button>
   `);
 
@@ -291,7 +289,7 @@ function openEditSkillModal(skillName) {
     overrideOn = !overrideOn;
     switchEl.classList.toggle("on", overrideOn);
     const startVal = isOverridden ? overrideVal : calculateSkill(character, skillName).total;
-    wrap.innerHTML = overrideOn ? `<div class="field"><label>Bonus</label><input id="edit-skill-override-value" type="number" value="${startVal}"></div>` : "";
+    wrap.innerHTML = overrideOn ? numberFieldHtml("edit-skill-override-value", "Bonus", startVal) : "";
   });
 
   document.getElementById("save-skill-button").addEventListener("click", () => {
@@ -313,7 +311,7 @@ function openEditSkillModal(skillName) {
 function openEditSubsectionModal(category) {
   openModal("center", `
     <div class="breakdown-title">Edit Section</div>
-    <div class="field"><label>Name</label><input id="edit-subsection-name" value="${esc(category)}"></div>
+    ${textFieldHtml("edit-subsection-name", "Name", category)}
     <div class="btn-row-2">
       <button class="btn-primary" id="save-subsection-edit-button">Save Changes</button>
       <button class="btn-primary" id="remove-subsection-button" style="background:var(--danger-surface);color:var(--danger-text);">Remove</button>
@@ -414,9 +412,9 @@ function openAddFeatureOrSectionModal() {
   function renderFeatureBody() {
     body.innerHTML = `
       ${selectFieldHtml("new-feature-category", "Section", categories)}
-      <div class="field"><label>Name</label><input id="new-feature-name" placeholder="e.g. Great Weapon Master"></div>
-      <div class="field"><label>Description</label><input id="new-feature-desc" placeholder="Optional"></div>
-      <div class="field"><label>Effects</label></div>
+      ${textFieldHtml("new-feature-name", "Name", "", { placeholder: "e.g. Great Weapon Master" })}
+      ${textFieldHtml("new-feature-desc", "Description", "", { placeholder: "Optional" })}
+      ${fieldLabelHtml("Effects")}
       <div id="feature-effects-list"></div>
       <button class="add-link" id="add-feature-effect-button">+ Add Effect</button>
       <button class="btn-primary" id="save-feature-button" style="margin-top:14px;">Add Feature</button>
@@ -443,7 +441,7 @@ function openAddFeatureOrSectionModal() {
 
   function renderSectionBody() {
     body.innerHTML = `
-      <div class="field"><label>Name</label><input id="new-subsection-name" placeholder="e.g. Boons, Curses, Titles"></div>
+      ${textFieldHtml("new-subsection-name", "Name", "", { placeholder: "e.g. Boons, Curses, Titles" })}
       <button class="btn-primary" id="save-subsection-button">Add Section</button>
     `;
     document.getElementById("save-subsection-button").addEventListener("click", () => {
@@ -481,9 +479,9 @@ function openEditFeatureModal(category, index) {
 
   openModal("full", `
     <div class="modal-heading">Edit Feature</div>
-    <div class="field"><label>Name</label><input id="edit-feature-name" value="${esc(trait.name)}"></div>
-    <div class="field"><label>Description</label><input id="edit-feature-desc" value="${esc(trait.desc || "")}"></div>
-    <div class="field"><label>Effects</label></div>
+    ${textFieldHtml("edit-feature-name", "Name", trait.name)}
+    ${textFieldHtml("edit-feature-desc", "Description", trait.desc)}
+    ${fieldLabelHtml("Effects")}
     <div id="feature-effects-list"></div>
     <button class="add-link" id="add-feature-effect-button">+ Add Effect</button>
     <div class="btn-row-2" style="margin-top:14px;">

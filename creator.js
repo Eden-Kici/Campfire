@@ -82,6 +82,17 @@ function goBack() {
   redrawCreator();
 }
 
+/* Every step ends with the same pair of buttons. The last one says something
+   else and carries its own id, because it does something else. */
+function creatorNavHtml(next) {
+  const { id = "creator-next-button", label = "Next" } = next || {};
+  return `
+    <div class="btn-row-2" style="margin-top:14px;">
+      <button class="btn-secondary" id="creator-back-button">Back</button>
+      <button class="btn-primary" id="${id}">${esc(label)}</button>
+    </div>`;
+}
+
 
 /* ---------- step: race ---------- */
 
@@ -147,10 +158,7 @@ function classStepHtml(stepNum, totalSteps) {
       <div class="breakdown-subhead">Class Features</div>
       ${cls.features.map(featureRowHtml).join("")}
     ` : ""}
-    <div class="btn-row-2" style="margin-top:14px;">
-      <button class="btn-secondary" id="creator-back-button">Back</button>
-      <button class="btn-primary" id="creator-next-button">Next</button>
-    </div>
+    ${creatorNavHtml()}
   `;
 }
 
@@ -186,10 +194,7 @@ function subclassStepHtml(stepNum, totalSteps) {
       <div class="breakdown-subhead">Subclass Features</div>
       ${cls.subclasses.find(sc => sc.name === creatorState.subclass).features.map(featureRowHtml).join("")}
     ` : ""}
-    <div class="btn-row-2" style="margin-top:14px;">
-      <button class="btn-secondary" id="creator-back-button">Back</button>
-      <button class="btn-primary" id="creator-next-button">Next</button>
-    </div>
+    ${creatorNavHtml()}
   `;
 }
 
@@ -221,10 +226,7 @@ function backgroundStepHtml(stepNum, totalSteps) {
       <div class="breakdown-subhead">Background Feature</div>
       ${featureRowHtml(bg.feature)}
     ` : ""}
-    <div class="btn-row-2" style="margin-top:14px;">
-      <button class="btn-secondary" id="creator-back-button">Back</button>
-      <button class="btn-primary" id="creator-next-button">Next</button>
-    </div>
+    ${creatorNavHtml()}
   `;
 }
 
@@ -257,7 +259,7 @@ function abilityStepHtml(stepNum, totalSteps) {
       const isMain = cls && cls.mainAbility === a;
       return `
       <div class="field-row" style="align-items:center;">
-        <div class="field" style="flex:0 0 118px;"><label>${isMain ? "\u2605 " : ""}${a}</label></div>
+        ${fieldLabelHtml((isMain ? "\u2605 " : "") + a, { style: "flex:0 0 118px;" })}
         <div class="mini-stepper" style="justify-content:flex-start;">
           <button data-as-minus="${a}">\u2212</button><span>${finalScoreFor(a)}</span><button data-as-plus="${a}">+</button>
         </div>
@@ -275,10 +277,7 @@ function abilityStepHtml(stepNum, totalSteps) {
     </div>
     <div class="breakdown-subhead" style="margin-top:16px;">Skill Proficiencies</div>
     <div class="trait-desc" style="margin-bottom:10px;">${bg ? bg.skills.join(", ") : "None yet"} from background. Race and class skills are chosen next.</div>
-    <div class="btn-row-2" style="margin-top:10px;">
-      <button class="btn-secondary" id="creator-back-button">Back</button>
-      <button class="btn-primary" id="creator-next-button">Next</button>
-    </div>
+    ${creatorNavHtml()}
   `;
 }
 
@@ -398,10 +397,7 @@ function skillsStepHtml(stepNum, totalSteps) {
   });
 
   html += `
-    <div class="btn-row-2" style="margin-top:14px;">
-      <button class="btn-secondary" id="creator-back-button">Back</button>
-      <button class="btn-primary" id="creator-next-button">Next</button>
-    </div>
+    ${creatorNavHtml()}
   `;
   return html;
 }
@@ -604,10 +600,7 @@ function equipmentStepHtml(stepNum, totalSteps) {
       <div class="chip-row">${granted.map(name => `<div class="chip chip-stat">${esc(name)}</div>`).join("")}</div>
     ` : ""}
 
-    <div class="btn-row-2" style="margin-top:14px;">
-      <button class="btn-secondary" id="creator-back-button">Back</button>
-      <button class="btn-primary" id="creator-next-button">Next</button>
-    </div>`;
+    ${creatorNavHtml()}`;
 }
 
 function wireEquipmentStep() {
@@ -664,22 +657,13 @@ function finalStepHtml(stepNum, totalSteps) {
   return `
     <div class="modal-heading">New Character</div>
     <div class="breakdown-source">Step ${stepNum} of ${totalSteps} \u00B7 Name & Details</div>
-    <div class="field" style="margin-top:14px;">
-      <label>Character Name</label>
-      <input id="creator-name-input" type="text" value="${esc(creatorState.name)}" placeholder="e.g. Sigrid of Chester">
-    </div>
-    <div class="field">
-      <label>Appearance (optional)</label>
-      <input id="creator-appearance-input" type="text" value="${esc(creatorState.appearance)}" placeholder="Brief physical description">
-    </div>
-    <div class="field">
-      <label>Backstory (optional)</label>
-      <input id="creator-backstory-input" type="text" value="${esc(creatorState.backstory)}" placeholder="A line or two of history">
-    </div>
-    <div class="btn-row-2" style="margin-top:10px;">
-      <button class="btn-secondary" id="creator-back-button">Back</button>
-      <button class="btn-primary" id="creator-confirm-button">Create Character</button>
-    </div>
+    ${textFieldHtml("creator-name-input", "Character Name", creatorState.name,
+      { placeholder: "e.g. Sigrid of Chester", style: "margin-top:14px;" })}
+    ${textFieldHtml("creator-appearance-input", "Appearance (optional)", creatorState.appearance,
+      { placeholder: "Brief physical description" })}
+    ${textFieldHtml("creator-backstory-input", "Backstory (optional)", creatorState.backstory,
+      { placeholder: "A line or two of history" })}
+    ${creatorNavHtml({ id: "creator-confirm-button", label: "Create Character" })}
   `;
 }
 

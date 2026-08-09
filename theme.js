@@ -48,10 +48,8 @@ function loadSettings() {
 function openSettingsModal() {
   openModal("sheet", `
     <div class="modal-heading">Options</div>
-    <div class="toggle-line">
-      <span>Always show death saves<div class="atk-range">Otherwise they appear only at 0 hit points</div></span>
-      <div class="switch ${settings.alwaysShowDeathSaves ? "on" : ""}" id="setting-death-saves"><div class="knob"></div></div>
-    </div>
+    ${toggleLineHtml("setting-death-saves", "Always show death saves", settings.alwaysShowDeathSaves,
+      { hint: "Otherwise they appear only at 0 hit points" })}
   `);
   const toggle = document.getElementById("setting-death-saves");
   toggle.addEventListener("click", () => {

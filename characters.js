@@ -105,17 +105,14 @@ function openCharacterEditorModal() {
       <input type="file" id="editor-pic-input" accept="image/*" style="display:none;">
     </div>
 
-    <div class="field"><label>Name</label><input id="editor-name-input" type="text" value="${esc(character.name)}"></div>
-    <div class="field">
-      <label>Alignment</label>
-      ${selectFieldHtml("editor-alignment-input", "", ALIGNMENTS, character.alignment)}
-    </div>
-    <div class="field"><label>Appearance</label><textarea id="editor-appearance-input" placeholder="Physical description">${esc(character.appearance)}</textarea></div>
-    <div class="field"><label>Personality Traits</label><textarea id="editor-traits-input" placeholder="How they act, talk, carry themselves">${esc(character.personalityTraits)}</textarea></div>
-    <div class="field"><label>Ideals</label><textarea id="editor-ideals-input" placeholder="What they believe in">${esc(character.ideals)}</textarea></div>
-    <div class="field"><label>Bonds</label><textarea id="editor-bonds-input" placeholder="Who or what they're tied to">${esc(character.bonds)}</textarea></div>
-    <div class="field"><label>Flaws</label><textarea id="editor-flaws-input" placeholder="What holds them back">${esc(character.flaws)}</textarea></div>
-    <div class="field"><label>Backstory</label><textarea id="editor-backstory-input" class="field-textarea-lg" placeholder="Their history">${esc(character.backstory)}</textarea></div>
+    ${textFieldHtml("editor-name-input", "Name", character.name)}
+    ${fieldHtml("Alignment", selectFieldHtml("editor-alignment-input", "", ALIGNMENTS, character.alignment))}
+    ${textAreaFieldHtml("editor-appearance-input", "Appearance", character.appearance, { placeholder: "Physical description" })}
+    ${textAreaFieldHtml("editor-traits-input", "Personality Traits", character.personalityTraits, { placeholder: "How they act, talk, carry themselves" })}
+    ${textAreaFieldHtml("editor-ideals-input", "Ideals", character.ideals, { placeholder: "What they believe in" })}
+    ${textAreaFieldHtml("editor-bonds-input", "Bonds", character.bonds, { placeholder: "Who or what they're tied to" })}
+    ${textAreaFieldHtml("editor-flaws-input", "Flaws", character.flaws, { placeholder: "What holds them back" })}
+    ${textAreaFieldHtml("editor-backstory-input", "Backstory", character.backstory, { placeholder: "Their history", large: true })}
 
     <button class="btn-primary" id="editor-save-button">Save</button>
   `);

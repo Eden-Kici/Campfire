@@ -548,6 +548,9 @@ body {
 .field textarea.field-textarea-lg { min-height: 110px; }
 .field-row { display: flex; gap: 10px; align-items: flex-start; }
 .field-row .field { flex: 1; }
+/* the note under a control, explaining what blank means or what it affects */
+.field-hint { font-size: 11px; color: var(--text-faint); margin-top: 4px; line-height: 1.4; }
+.field-hint.inline { display: inline; margin-top: 0; }
 
 /* in-app replacement for <select>, which opens an OS picker on mobile */
 .select { position: relative; }

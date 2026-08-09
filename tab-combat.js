@@ -676,18 +676,16 @@ function openAddEffectModal() {
         { value: "Long Rest", label: "Until Long Rest" },
         { value: "Permanent", label: "Permanent" }
       ], "Permanent")}
-      <div class="field field-shrink">
-        <label>Concentration</label>
-        <div class="field-control"><div class="switch" id="effect-conc-switch"><div class="knob"></div></div></div>
-      </div>
+      ${fieldHtml("Concentration",
+        `<div class="field-control"><div class="switch" id="effect-conc-switch"><div class="knob"></div></div></div>`,
+        { className: "field-shrink" })}
     </div>
     <div id="effect-duration-rounds"></div>
 
-    <div class="field"><label>Note (optional)</label>
-      <textarea id="effect-note" placeholder="Anything that won't fit in the name — who cast it, what ends it, table rulings"></textarea>
-    </div>
+    ${textAreaFieldHtml("effect-note", "Note (optional)", "",
+      { placeholder: "Anything that won't fit in the name — who cast it, what ends it, table rulings" })}
 
-    <div class="field" style="margin-top:14px;"><label>Modifiers</label></div>
+    ${fieldLabelHtml("Modifiers", { style: "margin-top:14px;" })}
     <div id="effect-effects-list"></div>
     <button class="add-link" id="add-effect-row-button">+ Add Modifier</button>
     <div class="menu-note">Leave the list empty for a label-only reminder with no mechanical effect.</div>
@@ -703,7 +701,7 @@ function openAddEffectModal() {
 
   function renderRoundsField() {
     roundsField.innerHTML = durationTypeSelect.value === "Rounds"
-      ? `<div class="field"><label>Number of Rounds</label><input id="effect-rounds" type="number" value="1"></div>` : "";
+      ? numberFieldHtml("effect-rounds", "Number of Rounds", 1) : "";
   }
   durationTypeSelect.addEventListener("change", renderRoundsField);
   renderRoundsField();
@@ -804,8 +802,8 @@ function openEffectDetailModal(effectId) {
 function openAddResourceModal() {
   openModal("sheet", `
     <div class="modal-heading">New Resource</div>
-    <div class="field"><label>Name</label><input id="new-res-name" placeholder="e.g. Bardic Inspiration"></div>
-    <div class="field"><label>Max Uses</label><input id="new-res-max" type="number" value="1"></div>
+    ${textFieldHtml("new-res-name", "Name", "", { placeholder: "e.g. Bardic Inspiration" })}
+    ${numberFieldHtml("new-res-max", "Max Uses", 1)}
     ${rechargeFieldHtml("new-res")}
     <button class="btn-primary" id="save-res-button">Add Resource</button>
   `);
@@ -825,8 +823,8 @@ function openResourceDetailModal(resourceId) {
   const r = character.resources.find(x => x.id == resourceId);
   openModal("sheet", `
     <div class="modal-heading">Edit Resource</div>
-    <div class="field"><label>Name</label><input id="edit-res-name" value="${esc(r.name)}"></div>
-    <div class="field"><label>Max Uses</label><input id="edit-res-max" type="number" value="${r.max}"></div>
+    ${textFieldHtml("edit-res-name", "Name", r.name)}
+    ${numberFieldHtml("edit-res-max", "Max Uses", r.max)}
     ${rechargeFieldHtml("edit-res", r.recharge)}
     <div class="btn-row-2">
       <button class="btn-primary" id="save-edit-res-button">Save Changes</button>
@@ -881,7 +879,7 @@ function renderPropertyPicker(container, selected) {
       ${available.map(name => `<button type="button" class="prop-add" data-prop-add="${esc(name)}">+ ${esc(name)}</button>`).join("")}
     </div>` : ""}
     <div class="field-row" style="margin-top:10px;">
-      <div class="field" style="margin-bottom:0;"><input id="prop-custom-input" placeholder="Anything else, e.g. Versatile (1d10)"></div>
+      ${textFieldHtml("prop-custom-input", "", "", { placeholder: "Anything else, e.g. Versatile (1d10)", style: "margin-bottom:0;" })}
       <button type="button" class="btn-secondary prop-custom-add" id="prop-custom-add">Add</button>
     </div>
   `;
@@ -923,7 +921,7 @@ function renderDamageRows(container, parts) {
         <button class="chip-remove" data-remove-damage="${idx}">\u2715</button>
       </div>
       <div class="field-row">
-        <div class="field" style="flex:0 0 84px;"><label>Dice</label><input id="dmg-dice-${idx}" value="${esc(part.dice || "")}" placeholder="1d6"></div>
+        ${textFieldHtml("dmg-dice-" + idx, "Dice", part.dice, { placeholder: "1d6", style: "flex:0 0 84px;" })}
         ${selectFieldHtml("dmg-type-" + idx, "Damage Type", DAMAGE_TYPES, part.type)}
       </div>
       ${selectFieldHtml("dmg-ability-" + idx, "Adds ability modifier", abilityOptions, part.ability || "")}
@@ -963,10 +961,8 @@ function openAttackDetailModal(weaponId) {
     </div>
     ${atk.finesse ? `<div class="breakdown-source">Finesse \u2014 using ${ABILITY_FULL_NAMES[atk.finesse]}, your better of Strength and Dexterity</div>` : ""}
     ${atk.versatile ? `
-      <div class="toggle-line" style="margin-top:10px;">
-        <span>Wielding two-handed <span class="atk-range">(${esc(atk.versatile)})</span></span>
-        <div class="switch ${atk.twoHanded ? "on" : ""}" id="atk-grip-switch"><div class="knob"></div></div>
-      </div>` : ""}
+      ${toggleLineHtml("atk-grip-switch", "Wielding two-handed", atk.twoHanded,
+        { note: "(" + atk.versatile + ")", style: "margin-top:10px;" })}` : ""}
 
     <div class="breakdown-subhead">To Hit</div>
     ${breakdownRowsHtml(atk.toHitSources)}
@@ -1058,7 +1054,7 @@ function openCreateStowCategoryModal(weapon) {
       Every inventory category currently puts weapons on your Attacks list, so ${esc(weapon.name)} has nowhere to go.
       Create a category for gear you're carrying but not wielding.
     </div>
-    <div class="field" style="margin-top:14px;"><label>Category Name</label><input id="stow-cat-name" value="Carrying"></div>
+    ${textFieldHtml("stow-cat-name", "Category Name", "Carrying", { style: "margin-top:14px;" })}
     <button class="btn-primary" id="create-stow-cat">Create and Stow</button>
     <button class="btn-secondary" id="cancel-stow">Cancel</button>
   `);
