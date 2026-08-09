@@ -104,4 +104,28 @@ module.exports = function (suite) {
   const combat = clean.renderCombatTab();
   suite.ok("an apostrophe becomes an entity", /Serpent&#39;s Fang/.test(combat));
   suite.ok("nothing is double escaped", !/&amp;(lt|gt|quot|#39|amp);/.test(combat));
+
+  /* The mirror of the test above. Escaping text is the point; escaping markup
+     the app built itself turns a tag into visible gibberish. That is exactly
+     what happened to the sharing tag in the notes list: a bulk pass wrapped a
+     variable called `tag`, which held a span rather than a word.
+
+     Running on clean data means any escaped tag here is the app's own. */
+  suite.section("markup the app built is not escaped as if it were text");
+  // renderSelectorScreen writes into the DOM rather than returning markup
+  [["combat", clean.renderCombatTab], ["character", clean.renderCharacterTab],
+   ["spells", clean.renderSpellsTab], ["inventory", clean.renderInventoryTab],
+   ["notes", clean.renderNotesTab]]
+    .forEach(([name, render]) => {
+      const html = render() || "";
+      const leaked = (html.match(/&lt;\/?[a-z]+[^&]{0,80}?&gt;/g) || []);
+      suite.is(name + " shows no tags as text", leaked.slice(0, 2), []);
+    });
+
+  suite.section("the sharing tags in particular");
+  const notes = clean.renderNotesTab();
+  suite.ok("a note shared with you shows an incoming tag", /class="share-tag share-tag-in"/.test(notes));
+  suite.ok("a note you share shows an outgoing one", /class="share-tag share-tag-out"/.test(notes));
+  suite.ok("and the sharer's name is still escaped inside it",
+    !/share-tag-in">[^<]*<script/.test(notes));
 };

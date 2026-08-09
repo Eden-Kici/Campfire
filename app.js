@@ -5716,7 +5716,9 @@ function renderNoteRow(n) {
   return `
     <div class="item-row note-row" data-note-view="${n.id}" data-note-id="${n.id}" style="touch-action:none;">
       <div style="flex:1;">
-        <div class="item-name">${esc(n.title || "Untitled")}${esc(tag)}</div>
+        <!-- the title is text and gets escaped; the tag is markup this
+             function built, with its own escaping already applied inside -->
+        <div class="item-name">${esc(n.title || "Untitled")}${tag}</div>
         ${preview ? `<div class="item-meta">${esc(preview)}</div>` : ""}
       </div>
     </div>
