@@ -84,8 +84,7 @@ let character = {
      Spell slots deliberately do NOT live here -- see spellSlots below. */
   resources: [
     { id: 3, name: "Action Surge", recharge: { on: "SR", amount: "all" }, current: 1, max: 1 },
-    { id: 4, name: "Second Wind", recharge: { on: "LR", amount: "all" }, current: 2, max: 2 },
-    { id: 5, name: "Arrows", recharge: { on: "none", amount: "all" }, current: 20, max: 20 }
+    { id: 4, name: "Second Wind", recharge: { on: "LR", amount: "all" }, current: 2, max: 2 }
   ],
 
   // Weapons declare what they need (proficiencyRequired); this is what the
@@ -178,6 +177,15 @@ let character = {
     },
     { id: 5, name: "Ring of Precision", category: "Worn", weight: 0, qty: 1, attackBonus: 1 },
     { id: 6, name: "Bag of Holding", category: "Carrying", weight: 15, qty: 1 },
+    /* Arrows are a thing you own and a counter you spend. `resource` makes the
+       item show up under Resources on the Combat tab, where its quantity IS
+       the count -- so there's one number, not an item and a resource that can
+       drift apart. */
+    {
+      id: 9, name: "Arrows", category: "Carrying", weight: 0.05, qty: 20,
+      description: "A quiver of them.",
+      resource: { max: 20, recharge: { on: "none", amount: "all" } }
+    },
     // stored, not worn -- proves armour only counts from a category whose
     // rules say appliesEffects
     {
@@ -375,9 +383,50 @@ function finesseAbility(character, weapon) {
   return dexterity > strength ? "DEX" : "STR";
 }
 
+/* Resources come from two places: standalone entries like Action Surge, and
+   inventory items that opted into being tracked, like arrows. They render and
+   recharge identically; a row just knows which object backs it so a stepper
+   writes to the right one. Item-backed rows use the item's own quantity as
+   their count, so nothing can drift. */
+function resourceRows(character) {
+  const rows = character.resources.map(resource => ({
+    key: "res:" + resource.id,
+    name: resource.name,
+    recharge: resource.recharge,
+    current: resource.current,
+    max: resource.max,
+    resource
+  }));
+
+  character.inventory.forEach(item => {
+    if (!item.resource) return;
+    rows.push({
+      key: "item:" + item.id,
+      name: item.name,
+      recharge: item.resource.recharge,
+      current: item.qty || 0,
+      max: item.resource.max,
+      item
+    });
+  });
+
+  return rows;
+}
+
+function findResourceRow(character, key) {
+  return resourceRows(character).find(row => row.key === key) || null;
+}
+
+function adjustResourceRow(row, delta) {
+  if (!row) return;
+  if (row.item) row.item.qty = (row.item.qty || 0) + delta;
+  else row.resource.current += delta;
+}
+
+// a weapon's ammunition may be a standalone resource or an inventory item
 function ammunitionResource(character, weapon) {
   if (!weapon.ammunition) return null;
-  return character.resources.find(r => r.name === weapon.ammunition) || null;
+  return resourceRows(character).find(row => row.name === weapon.ammunition) || null;
 }
 
 function allFeatureEffects(character) {

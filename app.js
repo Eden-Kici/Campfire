@@ -675,7 +675,7 @@ let savedCharacters = [character];
    A real build would migrate. A POC only needs to notice. */
 
 const STORAGE_KEY = "campfire.characters";
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 function persistCharacters() {
   try {
@@ -2002,7 +2002,14 @@ function applyRest(kind, diceSpend) {
     if (spent.dice) summary.push(plural(spent.dice, "hit die").replace("dies", "dice") + " for " + spent.healed + " HP");
   }
 
-  const resources = character.resources.filter(r => restoreOnRest(r, isLong)).length;
+  let resources = character.resources.filter(r => restoreOnRest(r, isLong)).length;
+  // items tracked as resources recharge through the same rule, writing back
+  // to the quantity that is their count
+  character.inventory.forEach(item => {
+    if (!item.resource) return;
+    const shim = { recharge: item.resource.recharge, current: item.qty || 0, max: item.resource.max };
+    if (restoreOnRest(shim, isLong)) { item.qty = shim.current; resources++; }
+  });
   if (resources) summary.push(plural(resources, "resource"));
 
   const slots = Object.keys(character.spellSlots)
@@ -2107,12 +2114,34 @@ function openAppMenu() {
     ${MENU_STUBS.map(item => `
       <button class="drawer-item" data-stub="${esc(item.label)}">${esc(item.label)}<span class="drawer-hint">${item.hint}</span></button>
     `).join("")}
+
+    <div class="drawer-section">Development</div>
+    <button class="drawer-item" id="menu-reset-demo">Reset to Demo Character<span class="drawer-hint">clears saved data</span></button>
   `);
   document.getElementById("menu-short-rest").addEventListener("click", openShortRestModal);
   document.getElementById("menu-long-rest").addEventListener("click", openLongRestModal);
   document.querySelectorAll("[data-stub]").forEach(button => {
     button.addEventListener("click", () => { closeModal(); showToast(button.dataset.stub + " isn't built yet"); });
   });
+  document.getElementById("menu-reset-demo").addEventListener("click", confirmResetToDemo);
+}
+
+// development aid: persistence means the demo character keeps whatever state
+// you left it in, which is unhelpful while iterating on the sheet itself
+function confirmResetToDemo() {
+  openModal("center", `
+    <div class="modal-heading">Reset to the demo character?</div>
+    <div class="menu-note" style="margin-top:0;">
+      Deletes every saved character and reloads the page with Sigrid as she ships. There's no undo.
+    </div>
+    <button class="btn-primary" id="confirm-reset" style="background:#5A2C29;color:#F0908A;margin-top:16px;">Delete everything and reset</button>
+    <button class="btn-secondary" id="cancel-reset">Cancel</button>
+  `);
+  document.getElementById("confirm-reset").addEventListener("click", () => {
+    try { localStorage.removeItem(STORAGE_KEY); } catch (err) { /* nothing to clear */ }
+    location.reload();
+  });
+  document.getElementById("cancel-reset").addEventListener("click", closeModal);
 }
 
 
@@ -2238,10 +2267,14 @@ function renderCombatTab() {
       </div>
     `;
     }).join("")}
-    ${character.resources.map(r => `
+    ${resourceRows(character).map(row => `
       <div class="res-row">
-        <div class="res-name-wrap" data-resource-view="${r.id}"><span class="res-name">${esc(r.name)}</span><span class="res-tag">${esc(rechargeLabel(r.recharge))}</span></div>
-        <div class="stepper"><button data-res-minus="${r.id}">\u2212</button><span class="res-count">${r.current}/${r.max}</span><button data-res-plus="${r.id}">+</button></div>
+        <div class="res-name-wrap" data-resource-view="${esc(row.key)}">
+          <span class="res-name">${esc(row.name)}</span>
+          <span class="res-tag">${esc(rechargeLabel(row.recharge))}</span>
+          ${row.item ? `<span class="res-tag" title="Tracked from your inventory">ITEM</span>` : ""}
+        </div>
+        <div class="stepper"><button data-res-minus="${esc(row.key)}">\u2212</button><span class="res-count">${row.current}/${row.max}</span><button data-res-plus="${esc(row.key)}">+</button></div>
       </div>
     `).join("")}
 
@@ -2318,12 +2351,18 @@ function wireCombatTab() {
   });
 
   document.querySelectorAll("[data-res-minus]").forEach(button => {
-    button.addEventListener("click", () => { character.resources.find(x => x.id == button.dataset.resMinus).current--; renderContent(); });
+    button.addEventListener("click", () => { adjustResourceRow(findResourceRow(character, button.dataset.resMinus), -1); renderContent(); });
   });
   document.querySelectorAll("[data-res-plus]").forEach(button => {
-    button.addEventListener("click", () => { character.resources.find(x => x.id == button.dataset.resPlus).current++; renderContent(); });
+    button.addEventListener("click", () => { adjustResourceRow(findResourceRow(character, button.dataset.resPlus), 1); renderContent(); });
   });
-  document.querySelectorAll("[data-resource-view]").forEach(el => el.addEventListener("click", () => openResourceDetailModal(el.dataset.resourceView)));
+  // an item-backed row belongs to the item, so tapping it opens the item
+  document.querySelectorAll("[data-resource-view]").forEach(el => el.addEventListener("click", () => {
+    const row = findResourceRow(character, el.dataset.resourceView);
+    if (!row) return;
+    if (row.item) openItemDetailModal(row.item.id);
+    else openResourceDetailModal(row.resource.id);
+  }));
   document.getElementById("add-resource-button").addEventListener("click", openAddResourceModal);
 
   document.querySelectorAll("[data-slot-minus]").forEach(button => {
@@ -2345,7 +2384,7 @@ function wireCombatTab() {
       // ammunition is spent when the attack is made, not when it's rerolled
       if (atk.ammunition) {
         if (atk.ammunition.current <= 0) showToast("Out of " + atk.ammunition.name);
-        atk.ammunition.current--;
+        adjustResourceRow(atk.ammunition, -1);
         renderContent();
       }
       showRoll({ label: weapon.name + " \u2013 To Hit", notation: "1d20" + formatModifier(atk.toHitTotal),
@@ -2818,7 +2857,7 @@ function openAttackDetailModal(weaponId) {
 
   // a weapon IS an inventory item, so editing one is editing that item -- the
   // full form lives there rather than being duplicated here
-  document.getElementById("edit-weapon-button").addEventListener("click", () => openItemDetailModal(weaponId));
+  document.getElementById("edit-weapon-button").addEventListener("click", () => openItemEditModal(weaponId));
 
   document.getElementById("remove-atk-button").addEventListener("click", () => openStowWeaponModal(weaponId));
 }
@@ -3885,7 +3924,43 @@ function commonItemFieldsHtml(item) {
     <div class="field-row">
       <div class="field"><label>AC Bonus</label><input id="if-ac" type="number" value="${item.acBonus || 0}"></div>
       <div class="field"><label>Attack Bonus</label><input id="if-atkb" type="number" value="${item.attackBonus || 0}"></div>
-    </div>`;
+    </div>
+    <div class="toggle-line">
+      <span>Track under Resources<div class="atk-range">for things you spend, like arrows</div></span>
+      <div class="switch ${item.resource ? "on" : ""}" id="if-resource-switch"><div class="knob"></div></div>
+    </div>
+    <div id="if-resource-fields">${item.resource ? itemResourceFieldsHtml(item.resource) : ""}</div>`;
+}
+
+function itemResourceFieldsHtml(resource) {
+  resource = resource || {};
+  return `
+    <div class="field"><label>Full Stack</label><input id="if-res-max" type="number" value="${resource.max != null ? resource.max : 20}"></div>
+    ${rechargeFieldHtml("if-res", resource.recharge || { on: "none", amount: "all" })}`;
+}
+
+// the quantity is the count, so there's no separate "current" to keep in step
+function wireItemResourceFields(item) {
+  const wrap = document.getElementById("if-resource-fields");
+  const toggle = document.getElementById("if-resource-switch");
+  let on = !!(item && item.resource);
+
+  function draw() {
+    wrap.innerHTML = on ? itemResourceFieldsHtml(item && item.resource) : "";
+    if (on) wireRechargeField("if-res");
+  }
+  toggle.addEventListener("click", () => {
+    on = !on;
+    toggle.classList.toggle("on", on);
+    draw();
+  });
+  if (on) wireRechargeField("if-res");
+}
+
+function readItemResourceFields() {
+  const max = document.getElementById("if-res-max");
+  if (!max) return null;
+  return { max: parseInt(max.value) || 0, recharge: readRechargeValue("if-res") };
 }
 
 function readCommonItemFields() {
@@ -4062,6 +4137,7 @@ function openAddInventoryModal(presetCategory, presetType) {
       <button class="btn-primary" id="save-item-button" style="margin-top:16px;">Add Item</button>
     `;
     wireSelect("if-category");
+    wireItemResourceFields(null);
 
     const typeFields = document.getElementById("type-fields");
     renderItemTypeFields(typeFields, state.type, null, state);
@@ -4075,6 +4151,8 @@ function openAddInventoryModal(presetCategory, presetType) {
       const attackBonus = parseInt(document.getElementById("if-atkb").value) || 0;
       if (acBonus) item.acBonus = acBonus;
       if (attackBonus) item.attackBonus = attackBonus;
+      const tracked = readItemResourceFields();
+      if (tracked) item.resource = tracked;
 
       applyItemType(item, state.type, state);
 
@@ -4176,7 +4254,69 @@ function openEditCategoryModal(category) {
   });
 }
 
+/* Tapping an item shows what it is; editing is a deliberate second step. Same
+   split as an attack, a skill or an effect -- looking at something shouldn't
+   drop you into a form. */
 function openItemDetailModal(itemId) {
+  const item = character.inventory.find(i => i.id == itemId);
+  if (!item) return;
+  const rule = character.categoryRules[item.category] || {};
+  const quantity = item.qty || 1;
+  const type = itemType(item);
+
+  const facts = [];
+  facts.push(["Category", item.category + (rule.providesAttacks && item.isWeapon ? " · drawn" : "")]);
+  if (quantity > 1) facts.push(["Quantity", String(quantity)]);
+  facts.push(["Weight", rule.countsWeight
+    ? (item.weight * quantity) + " lb" + (quantity > 1 ? " (" + item.weight + " each)" : "")
+    : "not carried"]);
+
+  if (type === "armour") {
+    facts.push(["Base AC", String(item.armour.base)]);
+    facts.push(["Armour Type", (ARMOUR_KINDS.find(k => k.value === item.armour.kind) || {}).label || item.armour.kind]);
+    facts.push(["Max Dexterity", item.armour.dexCap === null || item.armour.dexCap === undefined ? "no limit" : String(item.armour.dexCap)]);
+  }
+  if (item.acBonus) facts.push(["AC Bonus", formatModifier(item.acBonus)]);
+  if (item.attackBonus) facts.push(["Attack Bonus", formatModifier(item.attackBonus)]);
+  if (item.resource) facts.push(["Tracked as", "resource, " + rechargeLabel(item.resource.recharge) + ", full stack " + item.resource.max]);
+
+  let weaponBlock = "";
+  if (type === "weapon") {
+    const atk = calculateAttack(character, item);
+    weaponBlock = `
+      <div class="breakdown-subhead">Attack</div>
+      <div class="breakdown-row"><span>To Hit</span><span>${formatModifier(atk.toHitTotal)}</span></div>
+      ${atk.damage.map(part => `
+        <div class="breakdown-row"><span>${esc(part.type || "Damage")}</span><span>${esc(part.notation)}</span></div>
+      `).join("")}
+      <div class="breakdown-row"><span>Proficiency</span><span>${atk.proficiency.proficient ? "yes" : "no"}${atk.proficiency.required ? " (needs " + esc(atk.proficiency.required) + ")" : ""}</span></div>
+      ${item.properties && item.properties.length ? `<div class="breakdown-row"><span>Properties</span><span>${esc(item.properties.join(", "))}</span></div>` : ""}
+      ${rule.providesAttacks ? "" : `<div class="menu-note">Stowed in ${esc(item.category)}, so it isn't on your Attacks list.</div>`}`;
+  }
+
+  openModal("full", `
+    <div class="modal-heading-row">
+      <div class="modal-heading">${esc(item.name)}</div>
+      <button class="icon-btn-delete" id="detail-delete-trigger" title="Remove item">🗑</button>
+    </div>
+    ${item.description ? `<div class="effect-note">${esc(item.description)}</div>` : ""}
+
+    <div class="breakdown-subhead">Details</div>
+    ${facts.map(([label, value]) => `<div class="breakdown-row"><span>${esc(label)}</span><span>${esc(value)}</span></div>`).join("")}
+    ${weaponBlock}
+
+    <div class="btn-row-2" style="margin-top:22px;">
+      <button class="btn-primary" id="detail-edit-button">Edit</button>
+      <button class="btn-primary" id="detail-give-button" style="background:#242019;color:#F5C37A;">Give</button>
+    </div>
+  `);
+
+  document.getElementById("detail-edit-button").addEventListener("click", () => openItemEditModal(itemId));
+  document.getElementById("detail-give-button").addEventListener("click", () => startGiveFlow(item));
+  document.getElementById("detail-delete-trigger").addEventListener("click", () => confirmDeleteItem(item));
+}
+
+function openItemEditModal(itemId) {
   const item = character.inventory.find(i => i.id == itemId);
   const state = newItemFormState(item);
 
@@ -4195,6 +4335,7 @@ function openItemDetailModal(itemId) {
   `);
 
   wireSelect("if-category");
+  wireItemResourceFields(item);
   const typeFields = document.getElementById("type-fields");
   renderItemTypeFields(typeFields, state.type, item, state);
   wireItemTypeToggle(state, typeFields, item);
@@ -4205,6 +4346,8 @@ function openItemDetailModal(itemId) {
     const atkb = parseInt(document.getElementById("if-atkb").value) || 0;
     if (ac) item.acBonus = ac; else delete item.acBonus;
     if (atkb) item.attackBonus = atkb; else delete item.attackBonus;
+    const tracked = readItemResourceFields();
+    if (tracked) item.resource = tracked; else delete item.resource;
 
     applyItemType(item, state.type, state);
 
