@@ -704,6 +704,130 @@ function showToast(message) {
 let savedCharacters = [character];
 
 
+/* ---------- themes ----------
+
+   A theme is a set of CSS custom properties; switching one sets an attribute
+   and the stylesheet does the rest. Nothing in the app reads a colour, so
+   there's no render pass involved.
+
+   Custom is a base theme plus overrides. Storing it that way rather than as a
+   full palette means an override only has to name the handful of colours a
+   person actually wants to change, and everything else keeps working -- and
+   if the palette grows later, existing custom themes don't go stale. */
+
+const THEMES = [
+  { value: "ember", label: "Ember", hint: "The original" },
+  { value: "fantasy", label: "Fantasy", hint: "Leather and gold" },
+  { value: "light", label: "Light", hint: "Paper" }
+];
+
+// the ones worth exposing; the rest follow from the base theme
+const CUSTOM_SWATCHES = [
+  { variable: "--accent", label: "Accent" },
+  { variable: "--accent-soft", label: "Accent, soft" },
+  { variable: "--page", label: "Background" },
+  { variable: "--surface", label: "Cards" },
+  { variable: "--control", label: "Controls" },
+  { variable: "--text", label: "Text" }
+];
+
+const THEME_KEY = "campfire.theme";
+
+let theme = { base: "ember", custom: {} };
+
+function applyTheme() {
+  const root = document.documentElement;
+  root.setAttribute("data-theme", theme.base);
+
+  // clear any previous overrides before applying the current set
+  CUSTOM_SWATCHES.forEach(swatch => root.style.removeProperty(swatch.variable));
+  Object.keys(theme.custom || {}).forEach(variable => {
+    if (theme.custom[variable]) root.style.setProperty(variable, theme.custom[variable]);
+  });
+}
+
+function persistTheme() {
+  try { localStorage.setItem(THEME_KEY, JSON.stringify(theme)); }
+  catch (err) { /* a blocked store just means the choice won't survive a reload */ }
+}
+
+function loadTheme() {
+  theme = { base: "ember", custom: {} };        // reset first, so this is idempotent
+  try {
+    const saved = JSON.parse(localStorage.getItem(THEME_KEY));
+    if (saved && saved.base) theme = { base: saved.base, custom: saved.custom || {} };
+  } catch (err) { /* a damaged value just means the default */ }
+  applyTheme();
+}
+
+function setTheme(base) {
+  theme.base = base;
+  applyTheme();
+  persistTheme();
+}
+
+/* Reading a variable's current value needs the computed style, because a theme
+   sets it in a stylesheet rather than inline. That's what lets the colour
+   inputs show what you're actually looking at rather than a guess. */
+function currentColour(variable) {
+  const override = theme.custom && theme.custom[variable];
+  if (override) return override;
+  const computed = getComputedStyle(document.documentElement).getPropertyValue(variable);
+  return (computed || "").trim();
+}
+
+function openThemeModal() {
+  openModal("sheet", `
+    <div class="modal-heading">Theme</div>
+
+    ${THEMES.map(entry => `
+      <button class="drawer-item theme-option ${theme.base === entry.value ? "active" : ""}" data-theme-pick="${entry.value}">
+        <span class="theme-swatches" data-theme="${entry.value}">
+          <i style="background:var(--page)"></i><i style="background:var(--surface)"></i><i style="background:var(--accent)"></i>
+        </span>
+        <span class="theme-name">${esc(entry.label)}</span>
+        <span class="drawer-hint">${esc(entry.hint)}</span>
+      </button>
+    `).join("")}
+
+    <div class="drawer-section">Adjust</div>
+    <div class="theme-swatch-grid">
+      ${CUSTOM_SWATCHES.map(swatch => `
+        <label class="theme-swatch">
+          <input type="color" data-swatch="${swatch.variable}" value="${esc(currentColour(swatch.variable))}">
+          <span>${esc(swatch.label)}</span>
+        </label>
+      `).join("")}
+    </div>
+    <div class="menu-note" style="margin-top:10px;">Changes sit on top of the chosen theme, so only what you pick is overridden.</div>
+    <button class="btn-secondary" id="theme-reset">Reset adjustments</button>
+  `);
+
+  document.querySelectorAll("[data-theme-pick]").forEach(button => {
+    button.addEventListener("click", () => {
+      setTheme(button.dataset.themePick);
+      openThemeModal();                       // reopen so the swatches show the new base
+    });
+  });
+
+  document.querySelectorAll("[data-swatch]").forEach(input => {
+    input.addEventListener("input", () => {
+      theme.custom[input.dataset.swatch] = input.value;
+      applyTheme();
+      persistTheme();
+    });
+  });
+
+  document.getElementById("theme-reset").addEventListener("click", () => {
+    theme.custom = {};
+    applyTheme();
+    persistTheme();
+    openThemeModal();
+    showToast("Back to the " + (THEMES.find(t => t.value === theme.base) || {}).label + " palette");
+  });
+}
+
+
 /* ---------- persistence ----------
 
    The character shape has changed repeatedly, so the saved blob carries a
@@ -800,7 +924,7 @@ function openCharacterEditorModal() {
       </div>
       <div class="avatar-edit-actions">
         <button class="add-link" id="editor-pic-upload-btn">Upload Photo</button>
-        ${character.profilePic ? `<button class="add-link" id="editor-pic-remove-btn" style="color:#F0908A;">Remove</button>` : ""}
+        ${character.profilePic ? `<button class="add-link" id="editor-pic-remove-btn" style="color:var(--danger-text);">Remove</button>` : ""}
       </div>
       <input type="file" id="editor-pic-input" accept="image/*" style="display:none;">
     </div>
@@ -867,7 +991,7 @@ function renderSelectorScreen() {
     ? savedCharacters.map(c => `
         <div class="char-card" data-open-char="${c.id}">
           <div>
-            <div class="char-card-name">${esc(c.name)}${c.customBuild ? ` <span class="res-tag" style="background:#5A2C29;color:#F0908A;">CUSTOM</span>` : ""}</div>
+            <div class="char-card-name">${esc(c.name)}${c.customBuild ? ` <span class="res-tag" style="background:var(--danger-surface);color:var(--danger-text);">CUSTOM</span>` : ""}</div>
             <div class="char-card-class">${esc(classLineFor(c))}</div>
           </div>
           <button class="char-card-menu" data-char-menu="${c.id}">\u22EF</button>
@@ -949,7 +1073,7 @@ function openCharacterMenu(id) {
   openModal("center", `
     <div class="modal-heading">${esc(c.name)}</div>
     <button class="btn-primary" id="export-char-button" style="margin-bottom:8px;">Export</button>
-    <button class="btn-primary" id="delete-char-button" style="background:#5A2C29;color:#F0908A;">Delete</button>
+    <button class="btn-primary" id="delete-char-button" style="background:var(--danger-surface);color:var(--danger-text);">Delete</button>
   `);
   document.getElementById("export-char-button").addEventListener("click", () => {
     closeModal();
@@ -980,7 +1104,7 @@ function confirmDeleteCharacter(id) {
   openModal("center", `
     <div class="modal-heading">Delete ${esc(c.name)}?</div>
     <div class="breakdown-source" style="margin-bottom:14px;">This can't be undone.</div>
-    <button class="btn-primary" id="confirm-delete-char-button" style="background:#5A2C29;color:#F0908A;margin-bottom:8px;">Delete</button>
+    <button class="btn-primary" id="confirm-delete-char-button" style="background:var(--danger-surface);color:var(--danger-text);margin-bottom:8px;">Delete</button>
     <button class="btn-secondary" id="cancel-delete-char-button">Cancel</button>
   `);
   document.getElementById("confirm-delete-char-button").addEventListener("click", () => {
@@ -1311,7 +1435,7 @@ function pointBuySpentAndExceeds() {
 }
 
 function featureRowHtml(f) {
-  return `<div class="trait-item" style="border-top:1px solid #332C24;padding:8px 0;">
+  return `<div class="trait-item" style="border-top:1px solid var(--border);padding:8px 0;">
     <div class="trait-name">${f.name}</div>
     <div class="trait-desc">${f.desc}</div>
   </div>`;
@@ -1517,7 +1641,7 @@ function abilityStepHtml(stepNum, totalSteps) {
     <div class="modal-heading">Ability Scores</div>
     <div class="breakdown-source">Step ${stepNum} of ${totalSteps} \u00B7 Point Buy</div>
     <div class="breakdown-total" style="margin:10px 0;"><span>Ability Points</span><span>${remaining}</span></div>
-    ${exceeds ? `<div class="item-effect" style="color:#F0908A;margin-bottom:10px;">\u26A0 Exceeds standard point-buy limits \u2014 will be marked custom / not legal.</div>` : ""}
+    ${exceeds ? `<div class="item-effect" style="color:var(--danger-text);margin-bottom:10px;">\u26A0 Exceeds standard point-buy limits \u2014 will be marked custom / not legal.</div>` : ""}
     ${CREATOR_ABILITY_ORDER.map(a => {
       const isMain = cls && cls.mainAbility === a;
       return `
@@ -1526,10 +1650,10 @@ function abilityStepHtml(stepNum, totalSteps) {
         <div class="mini-stepper" style="justify-content:flex-start;">
           <button data-as-minus="${a}">\u2212</button><span>${finalScoreFor(a)}</span><button data-as-plus="${a}">+</button>
         </div>
-        <label style="font-size:11px;color:#9C9186;display:flex;align-items:center;gap:3px;margin-left:12px;">
+        <label style="font-size:11px;color:var(--text-dim);display:flex;align-items:center;gap:3px;margin-left:12px;">
           <input type="checkbox" data-bonus2="${a}" ${creatorState.asiBonus.plus2 === a ? "checked" : ""}> +2
         </label>
-        <label style="font-size:11px;color:#9C9186;display:flex;align-items:center;gap:3px;margin-left:8px;">
+        <label style="font-size:11px;color:var(--text-dim);display:flex;align-items:center;gap:3px;margin-left:8px;">
           <input type="checkbox" data-bonus1="${a}" ${creatorState.asiBonus.plus1 === a ? "checked" : ""}> +1
         </label>
       </div>`;
@@ -1618,8 +1742,8 @@ function skillsStepHtml(stepNum, totalSteps) {
     <div class="modal-heading">Skills</div>
     <div class="breakdown-source">Step ${stepNum} of ${totalSteps} \u00B7 Proficiencies</div>
     <div class="field-row" style="justify-content:flex-end;gap:14px;margin:10px 0 4px;">
-      ${raceChoice ? `<span style="font-size:11px;color:#9C9186;width:44px;text-align:center;">Race<br>${creatorState.raceSkillChoices.length}/${raceChoice.count}</span>` : ""}
-      ${cls ? `<span style="font-size:11px;color:#9C9186;width:44px;text-align:center;">Class<br>${creatorState.classSkillChoices.length}/${cls.skillChoices.count}</span>` : ""}
+      ${raceChoice ? `<span style="font-size:11px;color:var(--text-dim);width:44px;text-align:center;">Race<br>${creatorState.raceSkillChoices.length}/${raceChoice.count}</span>` : ""}
+      ${cls ? `<span style="font-size:11px;color:var(--text-dim);width:44px;text-align:center;">Class<br>${creatorState.classSkillChoices.length}/${cls.skillChoices.count}</span>` : ""}
     </div>
   `;
 
@@ -1640,7 +1764,7 @@ function skillsStepHtml(stepNum, totalSteps) {
       let raceSlot = `<span style="display:inline-block;width:44px;text-align:center;"></span>`;
       let classSlot = `<span style="display:inline-block;width:44px;text-align:center;"></span>`;
       if (isBg) {
-        raceSlot = `<span style="display:inline-block;width:44px;text-align:center;"><span class="res-tag" style="background:#2E2820;color:#F5C37A;">BG</span></span>`;
+        raceSlot = `<span style="display:inline-block;width:44px;text-align:center;"><span class="res-tag" style="background:var(--control-raised);color:var(--accent-soft);">BG</span></span>`;
       } else {
         if (raceChoice && raceChoice.options.includes(s.name)) {
           const disabled = !isRace && creatorState.raceSkillChoices.length >= raceChoice.count;
@@ -2071,10 +2195,10 @@ function partyModalHtml() {
         ${party.members.map(m => `
           <div class="member-row">
             <span>${esc(m.name)}</span>
-            ${m.owner ? `<span class="res-tag" style="background:#E8843A;color:#1a0f00;">OWNER</span>` : ""}
+            ${m.owner ? `<span class="res-tag" style="background:var(--accent);color:var(--accent-ink);">OWNER</span>` : ""}
           </div>
         `).join("")}
-        <button class="btn-primary" id="leave-party-button" style="background:#5A2C29;color:#F0908A;margin-top:10px;">${party.status === "hosting" ? "Stop Hosting" : "Leave Party"}</button>
+        <button class="btn-primary" id="leave-party-button" style="background:var(--danger-surface);color:var(--danger-text);margin-top:10px;">${party.status === "hosting" ? "Stop Hosting" : "Leave Party"}</button>
         <button class="btn-secondary" id="party-done-button">Done</button>
       `;
     }
@@ -2447,6 +2571,7 @@ function openAppMenu() {
     ${MENU_STUBS.map(item => `
       <button class="drawer-item" data-stub="${esc(item.label)}">${esc(item.label)}<span class="drawer-hint">${item.hint}</span></button>
     `).join("")}
+    <button class="drawer-item" id="menu-theme">Theme<span class="drawer-hint">${esc((THEMES.find(t => t.value === theme.base) || {}).label || "")}</span></button>
 
     <div class="drawer-section">Character</div>
     <button class="drawer-item" id="menu-level-up">Level Up<span class="drawer-hint">level ${totalLevel(character)}</span></button>
@@ -2461,6 +2586,7 @@ function openAppMenu() {
   });
   document.getElementById("menu-reset-demo").addEventListener("click", confirmResetToDemo);
   document.getElementById("menu-level-up").addEventListener("click", openLevelUpModal);
+  document.getElementById("menu-theme").addEventListener("click", openThemeModal);
 }
 
 // development aid: persistence means the demo character keeps whatever state
@@ -2471,10 +2597,11 @@ function confirmResetToDemo() {
     <div class="menu-note" style="margin-top:0;">
       Deletes every saved character and reloads the page with Sigrid as she ships. There's no undo.
     </div>
-    <button class="btn-primary" id="confirm-reset" style="background:#5A2C29;color:#F0908A;margin-top:16px;">Delete everything and reset</button>
+    <button class="btn-primary" id="confirm-reset" style="background:var(--danger-surface);color:var(--danger-text);margin-top:16px;">Delete everything and reset</button>
     <button class="btn-secondary" id="cancel-reset">Cancel</button>
   `);
   document.getElementById("confirm-reset").addEventListener("click", () => {
+    // the theme is an app preference, not character data, so it survives
     try { localStorage.removeItem(STORAGE_KEY); } catch (err) { /* nothing to clear */ }
     location.reload();
   });
@@ -3202,7 +3329,7 @@ function openEffectDetailModal(effectId) {
       <div class="breakdown-subhead">Modifiers</div>
       ${modifiers.map(e => `<div class="breakdown-row"><span>${esc(e.category)}</span><span>${esc(effectSummaryLabel(e))}</span></div>`).join("")}
     ` : `<div class="empty-hint">No mechanical effect — this is a reminder only.</div>`}
-    <button class="btn-primary" id="remove-effect-button" style="background:#5A2C29;color:#F0908A;">Remove Effect</button>
+    <button class="btn-primary" id="remove-effect-button" style="background:var(--danger-surface);color:var(--danger-text);">Remove Effect</button>
   `);
   document.getElementById("remove-effect-button").addEventListener("click", () => {
     character.activeEffects = character.activeEffects.filter(e => e.id != effectId);
@@ -3254,7 +3381,7 @@ function openResourceDetailModal(resourceId) {
     ${rechargeFieldHtml("edit-res", r.recharge)}
     <div class="btn-row-2">
       <button class="btn-primary" id="save-edit-res-button">Save Changes</button>
-      <button class="btn-primary" id="remove-res-button" style="background:#5A2C29;color:#F0908A;">Remove</button>
+      <button class="btn-primary" id="remove-res-button" style="background:var(--danger-surface);color:var(--danger-text);">Remove</button>
     </div>
   `);
   wireRechargeField("edit-res");
@@ -3408,7 +3535,7 @@ function openAttackDetailModal(weaponId) {
 
     <div class="btn-row-2" style="margin-top:22px;">
       <button class="btn-primary" id="edit-weapon-button">Edit Weapon</button>
-      <button class="btn-primary" id="remove-atk-button" style="background:#242019;color:#F5C37A;">Stow</button>
+      <button class="btn-primary" id="remove-atk-button" style="background:var(--control);color:var(--accent-soft);">Stow</button>
     </div>
   `);
 
@@ -3510,7 +3637,7 @@ function renderCollapseSection(title, key, bodyHtml) {
   return `
     <div class="section-head-row" data-section-toggle="${key}" style="cursor:pointer;">
       <div class="section-head">${esc(title)}</div>
-      <span style="color:#9C9186;font-size:12px;">${openSections[key] ? "\u2212" : "+"}</span>
+      <span style="color:var(--text-dim);font-size:12px;">${openSections[key] ? "\u2212" : "+"}</span>
     </div>
     ${openSections[key] ? bodyHtml : ""}
   `;
@@ -3817,7 +3944,7 @@ function openEditSubsectionModal(category) {
     <div class="field"><label>Name</label><input id="edit-subsection-name" value="${esc(category)}"></div>
     <div class="btn-row-2">
       <button class="btn-primary" id="save-subsection-edit-button">Save Changes</button>
-      <button class="btn-primary" id="remove-subsection-button" style="background:#5A2C29;color:#F0908A;">Remove</button>
+      <button class="btn-primary" id="remove-subsection-button" style="background:var(--danger-surface);color:var(--danger-text);">Remove</button>
     </div>
   `);
   document.getElementById("save-subsection-edit-button").addEventListener("click", () => {
@@ -3989,7 +4116,7 @@ function openEditFeatureModal(category, index) {
     <button class="add-link" id="add-feature-effect-button">+ Add Effect</button>
     <div class="btn-row-2" style="margin-top:14px;">
       <button class="btn-primary" id="save-feature-edit-button">Save Changes</button>
-      <button class="btn-primary" id="remove-feature-button" style="background:#5A2C29;color:#F0908A;">Remove</button>
+      <button class="btn-primary" id="remove-feature-button" style="background:var(--danger-surface);color:var(--danger-text);">Remove</button>
     </div>
   `);
 
@@ -4053,7 +4180,7 @@ function renderSpellsTab() {
     const atk = calculateSpellAttack(character, cls.ability);
     const dc = calculateSpellDC(character, cls.ability);
     return `
-      ${classes.length > 1 ? `<div style="text-align:center;font-weight:bold;font-size:13px;color:#F5C37A;margin-top:14px;">${esc(cls.name)}</div>` : ""}
+      ${classes.length > 1 ? `<div style="text-align:center;font-weight:bold;font-size:13px;color:var(--accent-soft);margin-top:14px;">${esc(cls.name)}</div>` : ""}
       <div class="stat-grid" style="${classes.length > 1 ? "margin-top:6px;" : ""}">
         <div class="stat-box"><div class="stat-label">Ability</div><div class="stat-value">${cls.ability}</div></div>
         <div class="stat-box" data-spell-atk="${esc(cls.name)}"><div class="stat-label">Spell Attack</div><div class="stat-value">${formatModifier(atk.total)}</div></div>
@@ -4074,8 +4201,8 @@ function renderSpellsTab() {
       <div class="section-head-row" data-spelllevel-toggle="${lvl}" style="cursor:pointer;margin-top:16px;">
         <div class="section-head" style="font-size:14px;margin:0;">${esc(levelLabel(lvl))}</div>
         <div style="display:flex;align-items:center;gap:10px;">
-          ${slot ? `<button class="mini-edit" data-edit-slots="${lvl}">\u270E</button><span style="color:#9C9186;font-size:12px;">${slot.current}/${slot.max} slots</span>` : ""}
-          <span style="color:#9C9186;font-size:12px;">${isOpen ? "\u2212" : "+"}</span>
+          ${slot ? `<button class="mini-edit" data-edit-slots="${lvl}">\u270E</button><span style="color:var(--text-dim);font-size:12px;">${slot.current}/${slot.max} slots</span>` : ""}
+          <span style="color:var(--text-dim);font-size:12px;">${isOpen ? "\u2212" : "+"}</span>
         </div>
       </div>
       ${isOpen ? (spellsInLevel.map(s => renderSpellRow(s)).join("") || `<div class="empty-hint">Nothing here</div>`) : ""}
@@ -4094,7 +4221,7 @@ function renderSpellsTab() {
       <button class="toggle-btn ${spellFilter === "all" ? "active" : ""}" data-spell-filter="all" style="flex:1;padding:10px 0;">All</button>
       <button class="toggle-btn ${spellFilter === "prepared" ? "active" : ""}" data-spell-filter="prepared" style="flex:1;padding:10px 0;">Prepared</button>
     </div>
-    <div style="font-size:12px;color:#9C9186;">${prepared.count} / ${prepared.max} prepared</div>
+    <div style="font-size:12px;color:var(--text-dim);">${prepared.count} / ${prepared.max} prepared</div>
 
     ${levelsHtml}
   `;
@@ -4258,7 +4385,7 @@ function openSpellDetailModal(spellId) {
     ${spellFormFieldsHtml(spell)}
     <div class="btn-row-2" style="margin-top:6px;">
       <button class="btn-primary" id="save-spell-edit-button">Save Changes</button>
-      <button class="btn-primary" id="remove-spell-button" style="background:#5A2C29;color:#F0908A;">Remove</button>
+      <button class="btn-primary" id="remove-spell-button" style="background:var(--danger-surface);color:var(--danger-text);">Remove</button>
     </div>
   `);
   wireSelect("spell-form-level"); wireSelect("spell-form-class"); wireSelect("spell-form-time");
@@ -4317,7 +4444,7 @@ function renderInventoryTab() {
             <div class="section-head">${esc(cat)}</div>
             <div style="display:flex;align-items:center;gap:10px;">
               <button class="mini-edit" data-edit-category="${esc(cat)}">\u270E</button>
-              <span style="color:#9C9186;font-size:12px;">${isOpen ? "\u2212" : "+"}</span>
+              <span style="color:var(--text-dim);font-size:12px;">${isOpen ? "\u2212" : "+"}</span>
             </div>
           </div>
           <div data-cat-body="${esc(cat)}" style="${isOpen ? "" : "display:none;"}">
@@ -4831,7 +4958,7 @@ function openEditCategoryModal(category) {
     <div class="toggle-line"><span>Weapons here appear under Attacks</span><div class="switch ${attacksOn ? "on" : ""}" id="sw-edit-attacks"><div class="knob"></div></div></div>
     <div class="btn-row-2">
       <button class="btn-primary" id="save-cat-edit-button">Save Changes</button>
-      <button class="btn-primary" id="remove-cat-button" style="background:#5A2C29;color:#F0908A;">Remove</button>
+      <button class="btn-primary" id="remove-cat-button" style="background:var(--danger-surface);color:var(--danger-text);">Remove</button>
     </div>
   `);
   document.getElementById("sw-edit-weight").addEventListener("click", (e) => { weightOn = !weightOn; e.currentTarget.classList.toggle("on", weightOn); });
@@ -4935,7 +5062,7 @@ function openItemDetailModal(itemId) {
 
     <div class="btn-row-2" style="margin-top:22px;">
       <button class="btn-primary" id="detail-edit-button">Edit</button>
-      <button class="btn-primary" id="detail-give-button" style="background:#242019;color:#F5C37A;">Give</button>
+      <button class="btn-primary" id="detail-give-button" style="background:var(--control);color:var(--accent-soft);">Give</button>
     </div>
   `);
 
@@ -4958,7 +5085,7 @@ function openItemEditModal(itemId) {
     <div id="type-fields"></div>
     <div class="btn-row-2" style="margin-top:16px;">
       <button class="btn-primary" id="save-item-edit-button">Save Changes</button>
-      <button class="btn-primary" id="give-item-button" style="background:#242019;color:#F5C37A;">Give</button>
+      <button class="btn-primary" id="give-item-button" style="background:var(--control);color:var(--accent-soft);">Give</button>
     </div>
   `);
 
@@ -4994,7 +5121,7 @@ function confirmDeleteItem(item) {
   openModal("center", `
     <div class="modal-heading">Remove ${esc(item.name)}?</div>
     <div class="breakdown-source" style="margin-bottom:14px;">This can't be undone.</div>
-    <button class="btn-primary" id="confirm-remove-item-button" style="background:#5A2C29;color:#F0908A;margin-bottom:8px;">Remove</button>
+    <button class="btn-primary" id="confirm-remove-item-button" style="background:var(--danger-surface);color:var(--danger-text);margin-bottom:8px;">Remove</button>
     <button class="btn-secondary" id="cancel-remove-item-button">Cancel</button>
   `);
   document.getElementById("confirm-remove-item-button").addEventListener("click", () => {
@@ -5132,7 +5259,7 @@ function renderNoteSectionBlock(sec) {
       <div style="display:flex;align-items:center;gap:10px;">
         <button class="add-link" data-add-note="${sec.id}">+ Add</button>
         <button class="mini-edit" data-edit-section="${sec.id}">\u270E</button>
-        <span style="color:#9C9186;font-size:12px;">${isOpen ? "\u2212" : "+"}</span>
+        <span style="color:var(--text-dim);font-size:12px;">${isOpen ? "\u2212" : "+"}</span>
       </div>
     </div>
     <div data-note-sec-body="${sec.id}" style="${isOpen ? "" : "display:none;"}">
@@ -5351,7 +5478,7 @@ function openEditSectionModal(sectionId) {
     <div class="toggle-line"><span>Receive shared notes here</span><div class="switch ${receiveFrom ? "on" : ""}" id="sw-edit-receive"><div class="knob"></div></div></div>
     <div class="btn-row-2">
       <button class="btn-primary" id="save-sec-edit-button">Save Changes</button>
-      <button class="btn-primary" id="remove-sec-button" style="background:#5A2C29;color:#F0908A;">Remove</button>
+      <button class="btn-primary" id="remove-sec-button" style="background:var(--danger-surface);color:var(--danger-text);">Remove</button>
     </div>
   `);
 
@@ -5451,7 +5578,7 @@ function openNoteActionsMenu(noteId) {
     <div class="modal-heading">Note Options</div>
     ${canManageSharing ? `<button class="btn-primary" id="menu-share-button" style="margin-bottom:8px;">${note.sharing && note.sharing.sharedByMe ? "Manage Sharing" : "Share"}</button>` : ""}
     <button class="btn-primary" id="menu-dup-button" style="margin-bottom:8px;">Duplicate</button>
-    <button class="btn-primary" id="menu-delete-button" style="background:#5A2C29;color:#F0908A;">Delete</button>
+    <button class="btn-primary" id="menu-delete-button" style="background:var(--danger-surface);color:var(--danger-text);">Delete</button>
   `);
 
   const shareBtn = document.getElementById("menu-share-button");
@@ -5510,7 +5637,7 @@ function openShareModal(noteId) {
       }).join("")}
     </div>
     <button class="btn-primary" id="save-share-button" style="margin-top:14px;">Save Sharing</button>
-    ${note.sharing && note.sharing.sharedByMe ? `<button class="btn-primary" id="stop-share-button" style="background:#5A2C29;color:#F0908A;margin-top:8px;">Stop Sharing</button>` : ""}
+    ${note.sharing && note.sharing.sharedByMe ? `<button class="btn-primary" id="stop-share-button" style="background:var(--danger-surface);color:var(--danger-text);margin-top:8px;">Stop Sharing</button>` : ""}
   `);
 
   document.getElementById("sw-continuous").addEventListener("click", (e) => { continuous = !continuous; e.currentTarget.classList.toggle("on", continuous); });
@@ -5551,6 +5678,7 @@ function openShareModal(noteId) {
    INIT
    ============================================================ */
 
+loadTheme();
 const restored = loadCharacters();
 showScreen("selector");
 if (restored && restored.stale) {

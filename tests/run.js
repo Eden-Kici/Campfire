@@ -14,6 +14,7 @@ const SUITES = [
   ["exhaustion", "./exhaustion.test.js"],
   ["levels", "./levels.test.js"],
   ["equipment", "./equipment.test.js"],
+  ["themes", "./themes.test.js"],
   ["escaping", "./escaping.test.js"],
   ["persistence", "./persistence.test.js"],
   ["smoke", "./smoke.test.js"]

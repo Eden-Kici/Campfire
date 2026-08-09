@@ -35,7 +35,9 @@ function domStub() {
 
   const store = {};
   return {
+    getComputedStyle: () => ({ getPropertyValue: () => "" }),
     document: {
+      documentElement: { setAttribute() {}, style: { setProperty() {}, removeProperty() {} } },
       querySelectorAll: () => [],
       querySelector: () => element,
       getElementById: () => element,

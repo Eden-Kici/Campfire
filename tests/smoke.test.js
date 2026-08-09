@@ -66,6 +66,7 @@ module.exports = function (suite) {
   suite.runs("menu", () => app.openAppMenu());
   suite.runs("reset confirmation", () => app.confirmResetToDemo());
   suite.runs("level up", () => app.openLevelUpModal());
+  suite.runs("theme picker", () => app.openThemeModal());
   suite.runs("character creator", () => app.openCharacterCreator());
   suite.runs("party finder", () => app.openPartyFinder());
   suite.runs("character menu", () => app.openCharacterMenu(c.id));
