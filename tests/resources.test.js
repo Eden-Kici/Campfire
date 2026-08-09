@@ -83,6 +83,31 @@ module.exports = function (suite) {
   item("Arrows").resource.recharge = { on: "none", amount: "all" };
   item("Arrows").resource.max = 0;
 
+  suite.section("an uncapped stack cannot be restored to a full it doesn't have");
+  const loose = { id: 950, name: "Loose Coins", current: 40, max: 0, recharge: { on: "LR", amount: "all" } };
+  character.resources.push(loose);
+  applyRest("long");
+  suite.is("restoring all leaves it alone", loose.current, 40);
+  loose.recharge = { on: "LR", amount: "half" };
+  applyRest("long");
+  suite.is("half leaves it alone too, rather than adding one", loose.current, 40);
+  loose.recharge = { on: "LR", amount: 5 };
+  applyRest("long");
+  suite.is("a specific amount still works, uncapped", loose.current, 45);
+  loose.recharge = { on: "LR", amount: -3 };
+  applyRest("long");
+  suite.is("a negative amount never drains it", loose.current, 45);
+  character.resources = character.resources.filter(r => r.id !== 950);
+
+  suite.section("untracking keeps the item");
+  const arrows = item("Arrows");
+  const inventorySize = character.inventory.length;
+  delete arrows.resource;
+  suite.is("the item survives", character.inventory.length, inventorySize);
+  suite.ok("it just leaves the resource list", !resourceRows(character).some(r => r.name === "Arrows"));
+  suite.ok("and is still in the bags", /Arrows/.test(app.renderInventoryTab()));
+  arrows.resource = { max: 0, recharge: { on: "none", amount: "all" } };
+
   suite.section("spell slots stay a single source of truth");
   suite.ok("slots are not duplicated into resources",
     !character.resources.some(r => /Spell Slot/i.test(r.name)));

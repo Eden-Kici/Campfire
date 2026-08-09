@@ -6,7 +6,7 @@ module.exports = function (suite) {
   const app = require("./harness").loadApp();
   const { character, totalLevel, proficiencyBonusForLevel, classLineFor,
           calculateHitDice, calculateProficiencyBonus, spendHitDieOfSize,
-          calculateSkill, calculateAttack, applyRest } = app;
+          calculateSkill, calculateAttack, applyRest, calculateMaxHP } = app;
 
   suite.section("the progression");
   const expected = { 1: 2, 4: 2, 5: 3, 8: 3, 9: 4, 12: 4, 13: 5, 16: 5, 17: 6, 20: 6 };
@@ -99,11 +99,89 @@ module.exports = function (suite) {
   character.classes = backup;
 
   suite.section("the level up flow");
-  const before = app.__modals.length;
   app.openLevelUpModal();
-  const html = app.__modals[before].html;
-  suite.ok("lists each class to advance", /data-level-class="0"/.test(html));
-  suite.ok("shows what the bonus becomes", /proficiency bonus/.test(html));
-  suite.ok("offers a class you don't have", /levelup-new-class/.test(html));
+  const html = app.levelUpHtml();
+  suite.ok("lists each class to advance", /data-levelup-target="0"/.test(html));
+  suite.ok("shows what the level costs and gives", /Proficiency bonus/.test(html) && /Hit die/.test(html));
+  suite.ok("offers a class you don't have", /data-levelup-target="new"/.test(html));
+  suite.ok("offers the three hit point choices",
+    /data-hp-mode="average"/.test(html) && /data-hp-mode="roll"/.test(html) && /data-hp-mode="manual"/.test(html));
+  suite.ok("requires a confirmation", /id="levelup-confirm"/.test(html));
   suite.ok("and is honest that features aren't granted", /aren&#39;t granted|aren't granted/.test(html));
+
+  suite.section("the average is the fixed 5e value");
+  suite.is("d6", app.averageHitPoints("d6"), 4);
+  suite.is("d8", app.averageHitPoints("d8"), 5);
+  suite.is("d10", app.averageHitPoints("d10"), 6);
+  suite.is("d12", app.averageHitPoints("d12"), 7);
+
+  suite.section("levelling actually grants hit points");
+  character.classes = [{ name: "Fighter", level: 5, subclass: null, hitDie: "d10" }];
+  character.hitDiceSpent = {};
+  character.abilities.CON = 14;                       // +2
+  const beforeMax = calculateMaxHP(character).total;
+  const beforeCurrent = character.hp.current;
+  const beforeLevel = totalLevel(character);
+
+  app.openLevelUpModal();
+  app.levelUpState.target = 0;
+  app.levelUpState.hpMode = "average";
+  app.applyLevelUp();
+
+  suite.is("the class level rises", totalLevel(character), beforeLevel + 1);
+  suite.is("maximum hit points rise by the average plus Constitution",
+    calculateMaxHP(character).total, beforeMax + 6 + 2);
+  suite.is("current hit points rise by the same", character.hp.current, beforeCurrent + 8);
+  suite.is("and a hit die comes with it",
+    calculateHitDice(character).find(p => p.die === "d10").total, 6);
+
+  suite.section("manual is not capped at the die");
+  app.openLevelUpModal();
+  app.levelUpState.target = 0;
+  app.levelUpState.hpMode = "manual";
+  app.levelUpState.hpManual = 10;                     // above a d10's average, allowed
+  const beforeManual = calculateMaxHP(character).total;
+  app.applyLevelUp();
+  suite.is("takes the number given", calculateMaxHP(character).total, beforeManual + 10 + 2);
+
+  suite.section("a level never reduces your maximum");
+  character.abilities.CON = 1;                        // -5, worse than a rolled 1
+  app.openLevelUpModal();
+  app.levelUpState.target = 0;
+  app.levelUpState.hpMode = "manual";
+  app.levelUpState.hpManual = 1;
+  const beforeFloor = calculateMaxHP(character).total;
+  app.applyLevelUp();
+  suite.ok("it floors at one rather than going backwards",
+    calculateMaxHP(character).total >= beforeFloor + 1,
+    "went from " + beforeFloor + " to " + calculateMaxHP(character).total);
+  character.abilities.CON = 14;
+
+  suite.section("rolling has to happen before confirming");
+  app.openLevelUpModal();
+  app.levelUpState.target = 0;
+  app.levelUpState.hpMode = "roll";
+  app.levelUpState.hpRolled = null;
+  const beforeUnrolled = totalLevel(character);
+  app.applyLevelUp();
+  suite.is("nothing happens without a roll", totalLevel(character), beforeUnrolled);
+  app.levelUpState.hpRolled = 7;
+  app.applyLevelUp();
+  suite.is("and then it does", totalLevel(character), beforeUnrolled + 1);
+
+  suite.section("multiclassing through the flow");
+  app.openLevelUpModal();
+  app.levelUpState.target = "new";
+  app.levelUpState.newClass = "Wizard";
+  app.levelUpState.hpMode = "average";
+  app.applyLevelUp();
+  suite.ok("the new class is added", character.classes.some(c => c.name === "Wizard"));
+  suite.is("at level one", character.classes.find(c => c.name === "Wizard").level, 1);
+  suite.ok("with its own hit die", calculateHitDice(character).some(p => p.die === "d6"));
+  const beforeDuplicate = character.classes.length;
+  app.openLevelUpModal();
+  app.levelUpState.target = "new";
+  app.levelUpState.newClass = "Wizard";
+  app.applyLevelUp();
+  suite.is("taking the same class twice is refused", character.classes.length, beforeDuplicate);
 };

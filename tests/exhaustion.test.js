@@ -97,6 +97,14 @@ module.exports = function (suite) {
   applyRest("short");
   suite.is("still two", exhaustionLevel(character), 2);
 
+  suite.section("it has a permanent home on the sheet");
+  at(0);
+  suite.ok("the row is there even at zero", /exhaustion-row/.test(app.renderCombatTab()));
+  suite.ok("showing the level", /0 \/ 6/.test(app.renderCombatTab()));
+  suite.ok("with a stepper", /data-exhaustion-step/.test(app.renderCombatTab()));
+  at(2);
+  suite.ok("and names the worst effect once you have one", /Speed halved/.test(app.renderCombatTab()));
+
   suite.section("it renders");
   at(3);
   suite.runs("combat tab", () => app.renderCombatTab());

@@ -728,3 +728,14 @@ body {
   width: 34px; height: 26px; padding: 0; border: 1px solid var(--border);
   border-radius: 7px; background: none; cursor: pointer; flex-shrink: 0;
 }
+
+/* outcomes reuse the advantage/disadvantage colouring, so "good" and "bad"
+   read the same wherever they appear */
+.outcome-good { background: var(--success-surface); color: var(--success-text); }
+.outcome-bad { background: var(--danger-surface); color: var(--danger-text); }
+
+/* a standing track rather than an effect you happen to have, so it keeps its
+   place at zero and only colours up once it bites */
+.exhaustion-row .res-name { color: var(--text-dim); }
+.exhaustion-row.active .res-name { color: var(--text); }
+.exhaustion-row.active { border: 1px solid var(--danger-surface); }

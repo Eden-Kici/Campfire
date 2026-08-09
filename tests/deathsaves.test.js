@@ -101,6 +101,44 @@ module.exports = function (suite) {
   suite.ok("roughly half succeed", Math.abs(outcomes.success - outcomes.failure) < 120,
     "successes " + outcomes.success + ", failures " + outcomes.failure);
 
+  suite.section("massive damage kills outright");
+  const maximum = calculateMaxHP(character).total;
+  character.hp.current = 5; character.hp.temp = 0; resetDeathSaves(character);
+  applyHp("damage", 5 + maximum);
+  suite.ok("dead, not dying", deathSaveState(character).dead);
+  suite.is("three failures at once", deathSaveState(character).failures, 3);
+
+  character.hp.current = 5; character.hp.temp = 0; resetDeathSaves(character);
+  applyHp("damage", 5 + maximum - 1);
+  suite.ok("one short of the maximum leaves you dying", deathSaveState(character).dying);
+  suite.ok("and not dead", !deathSaveState(character).dead);
+
+  character.hp.current = 5; character.hp.temp = 0; resetDeathSaves(character);
+  applyHp("damage", 5);
+  suite.ok("damage that exactly reaches zero is survivable", deathSaveState(character).dying);
+  suite.is("with no failures", deathSaveState(character).failures, 0);
+
+  character.hp.current = 5; character.hp.temp = maximum; resetDeathSaves(character);
+  applyHp("damage", 5 + maximum);
+  suite.ok("temporary hit points count against the overkill", !deathSaveState(character).dead);
+
+  suite.section("the card can be pinned open");
+  character.hp.current = 10; resetDeathSaves(character);
+  app.settings.alwaysShowDeathSaves = false;
+  suite.is("hidden by default above zero", /death-card/.test(renderCombatTab()), false);
+  app.settings.alwaysShowDeathSaves = true;
+  suite.ok("shown when the setting is on", /death-card/.test(renderCombatTab()));
+  suite.ok("but says it only rolls at zero", /Only rolled at 0 hit points/.test(renderCombatTab()));
+  suite.ok("and offers no roll button", !/id="roll-death-save"/.test(renderCombatTab()));
+  app.settings.alwaysShowDeathSaves = false;
+
+  suite.section("the tracks also live in the hit point calculator");
+  const before = app.__modals.length;
+  app.openHpCalculator();
+  const calc = app.__modals[before].html;
+  suite.ok("under the hit dice", calc.indexOf("Hit Dice") < calc.indexOf("Death Saves"));
+  suite.ok("with the same pips", /death-pips/.test(calc));
+
   suite.section("a long rest brings you back");
   down();
   recordDeathSave("failure", 2);

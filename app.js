@@ -664,7 +664,8 @@ function readRechargeValue(idPrefix) {
   if (amountType === "custom") {
     const input = document.getElementById(idPrefix + "-amount-custom");
     const raw = input ? input.value.trim() : "";
-    amount = raw === "" ? "all" : (/^\d+$/.test(raw) ? parseInt(raw) : raw);
+    // a recharge restores; a negative amount would drain, which is never wanted
+    amount = raw === "" ? "all" : (/^\d+$/.test(raw) ? Math.max(0, parseInt(raw)) : raw.replace(/^-/, ""));
   }
 
   return { on, amount };
@@ -725,13 +726,48 @@ const THEMES = [
 const CUSTOM_SWATCHES = [
   { variable: "--accent", label: "Accent" },
   { variable: "--accent-soft", label: "Accent, soft" },
-  { variable: "--page", label: "Background" },
+  { variable: "--frame", label: "Background" },
   { variable: "--surface", label: "Cards" },
   { variable: "--control", label: "Controls" },
   { variable: "--text", label: "Text" }
 ];
 
 const THEME_KEY = "campfire.theme";
+const SETTINGS_KEY = "campfire.settings";
+
+/* App preferences, kept apart from character data so they survive a reset and
+   aren't copied around when a character is exported. */
+let settings = {
+  alwaysShowDeathSaves: false
+};
+
+function persistSettings() {
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (err) { /* not fatal */ }
+}
+
+function loadSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY));
+    if (saved && typeof saved === "object") settings = Object.assign(settings, saved);
+  } catch (err) { /* defaults */ }
+}
+
+function openSettingsModal() {
+  openModal("sheet", `
+    <div class="modal-heading">Options</div>
+    <div class="toggle-line">
+      <span>Always show death saves<div class="atk-range">Otherwise they appear only at 0 hit points</div></span>
+      <div class="switch ${settings.alwaysShowDeathSaves ? "on" : ""}" id="setting-death-saves"><div class="knob"></div></div>
+    </div>
+  `);
+  const toggle = document.getElementById("setting-death-saves");
+  toggle.addEventListener("click", () => {
+    settings.alwaysShowDeathSaves = !settings.alwaysShowDeathSaves;
+    toggle.classList.toggle("on", settings.alwaysShowDeathSaves);
+    persistSettings();
+    renderContent();
+  });
+}
 
 let theme = { base: "ember", custom: {} };
 
@@ -1994,8 +2030,6 @@ function equipmentStepHtml(stepNum, totalSteps) {
       <div class="chip-row">${granted.map(name => `<div class="chip chip-stat">${esc(name)}</div>`).join("")}</div>
     ` : ""}
 
-    <div class="menu-note">Everything here arrives as a real item — weapons with their damage and properties, a bow already fed by its quiver.</div>
-
     <div class="btn-row-2" style="margin-top:14px;">
       <button class="btn-secondary" id="creator-back-button">Back</button>
       <button class="btn-primary" id="creator-next-button">Next</button>
@@ -2344,10 +2378,12 @@ function restoredValue(entry, ceiling) {
   const uncapped = !ceiling;
   const cap = value => (uncapped ? value : Math.min(ceiling, value));
 
+  // "all" and "half" both need a ceiling to mean anything; without one they
+  // are no-ops rather than quietly inventing a number
   if (amount === "all") return uncapped ? entry.current : ceiling;
-  if (amount === "half") return cap(entry.current + Math.max(1, Math.floor((ceiling || 0) / 2)));
-  if (typeof amount === "number") return cap(entry.current + amount);
-  return cap(entry.current + rollNotation(String(amount)).total);
+  if (amount === "half") return uncapped ? entry.current : cap(entry.current + Math.max(1, Math.floor(ceiling / 2)));
+  if (typeof amount === "number") return cap(entry.current + Math.max(0, amount));
+  return cap(entry.current + Math.max(0, rollNotation(String(amount)).total));
 }
 
 function restoreOnRest(entry, isLong) {
@@ -2444,7 +2480,6 @@ function applyRest(kind, diceSpend) {
 // behind them exist.
 const MENU_STUBS = [
   { label: "Party", hint: "Not connected" },
-  { label: "Options", hint: "" },
   { label: "Export Character", hint: "" },
   { label: "Dice History", hint: "" },
   { label: "Help & Rules", hint: "" }
@@ -2498,65 +2533,241 @@ function openLongRestModal() {
    What it deliberately does NOT do is grant the features of the new level.
    Those live in SRD_CLASSES keyed by class, not by level, so there's nothing
    to look up yet. The modal says so rather than pretending. */
+/* Levelling is a commitment, so it's select-then-confirm rather than a single
+   tap, and it shows everything the level actually grants before you take it.
+
+   Hit points are the part that needs a choice: roll the die, take the fixed
+   average, or type a number. Manual is deliberately unbounded -- a table that
+   hands out maximum hit points at every level is a common enough ruling that
+   refusing it would be wrong. */
+
+let levelUpState = null;
+
+function hitDieSize(die) {
+  return parseInt(String(die).replace("d", "")) || 8;
+}
+
+// 5e's fixed average: half the die, rounded up, which is (size / 2) + 1
+function averageHitPoints(die) {
+  return Math.floor(hitDieSize(die) / 2) + 1;
+}
+
 function openLevelUpModal() {
   const classes = character.classes || [];
-  const level = totalLevel(character);
-  const known = classes.map(entry => entry.name);
-  const available = SRD_CLASSES.filter(cls => !known.includes(cls.name)).map(cls => cls.name);
+  levelUpState = {
+    target: classes.length ? 0 : null,   // index into classes, or "new"
+    newClass: "",
+    hpMode: "average",
+    hpRolled: null,
+    hpManual: null
+  };
+  openModal("full", "");
+  redrawLevelUp();
+}
 
-  openModal("sheet", `
+function levelUpTarget() {
+  const classes = character.classes || [];
+  if (levelUpState.target === "new") {
+    const srd = SRD_CLASSES.find(c => c.name.toLowerCase() === levelUpState.newClass.trim().toLowerCase());
+    return {
+      isNew: true,
+      name: levelUpState.newClass.trim() || "—",
+      from: 0,
+      to: 1,
+      hitDie: srd ? srd.hitDie : "d8",
+      srd
+    };
+  }
+  const entry = classes[levelUpState.target];
+  if (!entry) return null;
+  return {
+    isNew: false,
+    name: entry.name,
+    from: entry.level,
+    to: entry.level + 1,
+    hitDie: entry.hitDie,
+    srd: SRD_CLASSES.find(c => c.name === entry.name),
+    entry
+  };
+}
+
+function levelUpHitPoints(target) {
+  const constitution = abilityModifier(effectiveAbilityScore(character, "CON"));
+  let rolled;
+  if (levelUpState.hpMode === "average") rolled = averageHitPoints(target.hitDie);
+  else if (levelUpState.hpMode === "roll") rolled = levelUpState.hpRolled;
+  else rolled = levelUpState.hpManual;
+
+  const base = rolled === null || rolled === undefined ? null : rolled;
+  return {
+    base,
+    constitution,
+    total: base === null ? null : base + constitution
+  };
+}
+
+function redrawLevelUp() {
+  const box = document.querySelector("#modal-overlay .modal-content");
+  if (!box) return;
+  box.innerHTML = levelUpHtml();
+  wireLevelUp();
+}
+
+function levelUpHtml() {
+  const classes = character.classes || [];
+  const known = classes.map(c => c.name);
+  const available = SRD_CLASSES.filter(c => !known.includes(c.name)).map(c => c.name);
+  const target = levelUpTarget();
+
+  const currentTotal = totalLevel(character);
+  const nextTotal = currentTotal + 1;
+  const bonusNow = calculateProficiencyBonus(character).total;
+  const bonusNext = proficiencyBonusForLevel(nextTotal) +
+    (bonusNow - (character.proficiencyBonusOverride ?? proficiencyBonusForLevel(currentTotal)));
+
+  const hp = target ? levelUpHitPoints(target) : null;
+
+  return `
     <div class="modal-heading">Level Up</div>
-    <div class="breakdown-source">Currently level ${level} — proficiency bonus ${formatModifier(proficiencyBonusForLevel(level))}.
-      At ${level + 1} it becomes ${formatModifier(proficiencyBonusForLevel(level + 1))}.</div>
+    <div class="breakdown-source">Level ${currentTotal} → ${nextTotal}</div>
 
-    <div class="breakdown-subhead">Advance a class</div>
+    <div class="breakdown-subhead">Which class</div>
     ${classes.map((entry, index) => `
-      <div class="res-row" data-level-class="${index}" style="cursor:pointer;">
-        <div>
-          <div class="res-name">${esc(entry.name)}${entry.subclass ? " (" + esc(entry.subclass) + ")" : ""}</div>
-          <div class="atk-range">Level ${entry.level} → ${entry.level + 1} · ${esc(entry.hitDie)}</div>
-        </div>
-        <span class="add-link">+1</span>
-      </div>
+      <button class="toggle-btn creator-option ${levelUpState.target === index ? "active" : ""}"
+        data-levelup-target="${index}"
+        style="display:block;width:100%;text-align:left;margin-bottom:8px;padding:12px 14px;">
+        ${esc(entry.name)}${entry.subclass ? " (" + esc(entry.subclass) + ")" : ""} ${entry.level} → ${entry.level + 1}
+        <span class="atk-range"> · ${esc(entry.hitDie)}</span>
+      </button>
     `).join("")}
-
     ${available.length ? `
-      <div class="breakdown-subhead">Or take a level in something new</div>
-      ${comboFieldHtml("levelup-new-class", "Class", "e.g. " + available[0])}
-      <button class="btn-secondary" id="levelup-multiclass">Add at level 1</button>
+      <button class="toggle-btn creator-option ${levelUpState.target === "new" ? "active" : ""}"
+        data-levelup-target="new"
+        style="display:block;width:100%;text-align:left;margin-bottom:8px;padding:12px 14px;">
+        Take a level in something new
+      </button>
+      ${levelUpState.target === "new" ? comboFieldHtml("levelup-new-class", "Class", available[0], levelUpState.newClass) : ""}
     ` : ""}
 
-    <div class="menu-note">Hit dice and proficiency bonus update on their own. Features for the new level aren't granted — add them under Features &amp; Traits.</div>
-  `);
+    ${target ? `
+      <div class="breakdown-subhead">What you gain</div>
+      <div class="breakdown-row"><span>${esc(target.name)}</span><span>Level ${target.to}</span></div>
+      <div class="breakdown-row"><span>Proficiency bonus</span><span>${formatModifier(bonusNow)}${bonusNext !== bonusNow ? " → " + formatModifier(bonusNext) : " (unchanged)"}</span></div>
+      <div class="breakdown-row"><span>Hit die</span><span>+1${esc(target.hitDie)}</span></div>
+      ${target.isNew && target.srd ? `
+        <div class="breakdown-row"><span>Saving throws</span><span>${esc(target.srd.saves.join(", "))}</span></div>
+        <div class="breakdown-row"><span>Armour</span><span>${esc(target.srd.armorProf)}</span></div>
+        <div class="breakdown-row"><span>Weapons</span><span>${esc(target.srd.weaponProf)}</span></div>
+      ` : ""}
 
-  wireCombo("levelup-new-class", available);
+      <div class="breakdown-subhead">Hit points</div>
+      <div class="type-toggle">
+        <button class="toggle-btn ${levelUpState.hpMode === "average" ? "active" : ""}" data-hp-mode="average">Average</button>
+        <button class="toggle-btn ${levelUpState.hpMode === "roll" ? "active" : ""}" data-hp-mode="roll">Roll</button>
+        <button class="toggle-btn ${levelUpState.hpMode === "manual" ? "active" : ""}" data-hp-mode="manual">Manual</button>
+      </div>
 
-  document.querySelectorAll("[data-level-class]").forEach(row => {
-    row.addEventListener("click", () => {
-      const entry = character.classes[parseInt(row.dataset.levelClass)];
-      entry.level += 1;
-      closeModal();
-      renderContent();
-      renderSheetHeader();
-      showToast(entry.name + " " + entry.level + " — level " + totalLevel(character));
+      ${levelUpState.hpMode === "average" ? `
+        <div class="menu-note" style="margin-top:0;">The fixed average for a ${esc(target.hitDie)} is ${averageHitPoints(target.hitDie)}.</div>
+      ` : ""}
+      ${levelUpState.hpMode === "roll" ? `
+        <div class="res-row">
+          <span class="res-name">${levelUpState.hpRolled === null ? "Not rolled yet" : "Rolled " + levelUpState.hpRolled}</span>
+          <button class="atk-pill" id="levelup-roll">Roll 1${esc(target.hitDie)}</button>
+        </div>
+      ` : ""}
+      ${levelUpState.hpMode === "manual" ? `
+        <div class="field"><label>Hit points gained, before Constitution</label>
+          <input id="levelup-manual" type="number" value="${levelUpState.hpManual === null ? "" : levelUpState.hpManual}" placeholder="1 to ${hitDieSize(target.hitDie)}">
+          <div class="atk-range" style="margin-top:4px;">Not capped at the die, in case your table hands out maximums.</div>
+        </div>
+      ` : ""}
+
+      <div class="breakdown-row"><span>From the die</span><span>${hp.base === null ? "—" : hp.base}</span></div>
+      <div class="breakdown-row"><span>Constitution modifier</span><span>${formatModifier(hp.constitution)}</span></div>
+      <hr class="breakdown-divider">
+      <div class="breakdown-total"><span>Maximum hit points</span><span>${calculateMaxHP(character).total}${hp.total === null ? "" : " → " + (calculateMaxHP(character).total + hp.total)}</span></div>
+
+      <div class="menu-note">Class features for the new level aren't granted — the SRD data here lists features by class, not by level. Add them under Features &amp; Traits.</div>
+      <button class="btn-primary" id="levelup-confirm" style="margin-top:14px;">Confirm Level Up</button>
+    ` : `<div class="empty-hint">Pick a class to continue.</div>`}
+  `;
+}
+
+function wireLevelUp() {
+  document.querySelectorAll("[data-levelup-target]").forEach(button => {
+    button.addEventListener("click", () => {
+      const value = button.dataset.levelupTarget;
+      levelUpState.target = value === "new" ? "new" : parseInt(value);
+      levelUpState.hpRolled = null;
+      redrawLevelUp();
     });
   });
 
-  const multiclass = document.getElementById("levelup-multiclass");
-  if (multiclass) multiclass.addEventListener("click", () => {
-    const name = document.getElementById("levelup-new-class").value.trim();
+  const classes = character.classes || [];
+  const known = classes.map(c => c.name);
+  wireCombo("levelup-new-class", SRD_CLASSES.filter(c => !known.includes(c.name)).map(c => c.name), value => {
+    levelUpState.newClass = value;
+  });
+
+  document.querySelectorAll("[data-hp-mode]").forEach(button => {
+    button.addEventListener("click", () => { levelUpState.hpMode = button.dataset.hpMode; redrawLevelUp(); });
+  });
+
+  const roll = document.getElementById("levelup-roll");
+  if (roll) roll.addEventListener("click", () => {
+    const target = levelUpTarget();
+    levelUpState.hpRolled = rollDie(hitDieSize(target.hitDie));
+    redrawLevelUp();
+  });
+
+  const manual = document.getElementById("levelup-manual");
+  if (manual) manual.addEventListener("input", () => {
+    const value = parseInt(manual.value);
+    levelUpState.hpManual = isNaN(value) ? null : value;
+  });
+
+  const confirm = document.getElementById("levelup-confirm");
+  if (confirm) confirm.addEventListener("click", applyLevelUp);
+}
+
+function applyLevelUp() {
+  const target = levelUpTarget();
+  if (!target) return;
+
+  if (target.isNew) {
+    const name = levelUpState.newClass.trim();
     if (!name) { showToast("Pick a class"); return; }
-    if (known.some(existing => existing.toLowerCase() === name.toLowerCase())) {
+    if ((character.classes || []).some(c => c.name.toLowerCase() === name.toLowerCase())) {
       showToast("You already have levels in " + name);
       return;
     }
-    const srd = SRD_CLASSES.find(cls => cls.name.toLowerCase() === name.toLowerCase());
-    character.classes.push({ name: srd ? srd.name : name, level: 1, subclass: null, hitDie: srd ? srd.hitDie : "d8" });
-    closeModal();
-    renderContent();
-    renderSheetHeader();
-    showToast("Took a level in " + name);
-  });
+  }
+
+  const hp = levelUpHitPoints(target);
+  if (hp.total === null) {
+    showToast(levelUpState.hpMode === "roll" ? "Roll for hit points first" : "Enter the hit points gained");
+    return;
+  }
+
+  if (target.isNew) {
+    character.classes.push({
+      name: target.srd ? target.srd.name : target.name,
+      level: 1, subclass: null, hitDie: target.hitDie
+    });
+  } else {
+    target.entry.level += 1;
+  }
+
+  // a level never reduces your maximum, however the dice fell
+  const gained = Math.max(1, hp.total);
+  character.baseMaxHP += gained;
+  character.hp.current += gained;
+
+  closeModal();
+  renderContent();
+  renderSheetHeader();
+  showToast("Level " + totalLevel(character) + " — " + gained + " hit points");
 }
 
 function openAppMenu() {
@@ -2572,6 +2783,7 @@ function openAppMenu() {
       <button class="drawer-item" data-stub="${esc(item.label)}">${esc(item.label)}<span class="drawer-hint">${item.hint}</span></button>
     `).join("")}
     <button class="drawer-item" id="menu-theme">Theme<span class="drawer-hint">${esc((THEMES.find(t => t.value === theme.base) || {}).label || "")}</span></button>
+    <button class="drawer-item" id="menu-options">Options</button>
 
     <div class="drawer-section">Character</div>
     <button class="drawer-item" id="menu-level-up">Level Up<span class="drawer-hint">level ${totalLevel(character)}</span></button>
@@ -2587,6 +2799,7 @@ function openAppMenu() {
   document.getElementById("menu-reset-demo").addEventListener("click", confirmResetToDemo);
   document.getElementById("menu-level-up").addEventListener("click", openLevelUpModal);
   document.getElementById("menu-theme").addEventListener("click", openThemeModal);
+  document.getElementById("menu-options").addEventListener("click", openSettingsModal);
 }
 
 // development aid: persistence means the demo character keeps whatever state
@@ -2662,14 +2875,77 @@ function slotRowName(level) {
   return "Spell Slots (" + levelLabel(level).replace(" Level", "") + ")";
 }
 
-// only appears at 0 hit points, so it isn't clutter the rest of the time
+/* Exhaustion needs a permanent home rather than only existing once you've
+   typed the word into Add Effect -- it's a standing track like death saves,
+   not an effect you happen to have. At zero it stays a single quiet line. */
+function openExhaustionModal() {
+  const level = exhaustionLevel(character);
+  openModal("center", `
+    <div class="breakdown-title">Exhaustion ${level}</div>
+    ${EXHAUSTION_LEVELS.map(tier => `
+      <div class="breakdown-row ${tier.level <= level ? "" : "exhaustion-inactive"}">
+        <span>${tier.level}</span><span>${esc(tier.effect)}</span>
+      </div>
+    `).join("")}
+    <div class="menu-note">Each level adds to the ones below it. A long rest removes one.</div>
+  `);
+}
+
+function exhaustionRowHtml() {
+  const level = exhaustionLevel(character);
+  const tiers = exhaustionEffects(level);
+
+  return `
+    <div class="res-row exhaustion-row ${level ? "active" : ""}">
+      <div class="res-name-wrap" data-exhaustion-detail="1">
+        <span class="res-name">Exhaustion</span>
+        ${level ? `<span class="res-tag">${esc(tiers[tiers.length - 1].effect)}</span>` : ""}
+      </div>
+      <div class="stepper">
+        <button data-exhaustion-step="-1">−</button>
+        <span class="res-count">${level} / 6</span>
+        <button data-exhaustion-step="1">+</button>
+      </div>
+    </div>`;
+}
+
+/* The tracks and their controls, shared by the Combat tab card and the panel
+   inside the hit point calculator so the two can't drift. */
+function deathSaveControlHtml() {
+  const state = deathSaveState(character);
+  const dormant = character.hp.current > 0 && !state.dead;
+
+  return `
+    <div class="death-track">
+      <span class="death-label">Successes</span>
+      <span class="death-pips">${deathSaveTrackHtml(state.successes, 3, "success")}</span>
+    </div>
+    <div class="death-track">
+      <span class="death-label">Failures</span>
+      <span class="death-pips">${deathSaveTrackHtml(state.failures, 3, "failure")}</span>
+    </div>
+    ${dormant ? `<div class="menu-note" style="margin-top:8px;">Only rolled at 0 hit points.</div>` : ""}
+    ${state.dying ? `<button class="btn-primary" id="roll-death-save" style="margin-top:12px;">Roll Death Save</button>` : ""}
+    ${state.successes || state.failures ? `<button class="btn-secondary" id="clear-death-saves">Clear</button>` : ""}`;
+}
+
+function wireDeathSaveControls(afterChange) {
+  const roll = document.getElementById("roll-death-save");
+  if (roll) roll.addEventListener("click", () => { rollDeathSave(); if (afterChange) afterChange(); });
+  const clear = document.getElementById("clear-death-saves");
+  if (clear) clear.addEventListener("click", () => {
+    resetDeathSaves(character);
+    if (afterChange) afterChange(); else renderContent();
+  });
+}
+
+// hidden above 0 hit points unless the setting says otherwise
 function deathSaveCardHtml() {
   const state = deathSaveState(character);
-  if (character.hp.current > 0 && !state.dead) return "";
+  if (character.hp.current > 0 && !state.dead && !settings.alwaysShowDeathSaves) return "";
 
-  const status = state.dead ? "Dead"
-    : state.stable ? "Stable"
-    : "Dying";
+  const status = state.dead ? "Dead" : state.stable ? "Stable"
+    : character.hp.current > 0 ? "Standing" : "Dying";
 
   return `
     <div class="death-card ${state.dead ? "dead" : state.stable ? "stable" : ""}">
@@ -2677,16 +2953,7 @@ function deathSaveCardHtml() {
         <span class="death-title">Death Saves</span>
         <span class="death-status">${status}</span>
       </div>
-      <div class="death-track">
-        <span class="death-label">Successes</span>
-        <span class="death-pips">${deathSaveTrackHtml(state.successes, 3, "success")}</span>
-      </div>
-      <div class="death-track">
-        <span class="death-label">Failures</span>
-        <span class="death-pips">${deathSaveTrackHtml(state.failures, 3, "failure")}</span>
-      </div>
-      ${state.dying ? `<button class="btn-primary" id="roll-death-save" style="margin-top:12px;">Roll Death Save</button>` : ""}
-      ${state.dead || state.stable ? `<button class="btn-secondary" id="clear-death-saves">Clear</button>` : ""}
+      ${deathSaveControlHtml()}
     </div>`;
 }
 
@@ -2740,6 +3007,8 @@ function renderCombatTab() {
         <div class="chip" data-effect-view="${group.id}">${group.concentration ? `<span class="conc-mark" title="Concentration">\u25C8</span>` : ""}${esc(effectGroupLabel(group))}<button class="chip-remove" data-effect-remove="${group.id}">\u2715</button></div>
       `).join("") || `<div class="empty-hint">Nothing active</div>`}
     </div>
+
+    ${exhaustionRowHtml()}
 
     ${concentrationGroups(character).length ? `
       <div class="conc-row">
@@ -2807,10 +3076,18 @@ function renderCombatTab() {
 function wireCombatTab() {
   document.getElementById("hp-card").addEventListener("click", openHpCalculator);
 
-  const deathRoll = document.getElementById("roll-death-save");
-  if (deathRoll) deathRoll.addEventListener("click", rollDeathSave);
-  const deathClear = document.getElementById("clear-death-saves");
-  if (deathClear) deathClear.addEventListener("click", () => { resetDeathSaves(character); renderContent(); });
+  document.querySelectorAll("[data-exhaustion-step]").forEach(button => {
+    button.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const next = exhaustionLevel(character) + parseInt(button.dataset.exhaustionStep);
+      setExhaustionLevel(character, next);
+      renderContent();
+    });
+  });
+  const exhaustionDetail = document.querySelector("[data-exhaustion-detail]");
+  if (exhaustionDetail) exhaustionDetail.addEventListener("click", openExhaustionModal);
+
+  wireDeathSaveControls(renderContent);
 
   const ac = calculateAC(character);
   document.getElementById("ac-box").addEventListener("click", () => openBreakdownModal("AC", ac.total, "", ac.sources));
@@ -2956,9 +3233,21 @@ function openHpCalculator() {
       <div class="breakdown-subhead">Hit Dice</div>
       <div id="hitdice-rows">${hitDiceRowsHtml("calc")}</div>
     ` : ""}
+
+    <div class="breakdown-subhead">Death Saves</div>
+    <div id="calc-death-saves">${deathSaveControlHtml()}</div>
   `);
 
   wireHitDiceCalcRows();
+
+  // the panel redraws itself in place so the calculator stays open
+  function redrawDeathPanel() {
+    const panel = document.getElementById("calc-death-saves");
+    if (panel) panel.innerHTML = deathSaveControlHtml();
+    wireDeathSaveControls(redrawDeathPanel);
+    renderContent();
+  }
+  wireDeathSaveControls(redrawDeathPanel);
 
   const exprLine = document.getElementById("calc-expr");
   function refresh() { exprLine.textContent = expr || "\u00A0"; }
@@ -3010,9 +3299,17 @@ function applyHp(type, amount) {
       remaining -= absorbed;
     }
 
-    // taking damage while already down is an automatic death save failure
+    /* Massive damage: if what's left after reaching zero equals or exceeds
+       your hit point maximum, you die outright rather than falling unconscious. */
     const alreadyDown = character.hp.current <= 0;
+    const overkill = remaining - character.hp.current;
     character.hp.current = Math.max(0, character.hp.current - remaining);
+
+    if (!alreadyDown && overkill >= maxHP.total) {
+      recordDeathSave("failure", 3);
+      showToast("Killed outright — " + overkill + " past zero, against a maximum of " + maxHP.total);
+      return;
+    }
     if (alreadyDown && remaining > 0) recordDeathSave("failure", 1);
   }
 }
@@ -3043,7 +3340,8 @@ function openConcentrationCheckModal(damage) {
     <div class="modal-heading">Concentration</div>
     <div class="menu-note" style="margin-top:0;">
       ${damage} damage taken while concentrating on ${esc(holding.join(", "))}.
-      ${dc > 10 ? "Half the damage is " + Math.floor(damage / 2) + ", so the DC is " + dc + "." : "DC 10, since half the damage is less than that."}
+      The DC is 10, or half the damage if that's higher.
+      Half of ${damage} is ${Math.floor(damage / 2)}${dc > 10 ? ", so it's " + dc + "." : "."}
     </div>
 
     <div class="breakdown-total" style="margin:16px 0;"><span>DC</span><span>${dc}</span></div>
@@ -3053,8 +3351,8 @@ function openConcentrationCheckModal(damage) {
 
     <button class="btn-primary" id="conc-roll">Roll the Save</button>
     <div class="btn-row-2">
-      <button class="btn-secondary" id="conc-keep">Kept it</button>
-      <button class="btn-secondary" id="conc-drop">Lost it</button>
+      <button class="btn-secondary outcome-good" id="conc-keep">Keep it</button>
+      <button class="btn-secondary outcome-bad" id="conc-drop">Lose it</button>
     </div>
   `);
 
@@ -4664,6 +4962,8 @@ function itemResourceFieldsHtml(resource) {
       <input id="if-res-max" type="number" value="${resource.max != null ? resource.max : 0}" placeholder="0">
       <div class="atk-range" style="margin-top:4px;">Leave at 0 for an uncapped stack — it'll show a bare count.</div>
     </div>
+    ${(resource.max || 0) === 0 && ["all", "half"].includes(resource.recharge && resource.recharge.amount)
+      ? `<div class="form-warning">An uncapped stack has no full amount to restore to, so "All" and "Half" do nothing here. Give it a capacity, or set a specific amount.</div>` : ""}
     ${comboFieldHtml("if-res-refill", "Refills From (optional)", "e.g. Arrows", resource.refillFrom)}
     <div class="atk-range" style="margin:-6px 0 12px;">Name another tracked item and this becomes a container: the count is what's loaded, and a Refill button moves units across.</div>
     ${rechargeFieldHtml("if-res", resource.recharge || { on: "none", amount: "all" })}`;
@@ -5064,7 +5364,17 @@ function openItemDetailModal(itemId) {
       <button class="btn-primary" id="detail-edit-button">Edit</button>
       <button class="btn-primary" id="detail-give-button" style="background:var(--control);color:var(--accent-soft);">Give</button>
     </div>
+    ${item.resource ? `<button class="btn-secondary" id="detail-untrack-button">Stop tracking as a resource</button>` : ""}
   `);
+
+  const untrack = document.getElementById("detail-untrack-button");
+  if (untrack) untrack.addEventListener("click", () => {
+    // takes it off the Resources list; the item itself is untouched
+    delete item.resource;
+    closeModal();
+    renderContent();
+    showToast(item.name + " is no longer tracked as a resource");
+  });
 
   document.getElementById("detail-edit-button").addEventListener("click", () => openItemEditModal(itemId));
   document.getElementById("detail-give-button").addEventListener("click", () => startGiveFlow(item));
@@ -5679,6 +5989,7 @@ function openShareModal(noteId) {
    ============================================================ */
 
 loadTheme();
+loadSettings();
 const restored = loadCharacters();
 showScreen("selector");
 if (restored && restored.stale) {
