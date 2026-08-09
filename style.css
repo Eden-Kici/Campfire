@@ -757,3 +757,13 @@ body {
 .roll-verdict { text-align: center; font-size: 12px; font-weight: bold; margin-top: 10px; }
 .roll-verdict.pass { color: var(--success-text); }
 .roll-verdict.fail { color: var(--danger-text); }
+
+/* the target number leads, the way a check does at the table */
+.roll-dc { text-align: center; margin-top: 14px; }
+.roll-dc-label { font-size: 10px; font-weight: bold; letter-spacing: 1.4px; text-transform: uppercase; color: var(--text-faint); }
+.roll-dc-value { font-size: 30px; font-weight: bold; color: var(--accent-soft); line-height: 1.1; }
+.roll-total.unrolled { color: var(--text-faint); }
+
+/* the pill sits in a row of round steppers, so it centres its own label
+   rather than relying on the button default */
+.atk-pill { display: inline-flex; align-items: center; justify-content: center; line-height: 1; }

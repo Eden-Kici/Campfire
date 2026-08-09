@@ -60,13 +60,33 @@ module.exports = function (suite) {
   openConcentrationCheckModal(14);
   let html = app.rollWindowHtml();
   suite.ok("naming what is at stake", /Bless/.test(html));
-  suite.ok("showing the DC and the verdict", /against DC 10/.test(html));
+  suite.ok("leading with the difficulty class", /Difficulty Class/.test(html) && /roll-dc-value">10</.test(html));
   suite.ok("with the save's own breakdown as chips", /roll-chip/.test(html));
   suite.ok("and the advantage controls", /data-roll-mode="advantage"/.test(html));
-  suite.ok("and a reroll", /id="roll-reroll"/.test(html));
   suite.ok("offering both outcomes", /data-roll-decision="0"/.test(html) && /data-roll-decision="1"/.test(html));
   suite.ok("coloured like advantage and disadvantage",
     /outcome-good/.test(html) && /outcome-bad/.test(html));
+
+  suite.section("the player rolls it, the app does not");
+  suite.ok("nothing is rolled on opening", !app.rollState.rolled);
+  suite.ok("the total is blank", /roll-total unrolled">—</.test(html));
+  suite.ok("no verdict yet", !/roll-verdict/.test(html));
+  suite.ok("and a roll button rather than a reroll", /id="roll-now"/.test(html) && !/id="roll-reroll"/.test(html));
+
+  suite.section("choosing advantage before rolling still doesn't roll");
+  app.setRollMode("advantage");
+  suite.ok("still unrolled", !app.rollState.rolled);
+  suite.ok("and still offering to roll", /id="roll-now"/.test(app.rollWindowHtml()));
+  app.setRollMode("normal");
+
+  suite.section("once rolled");
+  app.rerollCurrent();
+  html = app.rollWindowHtml();
+  suite.ok("it is marked as rolled", app.rollState.rolled);
+  suite.ok("a verdict appears", /roll-verdict/.test(html));
+  suite.ok("reading success or failure",
+    /Success/.test(html) || /Failure/.test(html));
+  suite.ok("and the button becomes a reroll", /id="roll-reroll"/.test(html));
 
   suite.section("rolling as often as you like changes nothing on its own");
   const heldBefore = concentrationGroups(character).length;
@@ -79,13 +99,13 @@ module.exports = function (suite) {
 
   suite.section("the verdict follows the roll");
   app.rollState.outcome.total = 25;
-  suite.ok("a high roll reads as held", /held/.test(app.rollWindowHtml()));
+  suite.ok("a high roll succeeds", /roll-verdict pass/.test(app.rollWindowHtml()));
   app.rollState.outcome.total = 3;
-  suite.ok("a low roll reads as lost", /lost/.test(app.rollWindowHtml()));
+  suite.ok("a low roll fails", /roll-verdict fail/.test(app.rollWindowHtml()));
 
   suite.section("half of heavy damage becomes the DC");
   openConcentrationCheckModal(30);
-  suite.ok("thirty damage means DC 15", /against DC 15/.test(app.rollWindowHtml()));
+  suite.ok("thirty damage means DC 15", /roll-dc-value">15</.test(app.rollWindowHtml()));
 
   suite.section("deciding is what acts");
   openConcentrationCheckModal(14);

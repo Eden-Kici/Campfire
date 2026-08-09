@@ -88,6 +88,12 @@ module.exports = function (suite) {
     });
   });
   suite.runs("rerolling", () => app.rerollCurrent());
+  suite.runs("a roll against a difficulty class waits to be made", () => {
+    app.showRoll({ label: "x", notation: "1d20+2", sources: [], kind: "save", dc: 12 });
+    if (app.rollState.rolled) throw new Error("rolled without being asked");
+    app.rerollCurrent();
+    if (!app.rollState.rolled) throw new Error("did not roll when asked");
+  });
   suite.runs("switching to advantage", () => app.setRollMode("advantage"));
   suite.runs("switching to disadvantage", () => app.setRollMode("disadvantage"));
 

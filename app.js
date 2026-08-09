@@ -229,21 +229,32 @@ let rollState = null;
 
 function showRoll(config) {
   const derived = derivedRollMode(character, config.kind, config.ability);
-  rollState = { config, derived, mode: derived.mode, manual: false };
-  Object.assign(rollState, rollWithMode(config, rollState.mode));
+  rollState = { config, derived, mode: derived.mode, manual: false, rolled: false };
+
+  /* A roll against a difficulty class waits for the player. Rolling it for
+     them the moment the window opens takes away the part they came for. A
+     plain roll -- tapping an attack, a skill -- has already been asked for by
+     the tap itself, so that one resolves immediately. */
+  if (config.dc === undefined) {
+    Object.assign(rollState, rollWithMode(config, rollState.mode));
+    rollState.rolled = true;
+  }
+
   openModal("center", rollWindowHtml());
   wireRollWindow();
 }
 
 function rerollCurrent() {
   Object.assign(rollState, { dropped: null }, rollWithMode(rollState.config, rollState.mode));
+  rollState.rolled = true;
   redrawRollWindow();
 }
 
 function setRollMode(mode) {
   rollState.mode = mode;
   rollState.manual = mode !== rollState.derived.mode;
-  rerollCurrent();
+  // changing the mode before rolling shouldn't roll for you
+  if (rollState.rolled) rerollCurrent(); else redrawRollWindow();
 }
 
 function rollModeExplanation() {
@@ -266,17 +277,16 @@ function rollModeExplanation() {
 }
 
 function rollWindowHtml() {
-  const { config, outcome, dropped, mode } = rollState;
+  const { config, outcome, dropped, mode, rolled } = rollState;
   const isDamage = config.kind === "damage";
-  const total = outcome.total;
+  const hasTarget = config.dc !== undefined;
+  const total = rolled ? outcome.total : null;
+  const passed = hasTarget && rolled && total >= config.dc;
 
-  /* One line per part. The notation is already printed above, so the "1d8"
-     prefix is dropped and only what each term contributed is left: "(7) + 3".
-     A multi-type damage roll gets one line each, labelled with its type. */
-  const dice = outcome.parts.map(part => {
+  const dice = !rolled ? "" : outcome.parts.map(part => {
     const detail = part.result.breakdown.replace(/\d+d\d+\(/g, "(");
     return outcome.parts.length > 1
-      ? `<div class="roll-part"><span>${detail}</span><span class="roll-part-total">${part.result.total} ${esc(part.label || "")}</span></div>`
+      ? `<div class="roll-part"><span>${detail}</span><span class="roll-part-total">${part.result.total} ${part.label || ""}</span></div>`
       : `<div>${detail}</div>`;
   }).join("");
 
@@ -289,31 +299,38 @@ function rollWindowHtml() {
     <div class="roll-title">${esc(config.label)}</div>
     <div class="roll-notation">${esc(config.notation)}</div>
 
+    ${hasTarget ? `
+      <div class="roll-dc">
+        <div class="roll-dc-label">Difficulty Class</div>
+        <div class="roll-dc-value">${config.dc}</div>
+      </div>` : ""}
+
     <div class="roll-values">
-      <div class="roll-side">${isDamage ? `<div class="roll-side-label">½</div><div class="roll-side-value">${Math.floor(total / 2)}</div>` : ""}</div>
-      <div class="roll-total">${total}</div>
-      <div class="roll-side">${isDamage ? `<div class="roll-side-label">MAX</div><div class="roll-side-value">${maxFor(config)}</div>` : ""}</div>
+      <div class="roll-side">${isDamage && rolled ? `<div class="roll-side-label">½</div><div class="roll-side-value">${Math.floor(total / 2)}</div>` : ""}</div>
+      <div class="roll-total ${rolled ? "" : "unrolled"}">${rolled ? total : "—"}</div>
+      <div class="roll-side">${isDamage && rolled ? `<div class="roll-side-label">MAX</div><div class="roll-side-value">${maxFor(config)}</div>` : ""}</div>
     </div>
 
     <div class="roll-dice">${dice}</div>
     ${dropped ? `<div class="roll-dropped">dropped ${dropped.total}</div>` : ""}
-    ${config.dc !== undefined ? `
-      <div class="roll-verdict ${total >= config.dc ? "pass" : "fail"}">
-        ${total} against DC ${config.dc} — ${total >= config.dc ? (config.passLabel || "success") : (config.failLabel || "failure")}
-      </div>` : ""}
+    ${hasTarget && rolled ? `
+      <div class="roll-verdict ${passed ? "pass" : "fail"}">${passed ? (config.passLabel || "Success") : (config.failLabel || "Failure")}</div>
+    ` : ""}
 
     ${chips ? `<div class="roll-chips">${chips}</div>` : ""}
 
     <div class="roll-mode-row">
       ${["advantage", "normal", "disadvantage"].map(option => `
-        <button class="roll-mode-btn ${mode === option ? "active " + option : ""}" data-roll-mode="${esc(option)}">
+        <button class="roll-mode-btn ${mode === option ? "active " + option : ""}" data-roll-mode="${option}">
           ${option === "advantage" ? "ADV" : option === "normal" ? "NORMAL" : "DIS"}
         </button>
       `).join("")}
     </div>
     <div class="roll-why">${rollModeExplanation()}</div>
 
-    <button class="roll-reroll" id="roll-reroll">↻</button>
+    ${rolled
+      ? `<button class="roll-reroll" id="roll-reroll" title="Roll again">↻</button>`
+      : `<button class="btn-primary" id="roll-now" style="margin-top:16px;">Roll ${esc(config.notation)}</button>`}
 
     ${(config.decisions || []).length ? `
       <div class="btn-row-2" style="margin-top:16px;">
@@ -335,7 +352,10 @@ function wireRollWindow() {
   document.querySelectorAll("[data-roll-mode]").forEach(button => {
     button.addEventListener("click", () => setRollMode(button.dataset.rollMode));
   });
-  document.getElementById("roll-reroll").addEventListener("click", rerollCurrent);
+  const reroll = document.getElementById("roll-reroll");
+  if (reroll) reroll.addEventListener("click", rerollCurrent);
+  const rollNow = document.getElementById("roll-now");
+  if (rollNow) rollNow.addEventListener("click", rerollCurrent);
 
   document.querySelectorAll("[data-roll-decision]").forEach(button => {
     button.addEventListener("click", () => {
@@ -2688,9 +2708,6 @@ function levelUpHtml() {
     }
   }
 
-  const overLimit = levelUpState.hpMode === "manual" && levelUpState.hpManual !== null &&
-    target && levelUpState.hpManual > hitDieSize(target.hitDie);
-
   return `
     <div class="modal-heading">Level Up</div>
     <div class="breakdown-source">Level ${currentTotal} → ${nextTotal}</div>
@@ -2747,13 +2764,10 @@ function levelUpHtml() {
         <div class="field"><label>Hit points gained, before Constitution</label>
           <input id="levelup-manual" type="number" value="${levelUpState.hpManual === null ? "" : levelUpState.hpManual}" placeholder="1 to ${hitDieSize(target.hitDie)}">
         </div>
-        ${overLimit ? `<div class="form-warning">${levelUpState.hpManual} is above the most a ${esc(target.hitDie)} can roll. Allowed, but it isn't a legal result.</div>` : ""}
+        <div id="levelup-limit">${levelUpOverLimitHtml(target)}</div>
       ` : ""}
 
-      <div class="breakdown-row"><span>From the die</span><span>${hp.base === null ? "—" : hp.base}</span></div>
-      <div class="breakdown-row"><span>Constitution modifier</span><span>${formatModifier(hp.constitution)}</span></div>
-      <hr class="breakdown-divider">
-      <div class="breakdown-total"><span>Maximum hit points</span><span>${calculateMaxHP(character).total}${hp.total === null ? "" : " → " + (calculateMaxHP(character).total + Math.max(1, hp.total))}</span></div>
+      <div id="levelup-total">${levelUpTotalHtml(target)}</div>
 
       <button class="btn-primary" id="levelup-confirm" style="margin-top:16px;">Confirm Level Up</button>
     ` : `<div class="empty-hint">Pick a class to continue.</div>`}
@@ -2764,6 +2778,24 @@ function levelUpHtml() {
 function hitDiceOfSize(die) {
   const pool = calculateHitDice(character).find(p => p.die === die);
   return pool ? pool.total : 0;
+}
+
+function levelUpOverLimitHtml(target) {
+  if (!target || levelUpState.hpMode !== "manual") return "";
+  const most = hitDieSize(target.hitDie);
+  if (levelUpState.hpManual === null || levelUpState.hpManual <= most) return "";
+  return `<div class="form-warning">${levelUpState.hpManual} is above the most a ${esc(target.hitDie)} can roll (${most}).</div>`;
+}
+
+function levelUpTotalHtml(target) {
+  if (!target) return "";
+  const hp = levelUpHitPoints(target);
+  const current = calculateMaxHP(character).total;
+  return `
+    <div class="breakdown-row"><span>From the die</span><span>${hp.base === null ? "—" : hp.base}</span></div>
+    <div class="breakdown-row"><span>Constitution modifier</span><span>${formatModifier(hp.constitution)}</span></div>
+    <hr class="breakdown-divider">
+    <div class="breakdown-total"><span>Maximum hit points</span><span>${current}${hp.total === null ? "" : " → " + (current + Math.max(1, hp.total))}</span></div>`;
 }
 
 function wireLevelUp() {
@@ -2797,6 +2829,13 @@ function wireLevelUp() {
   if (manual) manual.addEventListener("input", () => {
     const value = parseInt(manual.value);
     levelUpState.hpManual = isNaN(value) ? null : value;
+
+    /* Updated in place rather than by redrawing: a redraw on every keystroke
+       would take the focus out of the field being typed into. */
+    const warning = document.getElementById("levelup-limit");
+    if (warning) warning.innerHTML = levelUpOverLimitHtml(levelUpTarget());
+    const totalRow = document.getElementById("levelup-total");
+    if (totalRow) totalRow.innerHTML = levelUpTotalHtml(levelUpTarget());
   });
 
   const confirm = document.getElementById("levelup-confirm");
@@ -3430,8 +3469,8 @@ function openConcentrationCheckModal(damage) {
     kind: "save",
     ability: "CON",
     dc,
-    passLabel: "held",
-    failLabel: "lost",
+    passLabel: "Success — concentration held",
+    failLabel: "Failure — concentration broken",
     decisions: [
       { label: "Keep it", tone: "outcome-good", action: () => {
           closeModal();
