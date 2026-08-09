@@ -297,6 +297,10 @@ function rollWindowHtml() {
 
     <div class="roll-dice">${dice}</div>
     ${dropped ? `<div class="roll-dropped">dropped ${dropped.total}</div>` : ""}
+    ${config.dc !== undefined ? `
+      <div class="roll-verdict ${total >= config.dc ? "pass" : "fail"}">
+        ${total} against DC ${config.dc} — ${total >= config.dc ? (config.passLabel || "success") : (config.failLabel || "failure")}
+      </div>` : ""}
 
     ${chips ? `<div class="roll-chips">${chips}</div>` : ""}
 
@@ -310,6 +314,13 @@ function rollWindowHtml() {
     <div class="roll-why">${rollModeExplanation()}</div>
 
     <button class="roll-reroll" id="roll-reroll">↻</button>
+
+    ${(config.decisions || []).length ? `
+      <div class="btn-row-2" style="margin-top:16px;">
+        ${config.decisions.map((decision, index) => `
+          <button class="btn-secondary ${esc(decision.tone || "")}" data-roll-decision="${index}">${esc(decision.label)}</button>
+        `).join("")}
+      </div>` : ""}
   `;
 }
 
@@ -325,6 +336,13 @@ function wireRollWindow() {
     button.addEventListener("click", () => setRollMode(button.dataset.rollMode));
   });
   document.getElementById("roll-reroll").addEventListener("click", rerollCurrent);
+
+  document.querySelectorAll("[data-roll-decision]").forEach(button => {
+    button.addEventListener("click", () => {
+      const decision = rollState.config.decisions[parseInt(button.dataset.rollDecision)];
+      if (decision && decision.action) decision.action(rollState.outcome.total);
+    });
+  });
 }
 
 
@@ -1239,6 +1257,10 @@ const SRD_RACES = [
   }
 ];
 
+/* Features carry the level they're gained at. The SRD does specify this --
+   the omission was mine: this list was written by hand as creator scaffolding
+   and only ever needed to be displayed, never granted. With a level on each,
+   levelling up can hand them over. */
 const SRD_CLASSES = [
   {
     name: "Fighter", mainAbility: "Strength", hitDie: "d10",
@@ -1246,14 +1268,14 @@ const SRD_CLASSES = [
     armorProf: "All armor, shields", weaponProf: "Simple and martial weapons",
     description: "A master of martial combat, skilled with a variety of weapons and armor.",
     features: [
-      { name: "Fighting Style", desc: "You adopt a particular style of fighting as your specialty." },
-      { name: "Second Wind", desc: "You can regain hit points as a bonus action once per short rest." },
-      { name: "Action Surge", desc: "You can take one additional action on your turn, once per short rest." }
+      { level: 1, name: "Fighting Style", desc: "You adopt a particular style of fighting as your specialty." },
+      { level: 1, name: "Second Wind", desc: "You can regain hit points as a bonus action once per short rest." },
+      { level: 2, name: "Action Surge", desc: "You can take one additional action on your turn, once per short rest." }
     ],
     skillChoices: { count: 2, options: ["Acrobatics", "Animal Handling", "Athletics", "History", "Insight", "Intimidation", "Perception", "Survival"] },
     subclasses: [
-      { name: "Champion", features: [{ name: "Improved Critical", desc: "Your weapon attacks score a critical hit on a roll of 19 or 20." }] },
-      { name: "Battle Master", features: [{ name: "Combat Superiority", desc: "You learn maneuvers fueled by superiority dice to enhance your attacks." }] }
+      { name: "Champion", features: [{ level: 3, name: "Improved Critical", desc: "Your weapon attacks score a critical hit on a roll of 19 or 20." }] },
+      { name: "Battle Master", features: [{ level: 3, name: "Combat Superiority", desc: "You learn maneuvers fueled by superiority dice to enhance your attacks." }] }
     ]
   },
   {
@@ -1262,13 +1284,13 @@ const SRD_CLASSES = [
     armorProf: "None", weaponProf: "Daggers, darts, slings, quarterstaffs, light crossbows",
     description: "A scholarly magic-user capable of manipulating the structures of reality.",
     features: [
-      { name: "Spellcasting", desc: "You cast wizard spells using Intelligence, prepared from your spellbook." },
-      { name: "Arcane Recovery", desc: "Once per day, you can recover spell slots during a short rest." }
+      { level: 1, name: "Spellcasting", desc: "You cast wizard spells using Intelligence, prepared from your spellbook." },
+      { level: 1, name: "Arcane Recovery", desc: "Once per day, you can recover spell slots during a short rest." }
     ],
     skillChoices: { count: 2, options: ["Arcana", "History", "Insight", "Investigation", "Medicine", "Religion"] },
     subclasses: [
-      { name: "School of Evocation", features: [{ name: "Sculpt Spells", desc: "You can create pockets of relative safety within your evocation spells." }] },
-      { name: "School of Abjuration", features: [{ name: "Arcane Ward", desc: "A magical ward absorbs damage on your behalf." }] }
+      { name: "School of Evocation", features: [{ level: 2, name: "Sculpt Spells", desc: "You can create pockets of relative safety within your evocation spells." }] },
+      { name: "School of Abjuration", features: [{ level: 2, name: "Arcane Ward", desc: "A magical ward absorbs damage on your behalf." }] }
     ]
   },
   {
@@ -1277,14 +1299,14 @@ const SRD_CLASSES = [
     armorProf: "Light armor", weaponProf: "Simple weapons, hand crossbows, longswords, rapiers, shortswords",
     description: "A scoundrel who uses stealth and trickery to overcome obstacles and enemies.",
     features: [
-      { name: "Expertise", desc: "Double your proficiency bonus for two skills you're proficient in." },
-      { name: "Sneak Attack", desc: "Deal extra damage once per turn when you have advantage or an ally nearby." },
-      { name: "Cunning Action", desc: "You can Dash, Disengage, or Hide as a bonus action." }
+      { level: 1, name: "Expertise", desc: "Double your proficiency bonus for two skills you're proficient in." },
+      { level: 1, name: "Sneak Attack", desc: "Deal extra damage once per turn when you have advantage or an ally nearby." },
+      { level: 2, name: "Cunning Action", desc: "You can Dash, Disengage, or Hide as a bonus action." }
     ],
     skillChoices: { count: 4, options: ["Acrobatics", "Athletics", "Deception", "Insight", "Intimidation", "Investigation", "Perception", "Performance", "Persuasion", "Sleight of Hand", "Stealth"] },
     subclasses: [
-      { name: "Thief", features: [{ name: "Fast Hands", desc: "Use your bonus action for Sleight of Hand checks, disarming traps, or using items." }] },
-      { name: "Assassin", features: [{ name: "Assassinate", desc: "You have advantage on attacks against creatures that haven't acted yet in combat." }] }
+      { name: "Thief", features: [{ level: 3, name: "Fast Hands", desc: "Use your bonus action for Sleight of Hand checks, disarming traps, or using items." }] },
+      { name: "Assassin", features: [{ level: 3, name: "Assassinate", desc: "You have advantage on attacks against creatures that haven't acted yet in combat." }] }
     ]
   },
   {
@@ -1293,14 +1315,14 @@ const SRD_CLASSES = [
     armorProf: "Light and medium armor, shields", weaponProf: "Simple weapons",
     description: "A priestly champion who wields divine magic in service of a higher power.",
     features: [
-      { name: "Spellcasting", desc: "You cast cleric spells using Wisdom, prepared from your available list." },
-      { name: "Divine Domain", desc: "You choose a domain related to your deity, granting additional features." },
-      { name: "Channel Divinity", desc: "You can channel divine energy to fuel magical effects." }
+      { level: 1, name: "Spellcasting", desc: "You cast cleric spells using Wisdom, prepared from your available list." },
+      { level: 1, name: "Divine Domain", desc: "You choose a domain related to your deity, granting additional features." },
+      { level: 2, name: "Channel Divinity", desc: "You can channel divine energy to fuel magical effects." }
     ],
     skillChoices: { count: 2, options: ["History", "Insight", "Medicine", "Persuasion", "Religion"] },
     subclasses: [
-      { name: "Life Domain", features: [{ name: "Disciple of Life", desc: "Your healing spells restore additional hit points." }] },
-      { name: "Light Domain", features: [{ name: "Warding Flare", desc: "You can impose disadvantage on an attack roll against you." }] }
+      { name: "Life Domain", features: [{ level: 1, name: "Disciple of Life", desc: "Your healing spells restore additional hit points." }] },
+      { name: "Light Domain", features: [{ level: 1, name: "Warding Flare", desc: "You can impose disadvantage on an attack roll against you." }] }
     ]
   }
 ];
@@ -1927,8 +1949,7 @@ function buildCharacterFromCreator() {
   const traits = {
     "Race Traits": (race ? race.features : []).concat(subrace ? subrace.features : [])
       .map(f => ({ name: f.name, desc: f.desc })),
-    "Class Features": (cls ? cls.features : []).concat(subclass ? subclass.features : [])
-      .map(f => ({ name: f.name, desc: f.desc })),
+    "Class Features": featuresAtLevel(creatorState.charClass, creatorState.subclass, 1),
     "Background Features": background ? [{ name: background.feature.name, desc: background.feature.desc }] : [],
     "Feats": [],
     "Proficiencies": cls ? [
@@ -2543,6 +2564,29 @@ function openLongRestModal() {
 
 let levelUpState = null;
 
+/* Which features a class hands over at a particular level, including its
+   subclass's. Used both when creating a character at level 1 and when
+   levelling up. */
+function featuresAtLevel(className, subclassName, level) {
+  const cls = SRD_CLASSES.find(c => c.name === className);
+  if (!cls) return [];
+
+  const own = (cls.features || []).filter(f => f.level === level);
+  const subclass = (cls.subclasses || []).find(sub => sub.name === subclassName);
+  const fromSubclass = subclass ? (subclass.features || []).filter(f => f.level === level) : [];
+
+  return own.concat(fromSubclass).map(f => ({ name: f.name, desc: f.desc }));
+}
+
+function grantFeatures(character, features) {
+  if (!features.length) return;
+  if (!character.traits["Class Features"]) character.traits["Class Features"] = [];
+  features.forEach(feature => {
+    const already = character.traits["Class Features"].some(t => t.name === feature.name);
+    if (!already) character.traits["Class Features"].push(feature);
+  });
+}
+
 function hitDieSize(die) {
   return parseInt(String(die).replace("d", "")) || 8;
 }
@@ -2626,6 +2670,26 @@ function levelUpHtml() {
     (bonusNow - (character.proficiencyBonusOverride ?? proficiencyBonusForLevel(currentTotal)));
 
   const hp = target ? levelUpHitPoints(target) : null;
+  const gained = target ? featuresAtLevel(target.name, target.entry ? target.entry.subclass : null, target.to) : [];
+
+  /* Only things that actually change are listed. A row saying "unchanged" is
+     noise on a screen whose whole job is answering "what do I get". */
+  const changes = [];
+  if (target) {
+    changes.push(["Level", "Level " + target.from + " → Level " + target.to]);
+    if (bonusNext !== bonusNow) {
+      changes.push(["Proficiency bonus", formatModifier(bonusNow) + " → " + formatModifier(bonusNext)]);
+    }
+    changes.push(["Hit dice", (hitDiceOfSize(target.hitDie)) + target.hitDie + " → " + (hitDiceOfSize(target.hitDie) + 1) + target.hitDie]);
+    if (target.isNew && target.srd) {
+      changes.push(["Saving throws", "+ " + target.srd.saves.join(", ")]);
+      changes.push(["Armour", "+ " + target.srd.armorProf]);
+      changes.push(["Weapons", "+ " + target.srd.weaponProf]);
+    }
+  }
+
+  const overLimit = levelUpState.hpMode === "manual" && levelUpState.hpManual !== null &&
+    target && levelUpState.hpManual > hitDieSize(target.hitDie);
 
   return `
     <div class="modal-heading">Level Up</div>
@@ -2651,14 +2715,17 @@ function levelUpHtml() {
 
     ${target ? `
       <div class="breakdown-subhead">What you gain</div>
-      <div class="breakdown-row"><span>${esc(target.name)}</span><span>Level ${target.to}</span></div>
-      <div class="breakdown-row"><span>Proficiency bonus</span><span>${formatModifier(bonusNow)}${bonusNext !== bonusNow ? " → " + formatModifier(bonusNext) : " (unchanged)"}</span></div>
-      <div class="breakdown-row"><span>Hit die</span><span>+1${esc(target.hitDie)}</span></div>
-      ${target.isNew && target.srd ? `
-        <div class="breakdown-row"><span>Saving throws</span><span>${esc(target.srd.saves.join(", "))}</span></div>
-        <div class="breakdown-row"><span>Armour</span><span>${esc(target.srd.armorProf)}</span></div>
-        <div class="breakdown-row"><span>Weapons</span><span>${esc(target.srd.weaponProf)}</span></div>
-      ` : ""}
+      ${changes.map(([label, value]) => `<div class="breakdown-row"><span>${esc(label)}</span><span>${esc(value)}</span></div>`).join("")}
+
+      ${gained.length ? `
+        <div class="breakdown-subhead">Features</div>
+        ${gained.map(feature => `
+          <div class="trait-item">
+            <div class="trait-name">${esc(feature.name)}</div>
+            <div class="trait-desc">${esc(feature.desc)}</div>
+          </div>
+        `).join("")}
+      ` : `<div class="menu-note" style="margin-top:14px;">No new features at this level.</div>`}
 
       <div class="breakdown-subhead">Hit points</div>
       <div class="type-toggle">
@@ -2679,19 +2746,24 @@ function levelUpHtml() {
       ${levelUpState.hpMode === "manual" ? `
         <div class="field"><label>Hit points gained, before Constitution</label>
           <input id="levelup-manual" type="number" value="${levelUpState.hpManual === null ? "" : levelUpState.hpManual}" placeholder="1 to ${hitDieSize(target.hitDie)}">
-          <div class="atk-range" style="margin-top:4px;">Not capped at the die, in case your table hands out maximums.</div>
         </div>
+        ${overLimit ? `<div class="form-warning">${levelUpState.hpManual} is above the most a ${esc(target.hitDie)} can roll. Allowed, but it isn't a legal result.</div>` : ""}
       ` : ""}
 
       <div class="breakdown-row"><span>From the die</span><span>${hp.base === null ? "—" : hp.base}</span></div>
       <div class="breakdown-row"><span>Constitution modifier</span><span>${formatModifier(hp.constitution)}</span></div>
       <hr class="breakdown-divider">
-      <div class="breakdown-total"><span>Maximum hit points</span><span>${calculateMaxHP(character).total}${hp.total === null ? "" : " → " + (calculateMaxHP(character).total + hp.total)}</span></div>
+      <div class="breakdown-total"><span>Maximum hit points</span><span>${calculateMaxHP(character).total}${hp.total === null ? "" : " → " + (calculateMaxHP(character).total + Math.max(1, hp.total))}</span></div>
 
-      <div class="menu-note">Class features for the new level aren't granted — the SRD data here lists features by class, not by level. Add them under Features &amp; Traits.</div>
-      <button class="btn-primary" id="levelup-confirm" style="margin-top:14px;">Confirm Level Up</button>
+      <button class="btn-primary" id="levelup-confirm" style="margin-top:16px;">Confirm Level Up</button>
     ` : `<div class="empty-hint">Pick a class to continue.</div>`}
   `;
+}
+
+// how many dice of a size the character already has, for the before/after
+function hitDiceOfSize(die) {
+  const pool = calculateHitDice(character).find(p => p.die === die);
+  return pool ? pool.total : 0;
 }
 
 function wireLevelUp() {
@@ -2759,15 +2831,20 @@ function applyLevelUp() {
     target.entry.level += 1;
   }
 
+  const entry = target.isNew
+    ? character.classes[character.classes.length - 1]
+    : target.entry;
+  grantFeatures(character, featuresAtLevel(entry.name, entry.subclass, entry.level));
+
   // a level never reduces your maximum, however the dice fell
-  const gained = Math.max(1, hp.total);
-  character.baseMaxHP += gained;
-  character.hp.current += gained;
+  const gainedHitPoints = Math.max(1, hp.total);
+  character.baseMaxHP += gainedHitPoints;
+  character.hp.current += gainedHitPoints;
 
   closeModal();
   renderContent();
   renderSheetHeader();
-  showToast("Level " + totalLevel(character) + " — " + gained + " hit points");
+  showToast("Level " + totalLevel(character) + " — " + gainedHitPoints + " hit points");
 }
 
 function openAppMenu() {
@@ -2883,8 +2960,9 @@ function openExhaustionModal() {
   openModal("center", `
     <div class="breakdown-title">Exhaustion ${level}</div>
     ${EXHAUSTION_LEVELS.map(tier => `
-      <div class="breakdown-row ${tier.level <= level ? "" : "exhaustion-inactive"}">
-        <span>${tier.level}</span><span>${esc(tier.effect)}</span>
+      <div class="tier-row ${tier.level <= level ? "" : "exhaustion-inactive"}">
+        <span class="tier-number">${tier.level}</span>
+        <span class="tier-effect">${esc(tier.effect)}</span>
       </div>
     `).join("")}
     <div class="menu-note">Each level adds to the ones below it. A long rest removes one.</div>
@@ -2913,8 +2991,6 @@ function exhaustionRowHtml() {
    inside the hit point calculator so the two can't drift. */
 function deathSaveControlHtml() {
   const state = deathSaveState(character);
-  const dormant = character.hp.current > 0 && !state.dead;
-
   return `
     <div class="death-track">
       <span class="death-label">Successes</span>
@@ -2924,12 +3000,18 @@ function deathSaveControlHtml() {
       <span class="death-label">Failures</span>
       <span class="death-pips">${deathSaveTrackHtml(state.failures, 3, "failure")}</span>
     </div>
-    ${dormant ? `<div class="menu-note" style="margin-top:8px;">Only rolled at 0 hit points.</div>` : ""}
     ${state.dying ? `<button class="btn-primary" id="roll-death-save" style="margin-top:12px;">Roll Death Save</button>` : ""}
     ${state.successes || state.failures ? `<button class="btn-secondary" id="clear-death-saves">Clear</button>` : ""}`;
 }
 
 function wireDeathSaveControls(afterChange) {
+  document.querySelectorAll("[data-death-pip]").forEach(pip => {
+    pip.addEventListener("click", () => {
+      setDeathSaveTrack(pip.dataset.deathPip, parseInt(pip.dataset.deathCount));
+      if (afterChange) afterChange(); else renderContent();
+    });
+  });
+
   const roll = document.getElementById("roll-death-save");
   if (roll) roll.addEventListener("click", () => { rollDeathSave(); if (afterChange) afterChange(); });
   const clear = document.getElementById("clear-death-saves");
@@ -3329,6 +3411,11 @@ function dropConcentration() {
   return dropped;
 }
 
+/* Uses the ordinary roll window rather than a bespoke one, so concentration
+   gets advantage, disadvantage, rerolling and the source breakdown for free.
+   The window carries a DC and a pair of decisions; nothing happens to the
+   character until one of them is chosen, so you can roll as often as you like
+   before committing. */
 function openConcentrationCheckModal(damage) {
   const holding = concentrationGroups(character).map(group => effectGroupLabel(group));
   if (!holding.length) return;
@@ -3336,49 +3423,30 @@ function openConcentrationCheckModal(damage) {
   const dc = concentrationSaveDC(damage);
   const save = calculateSavingThrow(character, "CON");
 
-  openModal("center", `
-    <div class="modal-heading">Concentration</div>
-    <div class="menu-note" style="margin-top:0;">
-      ${damage} damage taken while concentrating on ${esc(holding.join(", "))}.
-      The DC is 10, or half the damage if that's higher.
-      Half of ${damage} is ${Math.floor(damage / 2)}${dc > 10 ? ", so it's " + dc + "." : "."}
-    </div>
-
-    <div class="breakdown-total" style="margin:16px 0;"><span>DC</span><span>${dc}</span></div>
-    ${breakdownRowsHtml(save.sources)}
-    <hr class="breakdown-divider">
-    <div class="breakdown-total" style="margin-bottom:16px;"><span>Constitution Save</span><span>${formatModifier(save.total)}</span></div>
-
-    <button class="btn-primary" id="conc-roll">Roll the Save</button>
-    <div class="btn-row-2">
-      <button class="btn-secondary outcome-good" id="conc-keep">Keep it</button>
-      <button class="btn-secondary outcome-bad" id="conc-drop">Lose it</button>
-    </div>
-  `);
-
-  document.getElementById("conc-roll").addEventListener("click", () => {
-    const result = rollNotation("1d20" + formatModifier(save.total));
-    if (result.total >= dc) {
-      closeModal();
-      renderContent();
-      showToast("Concentration held — " + result.total + " against DC " + dc);
-      return;
-    }
-    const lost = dropConcentration();
-    closeModal();
-    renderContent();
-    showToast(result.total + " against DC " + dc + " — lost " + lost.join(", "));
-  });
-
-  document.getElementById("conc-keep").addEventListener("click", () => { closeModal(); renderContent(); });
-  document.getElementById("conc-drop").addEventListener("click", () => {
-    const lost = dropConcentration();
-    closeModal();
-    renderContent();
-    showToast("Lost " + lost.join(", "));
+  showRoll({
+    label: "Concentration · " + holding.join(", "),
+    notation: "1d20" + formatModifier(save.total),
+    sources: save.sources,
+    kind: "save",
+    ability: "CON",
+    dc,
+    passLabel: "held",
+    failLabel: "lost",
+    decisions: [
+      { label: "Keep it", tone: "outcome-good", action: () => {
+          closeModal();
+          renderContent();
+          showToast("Concentration held");
+        } },
+      { label: "Lose it", tone: "outcome-bad", action: () => {
+          const lost = dropConcentration();
+          closeModal();
+          renderContent();
+          showToast("Lost " + lost.join(", "));
+        } }
+    ]
   });
 }
-
 
 /* ---------------- death saves ---------------- */
 
@@ -3416,12 +3484,22 @@ function rollDeathSave() {
   else showToast(outcome);
 }
 
+/* Each pip is tappable. Tapping the third sets the track to three; tapping the
+   one that's currently last clears back to the one below it, so a mistake is
+   undone by tapping the same place again. */
 function deathSaveTrackHtml(filled, total, kind) {
   let pips = "";
   for (let i = 0; i < total; i++) {
-    pips += `<span class="death-pip ${i < filled ? kind : ""}"></span>`;
+    pips += `<button class="death-pip ${i < filled ? kind : ""}" data-death-pip="${kind}" data-death-count="${i + 1}"></button>`;
   }
   return pips;
+}
+
+function setDeathSaveTrack(kind, count) {
+  if (!character.deathSaves) resetDeathSaves(character);
+  const track = kind === "success" ? "successes" : "failures";
+  // tapping the current last pip steps back rather than doing nothing
+  character.deathSaves[track] = character.deathSaves[track] === count ? count - 1 : count;
 }
 
 

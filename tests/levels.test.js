@@ -99,15 +99,31 @@ module.exports = function (suite) {
   character.classes = backup;
 
   suite.section("the level up flow");
+  // level 1 to 2 is a level that actually grants something
+  character.classes = [{ name: "Fighter", level: 1, subclass: "Champion", hitDie: "d10" }];
   app.openLevelUpModal();
   const html = app.levelUpHtml();
   suite.ok("lists each class to advance", /data-levelup-target="0"/.test(html));
-  suite.ok("shows what the level costs and gives", /Proficiency bonus/.test(html) && /Hit die/.test(html));
+  suite.ok("shows the level as a before and after", /Level 1 → Level 2/.test(html));
+  suite.ok("and the hit dice the same way", /Hit dice/.test(html) && /→/.test(html));
   suite.ok("offers a class you don't have", /data-levelup-target="new"/.test(html));
   suite.ok("offers the three hit point choices",
     /data-hp-mode="average"/.test(html) && /data-hp-mode="roll"/.test(html) && /data-hp-mode="manual"/.test(html));
   suite.ok("requires a confirmation", /id="levelup-confirm"/.test(html));
-  suite.ok("and is honest that features aren't granted", /aren&#39;t granted|aren't granted/.test(html));
+  suite.ok("lists the features the level grants", /Action Surge/.test(html));
+  suite.ok("hides rows that don't change",
+    !/unchanged/.test(html), "still says 'unchanged' somewhere");
+
+  suite.section("features are keyed to the level they arrive at");
+  suite.is("fighter level 1", app.featuresAtLevel("Fighter", "Champion", 1).map(f => f.name),
+    ["Fighting Style", "Second Wind"]);
+  suite.is("fighter level 2", app.featuresAtLevel("Fighter", "Champion", 2).map(f => f.name), ["Action Surge"]);
+  suite.is("the subclass contributes at its own level",
+    app.featuresAtLevel("Fighter", "Champion", 3).map(f => f.name), ["Improved Critical"]);
+  suite.is("a different subclass gives something else",
+    app.featuresAtLevel("Fighter", "Battle Master", 3).map(f => f.name), ["Combat Superiority"]);
+  suite.is("a level with nothing gives nothing", app.featuresAtLevel("Wizard", null, 4), []);
+  suite.is("an unknown class gives nothing", app.featuresAtLevel("Nonesuch", null, 1), []);
 
   suite.section("the average is the fixed 5e value");
   suite.is("d6", app.averageHitPoints("d6"), 4);
@@ -116,7 +132,7 @@ module.exports = function (suite) {
   suite.is("d12", app.averageHitPoints("d12"), 7);
 
   suite.section("levelling actually grants hit points");
-  character.classes = [{ name: "Fighter", level: 5, subclass: null, hitDie: "d10" }];
+  character.classes = [{ name: "Fighter", level: 1, subclass: "Champion", hitDie: "d10" }];
   character.hitDiceSpent = {};
   character.abilities.CON = 14;                       // +2
   const beforeMax = calculateMaxHP(character).total;
@@ -133,7 +149,19 @@ module.exports = function (suite) {
     calculateMaxHP(character).total, beforeMax + 6 + 2);
   suite.is("current hit points rise by the same", character.hp.current, beforeCurrent + 8);
   suite.is("and a hit die comes with it",
-    calculateHitDice(character).find(p => p.die === "d10").total, 6);
+    calculateHitDice(character).find(p => p.die === "d10").total, 2);
+  suite.ok("the level's features are granted",
+    character.traits["Class Features"].some(f => f.name === "Action Surge"),
+    "got " + JSON.stringify((character.traits["Class Features"] || []).map(f => f.name)));
+
+  const featureCount = character.traits["Class Features"].length;
+  character.classes[0].level = 1;
+  app.openLevelUpModal();
+  app.levelUpState.target = 0;
+  app.levelUpState.hpMode = "average";
+  app.applyLevelUp();
+  suite.is("granting the same feature twice does not duplicate it",
+    character.traits["Class Features"].length, featureCount);
 
   suite.section("manual is not capped at the die");
   app.openLevelUpModal();

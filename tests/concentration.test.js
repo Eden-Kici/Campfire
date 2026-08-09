@@ -54,23 +54,48 @@ module.exports = function (suite) {
   suite.ok("the condition stays", hasCondition(character, "Prone"));
   suite.is("one effect left", character.activeEffects.length, 1);
 
-  suite.section("being asked at the right moment");
+  suite.section("it uses the ordinary roll window");
   character.activeEffects = [bless()];
   character.hp.current = 30;
-  const modalsBefore = app.__modals.length;
   openConcentrationCheckModal(14);
-  const asked = app.__modals.slice(modalsBefore);
-  suite.is("a prompt appears", asked.length, 1);
-  suite.ok("naming what is at stake", /Bless/.test(asked[0].html));
-  suite.ok("and showing the DC", /<span>DC<\/span><span>10<\/span>/.test(asked[0].html));
-  suite.ok("offering a roll", /id="conc-roll"/.test(asked[0].html));
-  suite.ok("and manual outcomes for a table that rolls its own",
-    /id="conc-keep"/.test(asked[0].html) && /id="conc-drop"/.test(asked[0].html));
+  let html = app.rollWindowHtml();
+  suite.ok("naming what is at stake", /Bless/.test(html));
+  suite.ok("showing the DC and the verdict", /against DC 10/.test(html));
+  suite.ok("with the save's own breakdown as chips", /roll-chip/.test(html));
+  suite.ok("and the advantage controls", /data-roll-mode="advantage"/.test(html));
+  suite.ok("and a reroll", /id="roll-reroll"/.test(html));
+  suite.ok("offering both outcomes", /data-roll-decision="0"/.test(html) && /data-roll-decision="1"/.test(html));
+  suite.ok("coloured like advantage and disadvantage",
+    /outcome-good/.test(html) && /outcome-bad/.test(html));
 
-  const highDamage = app.__modals.length;
+  suite.section("rolling as often as you like changes nothing on its own");
+  const heldBefore = concentrationGroups(character).length;
+  app.rerollCurrent();
+  app.setRollMode("advantage");
+  app.rerollCurrent();
+  app.setRollMode("disadvantage");
+  app.rerollCurrent();
+  suite.is("concentration is untouched until you decide", concentrationGroups(character).length, heldBefore);
+
+  suite.section("the verdict follows the roll");
+  app.rollState.outcome.total = 25;
+  suite.ok("a high roll reads as held", /held/.test(app.rollWindowHtml()));
+  app.rollState.outcome.total = 3;
+  suite.ok("a low roll reads as lost", /lost/.test(app.rollWindowHtml()));
+
+  suite.section("half of heavy damage becomes the DC");
   openConcentrationCheckModal(30);
-  suite.ok("half of heavy damage becomes the DC",
-    /<span>DC<\/span><span>15<\/span>/.test(app.__modals[highDamage].html));
+  suite.ok("thirty damage means DC 15", /against DC 15/.test(app.rollWindowHtml()));
+
+  suite.section("deciding is what acts");
+  openConcentrationCheckModal(14);
+  app.rollState.config.decisions[1].action(1);
+  suite.is("choosing to lose it drops the concentration", concentrationGroups(character).length, 0);
+
+  character.activeEffects = [bless()];
+  openConcentrationCheckModal(14);
+  app.rollState.config.decisions[0].action(20);
+  suite.is("choosing to keep it leaves it alone", concentrationGroups(character).length, 1);
 
   suite.section("no prompt when nothing is at stake");
   character.activeEffects = [];

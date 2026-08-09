@@ -128,9 +128,20 @@ module.exports = function (suite) {
   suite.is("hidden by default above zero", /death-card/.test(renderCombatTab()), false);
   app.settings.alwaysShowDeathSaves = true;
   suite.ok("shown when the setting is on", /death-card/.test(renderCombatTab()));
-  suite.ok("but says it only rolls at zero", /Only rolled at 0 hit points/.test(renderCombatTab()));
+  suite.ok("the pips are tappable", /data-death-pip/.test(renderCombatTab()));
   suite.ok("and offers no roll button", !/id="roll-death-save"/.test(renderCombatTab()));
   app.settings.alwaysShowDeathSaves = false;
+
+  suite.section("pips can be set by hand");
+  down();
+  app.setDeathSaveTrack("success", 2);
+  suite.is("tapping the second sets two", deathSaveState(character).successes, 2);
+  app.setDeathSaveTrack("success", 2);
+  suite.is("tapping it again steps back", deathSaveState(character).successes, 1);
+  app.setDeathSaveTrack("failure", 3);
+  suite.ok("failures can be set the same way", deathSaveState(character).dead);
+  app.setDeathSaveTrack("failure", 1);
+  suite.is("and reduced again", deathSaveState(character).failures, 1);
 
   suite.section("the tracks also live in the hit point calculator");
   const before = app.__modals.length;

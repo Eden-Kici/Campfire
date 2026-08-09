@@ -510,17 +510,26 @@ function adjustResourceRow(row, delta) {
 function refillContainer(character, row) {
   if (!row || !row.container) return { moved: 0, reason: "not a container" };
 
-  const source = resourceRows(character).find(other => other.name === row.refillFrom && other !== row);
-  if (!source) return { moved: 0, reason: "missing", from: row.refillFrom };
+  /* The source is looked up by name against the whole inventory, not only
+     against things tracked as resources. A quiver should still find your
+     arrows after you stop tracking them -- being tracked is a display choice,
+     not what makes them exist. Rows are rebuilt on every call, so identity is
+     compared by key rather than by object. */
+  const sourceRow = resourceRows(character).find(other => other.name === row.refillFrom && other.key !== row.key);
+  const sourceItem = character.inventory.find(item => item.name === row.refillFrom && item !== row.item);
 
+  if (!sourceRow && !sourceItem) return { moved: 0, reason: "missing", from: row.refillFrom };
+
+  const available = sourceRow ? sourceRow.current : (sourceItem.qty || 0);
   const space = (row.max || 0) - row.current;
   if (space <= 0) return { moved: 0, reason: "full" };
-  if (source.current <= 0) return { moved: 0, reason: "empty", from: source.name };
+  if (available <= 0) return { moved: 0, reason: "empty", from: row.refillFrom };
 
-  const moved = Math.min(space, source.current);
-  adjustResourceRow(source, -moved);
+  const moved = Math.min(space, available);
+  if (sourceRow) adjustResourceRow(sourceRow, -moved);
+  else sourceItem.qty -= moved;
   adjustResourceRow(row, moved);
-  return { moved, from: source.name };
+  return { moved, from: row.refillFrom };
 }
 
 // a weapon's ammunition may be a standalone resource or an inventory item

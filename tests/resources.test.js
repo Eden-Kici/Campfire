@@ -108,6 +108,16 @@ module.exports = function (suite) {
   suite.ok("and is still in the bags", /Arrows/.test(app.renderInventoryTab()));
   arrows.resource = { max: 0, recharge: { on: "none", amount: "all" } };
 
+  suite.section("a quiver still finds arrows that stopped being a resource");
+  delete item("Arrows").resource;
+  item("Arrows").qty = 40;
+  item("Quiver").resource.loaded = 0;
+  const untrackedRefill = refillContainer(character, row("Quiver"));
+  suite.is("it refills from the plain item", untrackedRefill.moved, 20);
+  suite.is("taking them out of the stack", item("Arrows").qty, 20);
+  suite.is("and into the quiver", row("Quiver").current, 20);
+  item("Arrows").resource = { max: 0, recharge: { on: "none", amount: "all" } };
+
   suite.section("spell slots stay a single source of truth");
   suite.ok("slots are not duplicated into resources",
     !character.resources.some(r => /Spell Slot/i.test(r.name)));

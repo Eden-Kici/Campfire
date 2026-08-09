@@ -241,7 +241,7 @@ body {
 .death-track { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; }
 .death-label { font-size: 12px; color: var(--text-dim); }
 .death-pips { display: flex; gap: 7px; }
-.death-pip { width: 15px; height: 15px; border-radius: 50%; border: 2px solid var(--border-strong); }
+.death-pip { width: 17px; height: 17px; border-radius: 50%; border: 2px solid var(--border-strong); background: none; padding: 0; cursor: pointer; }
 .death-pip.success { background: var(--success-text); border-color: var(--success-text); }
 .death-pip.failure { background: var(--danger); border-color: var(--danger); }
 
@@ -521,7 +521,15 @@ body {
 .breakdown-title { font-size: 17px; font-weight: bold; margin-bottom: 14px; }
 .breakdown-source { font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
 .breakdown-subhead { font-size: 15px; font-weight: bold; color: var(--accent-soft); margin: 22px 0 8px; }
-.breakdown-row { display: flex; justify-content: space-between; font-size: 13.5px; padding: 6px 0; }
+/* A long value used to squeeze the label into nothing, because the two spans
+   were free to size themselves. The label now holds its width and the value
+   wraps instead. */
+.breakdown-row {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 14px;
+  font-size: 13.5px; padding: 6px 0;
+}
+.breakdown-row span:first-child { flex: 0 0 auto; }
+.breakdown-row span:last-child { flex: 1; text-align: right; overflow-wrap: anywhere; }
 .breakdown-row span:first-child { color: var(--text-dim); }
 .breakdown-row span:last-child { color: var(--text); font-weight: 600; }
 .breakdown-divider { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
@@ -739,3 +747,13 @@ body {
 .exhaustion-row .res-name { color: var(--text-dim); }
 .exhaustion-row.active .res-name { color: var(--text); }
 .exhaustion-row.active { border: 1px solid var(--danger-surface); }
+
+/* a numbered list, so the number gets a column and the text reads left to
+   right rather than being pushed against it */
+.tier-row { display: flex; gap: 12px; align-items: baseline; padding: 6px 0; font-size: 13.5px; }
+.tier-number { flex: 0 0 16px; color: var(--text-faint); font-weight: bold; }
+.tier-effect { flex: 1; }
+
+.roll-verdict { text-align: center; font-size: 12px; font-weight: bold; margin-top: 10px; }
+.roll-verdict.pass { color: var(--success-text); }
+.roll-verdict.fail { color: var(--danger-text); }
