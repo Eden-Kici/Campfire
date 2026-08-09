@@ -574,3 +574,4 @@ body {
 .calc-heal { background: #2B4430; color: #8FD19E; }
 .calc-temp { background: #4A3F2A; color: #F5C37A; }
 .calc-damage { background: #5A2C29; color: #F0908A; }
+.exhaustion-inactive { opacity: .35; }

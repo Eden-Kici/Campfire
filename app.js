@@ -19,8 +19,9 @@ const CONDITION_ROLL_EFFECTS = {
   Invisible:  [{ applies: "attack", mode: "advantage" }],
   Poisoned:   [{ applies: "attack", mode: "disadvantage" }, { applies: "check", mode: "disadvantage" }],
   Prone:      [{ applies: "attack", mode: "disadvantage" }],
-  Restrained: [{ applies: "attack", mode: "disadvantage" }, { applies: "save", ability: "DEX", mode: "disadvantage" }],
-  Exhaustion: [{ applies: "check", mode: "disadvantage" }]
+  Restrained: [{ applies: "attack", mode: "disadvantage" }, { applies: "save", ability: "DEX", mode: "disadvantage" }]
+  // Exhaustion is handled separately, since which rolls it touches depends on
+  // how many levels of it you have
 };
 
 const DAMAGE_TYPES = [
@@ -152,6 +153,11 @@ function derivedRollMode(character, kind, ability) {
 
   // getAllEffects covers both active effect groups and permanent feature
   // effects, so a feat that grants advantage counts the same as a condition
+  // exhaustion bites at 1 (checks) and again at 3 (attacks and saves)
+  const exhaustion = exhaustionLevel(character);
+  if (exhaustion >= 1 && kind === "check") note("disadvantage", "Exhaustion " + exhaustion);
+  if (exhaustion >= 3 && (kind === "attack" || kind === "save")) note("disadvantage", "Exhaustion " + exhaustion);
+
   getAllEffects(character).forEach(effect => {
     if (effect.category === "Condition") {
       (CONDITION_ROLL_EFFECTS[effect.value.condition] || []).forEach(rule => {
@@ -459,10 +465,11 @@ function comboFieldHtml(id, label, placeholder, value) {
     </div>`;
 }
 
-function wireCombo(id, options) {
+function wireCombo(id, options, onChange) {
   const input = document.getElementById(id);
   const list = document.getElementById(id + "-list");
   if (!input || !list) return;
+  const announce = () => { if (onChange) onChange(input.value.trim()); };
 
   function draw() {
     const query = input.value.trim().toLowerCase();
@@ -477,18 +484,44 @@ function wireCombo(id, options) {
         e.preventDefault();
         input.value = button.dataset.pick;
         list.hidden = true;
+        announce();
       });
     });
   }
 
   input.addEventListener("focus", () => { draw(); list.hidden = false; });
-  input.addEventListener("input", draw);
+  input.addEventListener("input", () => { draw(); announce(); });
   input.addEventListener("blur", () => setTimeout(() => { list.hidden = true; }, 150));
+}
+
+/* The condition field reveals a level input when what you've typed is
+   exhaustion, and hides it again otherwise. It's the only condition with
+   degrees, so a permanent "Level" box on every condition would be noise. */
+function wireConditionField(idPrefix, existingValue) {
+  const extra = document.getElementById(idPrefix + "-condition-extra");
+  if (!extra) return;
+
+  function reveal(condition) {
+    const isExhaustion = String(condition).trim().toLowerCase() === "exhaustion";
+    if (!isExhaustion) { extra.innerHTML = ""; return; }
+    if (document.getElementById(idPrefix + "-condition-level")) return;   // already shown
+
+    const level = existingValue && existingValue.level ? existingValue.level : 1;
+    extra.innerHTML = `
+      <div class="field"><label>Exhaustion Level</label>
+        <input id="${idPrefix}-condition-level" type="number" min="1" max="6" value="${level}">
+        <div class="atk-range" style="margin-top:4px;">Each level adds to the ones below it. A long rest removes one.</div>
+      </div>`;
+  }
+
+  wireCombo(idPrefix + "-condition", ALL_CONDITIONS, reveal);
+  if (existingValue && existingValue.condition) reveal(existingValue.condition);
 }
 
 function effectSubfieldsHtml(category, idPrefix) {
   if (category === "Condition") {
-    return comboFieldHtml(idPrefix + "-condition", "Condition", "Choose one, or type your own");
+    return comboFieldHtml(idPrefix + "-condition", "Condition", "Choose one, or type your own") +
+      `<div id="${idPrefix}-condition-extra"></div>`;
   }
   if (category === "Advantage") {
     return `<div class="field-row">
@@ -518,7 +551,14 @@ function effectSubfieldsHtml(category, idPrefix) {
 }
 
 function readEffectValueFromForm(category, idPrefix) {
-  if (category === "Condition") return { condition: document.getElementById(idPrefix + "-condition").value.trim() };
+  if (category === "Condition") {
+    const condition = document.getElementById(idPrefix + "-condition").value.trim();
+    const value = { condition };
+    // exhaustion is the one condition with degrees
+    const levelField = document.getElementById(idPrefix + "-condition-level");
+    if (levelField) value.level = Math.max(1, Math.min(6, parseInt(levelField.value) || 1));
+    return value;
+  }
   if (category === "Advantage") {
     return {
       rollType: document.getElementById(idPrefix + "-rolltype").value,
@@ -2046,6 +2086,13 @@ function applyRest(kind, diceSpend) {
   if (diceRegained) summary.push(plural(diceRegained, "hit die").replace("dies", "dice"));
 
   if (isLong) {
+    // a long rest removes one level of exhaustion
+    const exhaustion = exhaustionLevel(character);
+    if (exhaustion > 0) {
+      setExhaustionLevel(character, exhaustion - 1);
+      summary.push(exhaustion - 1 === 0 ? "exhaustion gone" : "exhaustion down to " + (exhaustion - 1));
+    }
+
     const maxHP = calculateMaxHP(character);
     if (character.hp.current !== maxHP.total) summary.push("HP restored");
     // this writes hit points directly rather than going through applyHp, so
@@ -2828,6 +2875,33 @@ function openAddEffectModal() {
   });
 }
 
+/* Shown inside an exhaustion effect's detail: what the current level actually
+   does, tier by tier, with the ones you have marked. Stepping the level here
+   rewrites the group, so there's only ever one exhaustion effect. */
+function exhaustionBlockHtml(group) {
+  const isExhaustion = (group.effects || []).some(e =>
+    e.category === "Condition" && String(e.value.condition).toLowerCase() === "exhaustion");
+  if (!isExhaustion) return "";
+
+  const level = exhaustionLevel(character);
+  return `
+    <div class="breakdown-subhead">Exhaustion ${level}</div>
+    <div class="res-row">
+      <span class="res-name">Level</span>
+      <div class="stepper">
+        <button data-exhaustion-step="-1">−</button>
+        <span class="res-count">${level} / 6</span>
+        <button data-exhaustion-step="1">+</button>
+      </div>
+    </div>
+    ${EXHAUSTION_LEVELS.map(tier => `
+      <div class="breakdown-row ${tier.level <= level ? "" : "exhaustion-inactive"}">
+        <span>${tier.level}</span><span>${esc(tier.effect)}</span>
+      </div>
+    `).join("")}
+    <div class="menu-note">A long rest removes one level.</div>`;
+}
+
 function openEffectDetailModal(effectId) {
   const group = character.activeEffects.find(e => e.id == effectId);
   const modifiers = group.effects || [];
@@ -2836,6 +2910,7 @@ function openEffectDetailModal(effectId) {
     <div class="breakdown-row"><span>Duration</span><span>${esc(durationLabel(group))}</span></div>
     ${group.concentration ? `<div class="breakdown-row"><span>Concentration</span><span>Required</span></div>` : ""}
     ${group.note ? `<div class="effect-note">${esc(group.note)}</div>` : ""}
+    ${exhaustionBlockHtml(group)}
     ${modifiers.length ? `
       <div class="breakdown-subhead">Modifiers</div>
       ${modifiers.map(e => `<div class="breakdown-row"><span>${esc(e.category)}</span><span>${esc(effectSummaryLabel(e))}</span></div>`).join("")}
@@ -2846,6 +2921,17 @@ function openEffectDetailModal(effectId) {
     character.activeEffects = character.activeEffects.filter(e => e.id != effectId);
     closeModal();
     renderContent();
+  });
+
+  document.querySelectorAll("[data-exhaustion-step]").forEach(button => {
+    button.addEventListener("click", () => {
+      const next = exhaustionLevel(character) + parseInt(button.dataset.exhaustionStep);
+      setExhaustionLevel(character, next);
+      closeModal();
+      renderContent();
+      if (next <= 0) showToast("Exhaustion cleared");
+      else showToast("Exhaustion " + Math.min(6, next));
+    });
   });
 }
 
@@ -3484,7 +3570,7 @@ function renderFeatureEffectsList(container, formEffects, categories) {
     const subEl = container.querySelector(`[data-subfields-index="${idx}"]`);
     subEl.innerHTML = effectSubfieldsHtml(eff.category, "feature-effect-" + idx);
     prefillEffectSubfields(eff, "feature-effect-" + idx);
-    wireCombo("feature-effect-" + idx + "-condition", ALL_CONDITIONS);
+    wireConditionField("feature-effect-" + idx, eff.value);
     wireSelectsIn(subEl);
   });
 

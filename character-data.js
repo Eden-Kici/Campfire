@@ -313,6 +313,52 @@ const ABILITY_FULL_NAMES = {
 
    The proper fix is to stop building markup from strings; this is the fix that
    fits the current architecture. */
+/* Exhaustion is the one condition with degrees, and each level adds to the one
+   below it. It's stored as a level on the effect's value rather than as six
+   separate conditions, so a long rest can step it down and the penalties can
+   be derived rather than hand-applied. */
+const EXHAUSTION_LEVELS = [
+  { level: 1, effect: "Disadvantage on ability checks" },
+  { level: 2, effect: "Speed halved" },
+  { level: 3, effect: "Disadvantage on attack rolls and saving throws" },
+  { level: 4, effect: "Hit point maximum halved" },
+  { level: 5, effect: "Speed reduced to 0" },
+  { level: 6, effect: "Death" }
+];
+
+function exhaustionLevel(character) {
+  let highest = 0;
+  character.activeEffects.forEach(group => {
+    (group.effects || []).forEach(effect => {
+      if (effect.category !== "Condition") return;
+      if (String(effect.value.condition).toLowerCase() !== "exhaustion") return;
+      highest = Math.max(highest, effect.value.level || 1);
+    });
+  });
+  return Math.min(6, highest);
+}
+
+function exhaustionEffects(level) {
+  return EXHAUSTION_LEVELS.filter(tier => tier.level <= level);
+}
+
+function setExhaustionLevel(character, level) {
+  const clamped = Math.max(0, Math.min(6, level));
+  character.activeEffects = character.activeEffects.filter(group =>
+    !(group.effects || []).some(e =>
+      e.category === "Condition" && String(e.value.condition).toLowerCase() === "exhaustion"));
+
+  if (clamped === 0) return;
+  const nextId = Math.max(0, ...character.activeEffects.map(g => g.id)) + 1;
+  character.activeEffects.push({
+    id: nextId,
+    name: "Exhaustion " + clamped,
+    concentration: false,
+    duration: { type: "Permanent", rounds: null },
+    effects: [{ category: "Condition", value: { condition: "Exhaustion", level: clamped } }]
+  });
+}
+
 // short tag shown next to a resource: "SR", "LR", "½ LR", "1d4 SR", "—"
 function rechargeLabel(recharge) {
   if (!recharge || !recharge.on || recharge.on === "none") return "—";
@@ -681,7 +727,15 @@ function resetDeathSaves(character) {
 function calculateMaxHP(character) {
   const sources = [{ label: "Base", value: character.baseMaxHP }];
   character.maxHpModifiers.forEach(m => sources.push(m));
-  const total = sources.reduce((sum, s) => sum + s.value, 0);
+  let total = sources.reduce((sum, s) => sum + s.value, 0);
+
+  // exhaustion halves the maximum at level 4
+  if (exhaustionLevel(character) >= 4) {
+    const lost = Math.floor(total / 2);
+    sources.push({ label: "Exhaustion 4", value: -lost });
+    total -= lost;
+  }
+
   return { total, sources };
 }
 
@@ -699,8 +753,20 @@ function calculateSpeed(character) {
     sources.push({ label: "Restrained/Grappled", value: -character.baseSpeed });
   }
   effectsAffectingStat(character, "Speed").forEach(e => sources.push({ label: effectSourceLabel(e), value: e.value.amount }));
-  const total = Math.max(0, sources.reduce((sum, s) => sum + s.value, 0));
-  return { total, sources };
+
+  // exhaustion halves speed at 2 and removes it entirely at 5
+  const exhaustion = exhaustionLevel(character);
+  let running = sources.reduce((sum, s) => sum + s.value, 0);
+  if (exhaustion >= 5) {
+    sources.push({ label: "Exhaustion 5", value: -running });
+    running = 0;
+  } else if (exhaustion >= 2) {
+    const lost = Math.floor(running / 2);
+    sources.push({ label: "Exhaustion 2", value: -lost });
+    running -= lost;
+  }
+
+  return { total: Math.max(0, running), sources };
 }
 
 // An ability check is just the modifier, but the modifier moves in steps of one
