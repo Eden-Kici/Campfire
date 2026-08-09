@@ -186,11 +186,15 @@ let character = {
     }
   ],
 
+  /* providesAttacks decides whether a weapon in this category shows up under
+     Attacks. It's separate from appliesEffects because a cloak you're wearing
+     applies its bonus without being something you swing, and a greatsword
+     strapped to your back is carried without being drawn. */
   categoryRules: {
-    Worn: { countsWeight: true, appliesEffects: true },
-    Equipped: { countsWeight: true, appliesEffects: true },
-    Carrying: { countsWeight: true, appliesEffects: false },
-    "Camp Storage": { countsWeight: false, appliesEffects: false }
+    Worn: { countsWeight: true, appliesEffects: true, providesAttacks: false },
+    Equipped: { countsWeight: true, appliesEffects: true, providesAttacks: true },
+    Carrying: { countsWeight: true, appliesEffects: false, providesAttacks: false },
+    "Camp Storage": { countsWeight: false, appliesEffects: false, providesAttacks: false }
   },
 
   spellcasting: {
@@ -324,8 +328,22 @@ function equippedEffectItems(character) {
   });
 }
 
+// a weapon only appears under Attacks while it sits in a category that
+// provides them -- stowing it in Carrying takes it off the list
 function weaponList(character) {
-  return character.inventory.filter(item => item.isWeapon);
+  return character.inventory.filter(item => {
+    if (!item.isWeapon) return false;
+    const rule = character.categoryRules[item.category];
+    return !!(rule && rule.providesAttacks);
+  });
+}
+
+function attackCategories(character) {
+  return Object.keys(character.categoryRules).filter(name => character.categoryRules[name].providesAttacks);
+}
+
+function stowCategories(character) {
+  return Object.keys(character.categoryRules).filter(name => !character.categoryRules[name].providesAttacks);
 }
 
 /* Properties are stored as free strings because several carry a parameter --

@@ -675,7 +675,7 @@ let savedCharacters = [character];
    A real build would migrate. A POC only needs to notice. */
 
 const STORAGE_KEY = "campfire.characters";
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 function persistCharacters() {
   try {
@@ -1666,10 +1666,10 @@ function buildCharacterFromCreator() {
     traits,
     inventory: [],
     categoryRules: {
-      Worn: { countsWeight: true, appliesEffects: true },
-      Equipped: { countsWeight: true, appliesEffects: true },
-      Carrying: { countsWeight: true, appliesEffects: false },
-      "Camp Storage": { countsWeight: false, appliesEffects: false }
+      Worn: { countsWeight: true, appliesEffects: true, providesAttacks: false },
+      Equipped: { countsWeight: true, appliesEffects: true, providesAttacks: true },
+      Carrying: { countsWeight: true, appliesEffects: false, providesAttacks: false },
+      "Camp Storage": { countsWeight: false, appliesEffects: false, providesAttacks: false }
     },
 
     spellcasting: { classes: [] },
@@ -2805,7 +2805,7 @@ function openAttackDetailModal(weaponId) {
 
     <div class="btn-row-2" style="margin-top:22px;">
       <button class="btn-primary" id="edit-weapon-button">Edit Weapon</button>
-      <button class="btn-primary" id="remove-atk-button" style="background:#5A2C29;color:#F0908A;">Remove</button>
+      <button class="btn-primary" id="remove-atk-button" style="background:#242019;color:#F5C37A;">Stow</button>
     </div>
   `);
 
@@ -2820,11 +2820,79 @@ function openAttackDetailModal(weaponId) {
   // full form lives there rather than being duplicated here
   document.getElementById("edit-weapon-button").addEventListener("click", () => openItemDetailModal(weaponId));
 
-  document.getElementById("remove-atk-button").addEventListener("click", () => {
-    character.inventory = character.inventory.filter(i => i.id != weaponId);
-    closeModal();
-    renderContent();
+  document.getElementById("remove-atk-button").addEventListener("click", () => openStowWeaponModal(weaponId));
+}
+
+
+/* ---------- stowing a weapon ----------
+
+   Taking a weapon off the Attacks list must not destroy it -- it's a real
+   object you own. Stowing moves it to a category that doesn't provide attacks.
+   Deleting it outright is still possible, from the item's own editor. */
+
+function stowWeapon(weapon, categoryName) {
+  weapon.category = categoryName;
+  openInvCategories[categoryName] = true;
+  closeModal();
+  renderContent();
+  showToast("Moved " + weapon.name + " to " + categoryName);
+}
+
+function openStowWeaponModal(weaponId) {
+  const weapon = character.inventory.find(i => i.id == weaponId);
+  const targets = stowCategories(character);
+  if (!targets.length) return openCreateStowCategoryModal(weapon);
+
+  let selected = targets.includes("Carrying") ? "Carrying" : targets[0];
+
+  openModal("center", `
+    <div class="modal-heading">Stow ${esc(weapon.name)}</div>
+    <div class="menu-note" style="margin-top:0;">It comes off your Attacks list but stays in your inventory. Delete it for good from the item itself.</div>
+    <div style="margin-top:14px;">
+      ${targets.map(name => `
+        <div class="recipient-row" data-stow-to="${esc(name)}">
+          <div class="recipient-left"><div class="recipient-name">${esc(name)}</div></div>
+          <div class="radio-dot ${name === selected ? "selected" : ""}" data-stow-dot="${esc(name)}"></div>
+        </div>
+      `).join("")}
+    </div>
+    <button class="btn-primary" id="confirm-stow">Stow</button>
+    <button class="btn-secondary" id="cancel-stow">Cancel</button>
+  `);
+
+  document.querySelectorAll("[data-stow-to]").forEach(row => {
+    row.addEventListener("click", () => {
+      selected = row.dataset.stowTo;
+      document.querySelectorAll("[data-stow-dot]").forEach(dot =>
+        dot.classList.toggle("selected", dot.dataset.stowDot === selected));
+    });
   });
+  document.getElementById("confirm-stow").addEventListener("click", () => stowWeapon(weapon, selected));
+  document.getElementById("cancel-stow").addEventListener("click", closeModal);
+}
+
+// every category provides attacks, so there is nowhere to put it -- offer to
+// make somewhere rather than refusing or silently deleting
+function openCreateStowCategoryModal(weapon) {
+  openModal("center", `
+    <div class="modal-heading">Nowhere to stow it</div>
+    <div class="menu-note" style="margin-top:0;">
+      Every inventory category currently puts weapons on your Attacks list, so ${esc(weapon.name)} has nowhere to go.
+      Create a category for gear you're carrying but not wielding.
+    </div>
+    <div class="field" style="margin-top:14px;"><label>Category Name</label><input id="stow-cat-name" value="Carrying"></div>
+    <button class="btn-primary" id="create-stow-cat">Create and Stow</button>
+    <button class="btn-secondary" id="cancel-stow">Cancel</button>
+  `);
+
+  document.getElementById("create-stow-cat").addEventListener("click", () => {
+    const name = document.getElementById("stow-cat-name").value.trim();
+    if (!name) { showToast("Give the category a name"); return; }
+    if (character.categoryRules[name]) { showToast("You already have a category called that"); return; }
+    character.categoryRules[name] = { countsWeight: true, appliesEffects: false, providesAttacks: false };
+    stowWeapon(weapon, name);
+  });
+  document.getElementById("cancel-stow").addEventListener("click", closeModal);
 }
 
 
@@ -4022,15 +4090,17 @@ function openAddInventoryModal(presetCategory, presetType) {
       <div class="field"><label>Name</label><input id="new-cat-name" placeholder="e.g. Familiar's Pouch"></div>
       <div class="toggle-line"><span>Counts toward carry weight</span><div class="switch" id="sw-weight"><div class="knob"></div></div></div>
       <div class="toggle-line"><span>Applies item effects (like Worn/Equipped)</span><div class="switch" id="sw-effects"><div class="knob"></div></div></div>
+      <div class="toggle-line"><span>Weapons here appear under Attacks</span><div class="switch" id="sw-attacks"><div class="knob"></div></div></div>
       <button class="btn-primary" id="save-cat-button">Create Category</button>
     `;
-    let weightOn = false, effectsOn = false;
+    let weightOn = false, effectsOn = false, attacksOn = false;
     document.getElementById("sw-weight").addEventListener("click", (e) => { weightOn = !weightOn; e.currentTarget.classList.toggle("on", weightOn); });
     document.getElementById("sw-effects").addEventListener("click", (e) => { effectsOn = !effectsOn; e.currentTarget.classList.toggle("on", effectsOn); });
+    document.getElementById("sw-attacks").addEventListener("click", (e) => { attacksOn = !attacksOn; e.currentTarget.classList.toggle("on", attacksOn); });
     document.getElementById("save-cat-button").addEventListener("click", () => {
       const name = document.getElementById("new-cat-name").value.trim();
       if (!name || character.categoryRules[name]) { closeModal(); return; }
-      character.categoryRules[name] = { countsWeight: weightOn, appliesEffects: effectsOn };
+      character.categoryRules[name] = { countsWeight: weightOn, appliesEffects: effectsOn, providesAttacks: attacksOn };
       openInvCategories[name] = true;
       closeModal();
       renderContent();
@@ -4057,13 +4127,14 @@ function openAddInventoryModal(presetCategory, presetType) {
 
 function openEditCategoryModal(category) {
   const rule = character.categoryRules[category];
-  let weightOn = rule.countsWeight, effectsOn = rule.appliesEffects;
+  let weightOn = rule.countsWeight, effectsOn = rule.appliesEffects, attacksOn = !!rule.providesAttacks;
 
   openModal("sheet", `
     <div class="modal-heading">Edit Category</div>
     <div class="field"><label>Name</label><input id="edit-cat-name" value="${esc(category)}"></div>
     <div class="toggle-line"><span>Counts toward carry weight</span><div class="switch ${weightOn ? "on" : ""}" id="sw-edit-weight"><div class="knob"></div></div></div>
     <div class="toggle-line"><span>Applies item effects (like Worn/Equipped)</span><div class="switch ${effectsOn ? "on" : ""}" id="sw-edit-effects"><div class="knob"></div></div></div>
+    <div class="toggle-line"><span>Weapons here appear under Attacks</span><div class="switch ${attacksOn ? "on" : ""}" id="sw-edit-attacks"><div class="knob"></div></div></div>
     <div class="btn-row-2">
       <button class="btn-primary" id="save-cat-edit-button">Save Changes</button>
       <button class="btn-primary" id="remove-cat-button" style="background:#5A2C29;color:#F0908A;">Remove</button>
@@ -4071,11 +4142,12 @@ function openEditCategoryModal(category) {
   `);
   document.getElementById("sw-edit-weight").addEventListener("click", (e) => { weightOn = !weightOn; e.currentTarget.classList.toggle("on", weightOn); });
   document.getElementById("sw-edit-effects").addEventListener("click", (e) => { effectsOn = !effectsOn; e.currentTarget.classList.toggle("on", effectsOn); });
+  document.getElementById("sw-edit-attacks").addEventListener("click", (e) => { attacksOn = !attacksOn; e.currentTarget.classList.toggle("on", attacksOn); });
 
   document.getElementById("save-cat-edit-button").addEventListener("click", () => {
     const newName = document.getElementById("edit-cat-name").value.trim();
     if (!newName || (newName !== category && character.categoryRules[newName])) { closeModal(); return; }
-    const newRule = { countsWeight: weightOn, appliesEffects: effectsOn };
+    const newRule = { countsWeight: weightOn, appliesEffects: effectsOn, providesAttacks: attacksOn };
     if (newName !== category) {
       delete character.categoryRules[category];
       character.categoryRules[newName] = newRule;
