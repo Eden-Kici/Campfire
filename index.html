@@ -41,8 +41,26 @@
 
   </div>
 
+  <!-- No modules and no build step, so this list is the load order and the
+       dependency graph both. Data first, then the shared machinery, then one
+       file per screen, then app.js to start it. -->
   <script src="srd-data.js"></script>
   <script src="character-data.js"></script>
+
+  <script src="roll.js"></script>
+  <script src="ui.js"></script>
+  <script src="theme.js"></script>
+  <script src="characters.js"></script>
+  <script src="creator.js"></script>
+  <script src="party.js"></script>
+  <script src="rests.js"></script>
+
+  <script src="tab-combat.js"></script>
+  <script src="tab-character.js"></script>
+  <script src="tab-spells.js"></script>
+  <script src="tab-inventory.js"></script>
+  <script src="tab-notes.js"></script>
+
   <script src="app.js"></script>
 </body>
 </html>

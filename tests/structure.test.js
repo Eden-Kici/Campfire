@@ -1,0 +1,59 @@
+/* The app is split across a dozen plain scripts with no module system, so the
+   only thing holding it together is the <script> list in index.html. Two ways
+   that goes wrong quietly:
+
+     - a new file is written but never added to the page, so it works in the
+       tests (which read the same list) but not in the browser, or the reverse
+     - two files declare the same top-level name, which in a browser throws
+       "Identifier has already been declared" and takes the whole page down
+       before anything renders
+
+   Neither is caught by a test of behaviour, because behaviour never gets to
+   run. So they're caught here instead. */
+
+const fs = require("fs");
+const path = require("path");
+
+module.exports = function (suite) {
+  const harness = require("./harness");
+  const listed = harness.scriptFiles();
+
+  suite.section("the page loads every script there is");
+  const onDisk = fs.readdirSync(harness.ROOT).filter(f => f.endsWith(".js")).sort();
+  const orphaned = onDisk.filter(f => !listed.includes(f));
+  suite.is("no script is left out of index.html", orphaned, []);
+  const phantom = listed.filter(f => !fs.existsSync(path.join(harness.ROOT, f)));
+  suite.is("and none is listed that doesn't exist", phantom, []);
+
+  suite.section("the load order");
+  suite.is("reference data comes first", listed[0], "srd-data.js");
+  suite.is("then the character", listed[1], "character-data.js");
+  suite.is("and app.js starts everything last", listed[listed.length - 1], "app.js");
+
+  suite.section("no two files declare the same name");
+  /* Only top-level declarations matter -- anything indented is inside a
+     function and has its own scope. */
+  const declarations = {};
+  listed.forEach(file => {
+    const source = harness.readFile(file);
+    [...source.matchAll(/^(?:function|let|const|var)\s+([A-Za-z_$][\w$]*)/gm)]
+      .forEach(match => {
+        const name = match[1];
+        (declarations[name] = declarations[name] || []).push(file);
+      });
+  });
+
+  const clashes = Object.keys(declarations)
+    .filter(name => new Set(declarations[name]).size > 1)
+    .map(name => name + " (" + [...new Set(declarations[name])].join(", ") + ")");
+  suite.is("every top-level name is declared once", clashes, []);
+
+  suite.section("nothing grew back into a monolith");
+  const sizes = listed.map(file => ({ file, lines: harness.readFile(file).split("\n").length }));
+  const worst = sizes.reduce((a, b) => (b.lines > a.lines ? b : a));
+  suite.ok("the largest file is under 1,500 lines",
+    worst.lines < 1500, worst.file + " is " + worst.lines);
+  suite.ok("app.js is a boot file, not a codebase",
+    sizes.find(s => s.file === "app.js").lines < 120,
+    "app.js is " + sizes.find(s => s.file === "app.js").lines + " lines");
+};
