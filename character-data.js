@@ -163,7 +163,7 @@ let character = {
       proficiencyRequired: "Simple", magicBonus: 0,
       damage: [{ dice: "1d6", type: "Piercing", ability: "DEX" }],
       weaponType: "ranged", range: "80/320 ft", properties: ["Ammunition", "Two-Handed"],
-      ammunition: "Arrows"   // spends from the resource of that name on each attack
+      ammunition: "Quiver"   // draws from the quiver, which refills from the arrow stack
     },
     {
       id: 8, name: "Serpent's Fang", category: "Equipped", weight: 1, qty: 1,
@@ -182,9 +182,16 @@ let character = {
        the count -- so there's one number, not an item and a resource that can
        drift apart. */
     {
-      id: 9, name: "Arrows", category: "Carrying", weight: 0.05, qty: 20,
-      description: "A quiver of them.",
-      resource: { max: 20, recharge: { on: "none", amount: "all" } }
+      id: 9, name: "Arrows", category: "Carrying", weight: 0.05, qty: 60,
+      description: "Loose arrows, kept in the pack.",
+      // a stack: no capacity, so it shows a bare count rather than "60/0"
+      resource: { max: 0, recharge: { on: "none", amount: "all" } }
+    },
+    {
+      id: 10, name: "Quiver", category: "Worn", weight: 1, qty: 1,
+      description: "Holds twenty arrows within easy reach.",
+      // a container: the bow draws from here, and it refills from the stack
+      resource: { max: 20, loaded: 20, refillFrom: "Arrows", recharge: { on: "none", amount: "all" } }
     },
     // stored, not worn -- proves armour only counts from a category whose
     // rules say appliesEffects
@@ -384,10 +391,22 @@ function finesseAbility(character, weapon) {
 }
 
 /* Resources come from two places: standalone entries like Action Surge, and
-   inventory items that opted into being tracked, like arrows. They render and
-   recharge identically; a row just knows which object backs it so a stepper
-   writes to the right one. Item-backed rows use the item's own quantity as
-   their count, so nothing can drift. */
+   inventory items that opted into being tracked. They render and recharge
+   identically; a row knows which object backs it so a stepper writes to the
+   right one.
+
+   An item counts one of two ways:
+
+     a stack   -- arrows, rations. The item's own quantity IS the count, so
+                  there is one number and nothing can drift.
+     a container -- a quiver, a magazine. It holds a count separate from how
+                  many of the container you own, and is refilled from a stack
+                  elsewhere in your inventory. `refillFrom` names that stack,
+                  `loaded` is what's currently in it. */
+function isContainer(item) {
+  return !!(item.resource && item.resource.refillFrom);
+}
+
 function resourceRows(character) {
   const rows = character.resources.map(resource => ({
     key: "res:" + resource.id,
@@ -400,12 +419,15 @@ function resourceRows(character) {
 
   character.inventory.forEach(item => {
     if (!item.resource) return;
+    const container = isContainer(item);
     rows.push({
       key: "item:" + item.id,
       name: item.name,
       recharge: item.resource.recharge,
-      current: item.qty || 0,
+      current: container ? (item.resource.loaded || 0) : (item.qty || 0),
       max: item.resource.max,
+      refillFrom: container ? item.resource.refillFrom : null,
+      container,
       item
     });
   });
@@ -419,8 +441,28 @@ function findResourceRow(character, key) {
 
 function adjustResourceRow(row, delta) {
   if (!row) return;
-  if (row.item) row.item.qty = (row.item.qty || 0) + delta;
+  if (row.container) row.item.resource.loaded = (row.item.resource.loaded || 0) + delta;
+  else if (row.item) row.item.qty = (row.item.qty || 0) + delta;
   else row.resource.current += delta;
+}
+
+/* Refilling moves units out of the source stack and into the container, as
+   many as will fit or as many as remain, whichever is fewer. Nothing is
+   created: what leaves the quiver's source is exactly what arrives in it. */
+function refillContainer(character, row) {
+  if (!row || !row.container) return { moved: 0, reason: "not a container" };
+
+  const source = resourceRows(character).find(other => other.name === row.refillFrom && other !== row);
+  if (!source) return { moved: 0, reason: "missing", from: row.refillFrom };
+
+  const space = (row.max || 0) - row.current;
+  if (space <= 0) return { moved: 0, reason: "full" };
+  if (source.current <= 0) return { moved: 0, reason: "empty", from: source.name };
+
+  const moved = Math.min(space, source.current);
+  adjustResourceRow(source, -moved);
+  adjustResourceRow(row, moved);
+  return { moved, from: source.name };
 }
 
 // a weapon's ammunition may be a standalone resource or an inventory item

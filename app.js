@@ -675,7 +675,7 @@ let savedCharacters = [character];
    A real build would migrate. A POC only needs to notice. */
 
 const STORAGE_KEY = "campfire.characters";
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 function persistCharacters() {
   try {
@@ -1971,10 +1971,15 @@ function wirePartyModal() {
    single-string tag could only fake in its label. */
 function restoredValue(entry, ceiling) {
   const amount = entry.recharge && entry.recharge.amount !== undefined ? entry.recharge.amount : "all";
-  if (amount === "all") return ceiling;
-  if (amount === "half") return Math.min(ceiling, entry.current + Math.max(1, Math.floor(ceiling / 2)));
-  if (typeof amount === "number") return Math.min(ceiling, entry.current + amount);
-  return Math.min(ceiling, entry.current + rollNotation(String(amount)).total);
+  // a ceiling of zero means uncapped, so "all" has no target to restore to and
+  // must not be read as "set to zero"
+  const uncapped = !ceiling;
+  const cap = value => (uncapped ? value : Math.min(ceiling, value));
+
+  if (amount === "all") return uncapped ? entry.current : ceiling;
+  if (amount === "half") return cap(entry.current + Math.max(1, Math.floor((ceiling || 0) / 2)));
+  if (typeof amount === "number") return cap(entry.current + amount);
+  return cap(entry.current + rollNotation(String(amount)).total);
 }
 
 function restoreOnRest(entry, isLong) {
@@ -2271,10 +2276,15 @@ function renderCombatTab() {
       <div class="res-row">
         <div class="res-name-wrap" data-resource-view="${esc(row.key)}">
           <span class="res-name">${esc(row.name)}</span>
-          <span class="res-tag">${esc(rechargeLabel(row.recharge))}</span>
-          ${row.item ? `<span class="res-tag" title="Tracked from your inventory">ITEM</span>` : ""}
+          ${rechargeLabel(row.recharge) === "\u2014" ? "" : `<span class="res-tag">${esc(rechargeLabel(row.recharge))}</span>`}
+          ${row.container ? `<span class="res-tag" title="Refills from ${esc(row.refillFrom)}">HOLDS ${esc(row.refillFrom)}</span>` : ""}
         </div>
-        <div class="stepper"><button data-res-minus="${esc(row.key)}">\u2212</button><span class="res-count">${row.current}/${row.max}</span><button data-res-plus="${esc(row.key)}">+</button></div>
+        <div class="stepper">
+          ${row.container ? `<button class="atk-pill" data-res-refill="${esc(row.key)}">Refill</button>` : ""}
+          <button data-res-minus="${esc(row.key)}">\u2212</button>
+          <span class="res-count">${row.max ? row.current + "/" + row.max : row.current}</span>
+          <button data-res-plus="${esc(row.key)}">+</button>
+        </div>
       </div>
     `).join("")}
 
@@ -2355,6 +2365,18 @@ function wireCombatTab() {
   });
   document.querySelectorAll("[data-res-plus]").forEach(button => {
     button.addEventListener("click", () => { adjustResourceRow(findResourceRow(character, button.dataset.resPlus), 1); renderContent(); });
+  });
+  document.querySelectorAll("[data-res-refill]").forEach(button => {
+    button.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const row = findResourceRow(character, button.dataset.resRefill);
+      const result = refillContainer(character, row);
+      renderContent();
+      if (result.moved) showToast("Loaded " + result.moved + " from " + result.from);
+      else if (result.reason === "full") showToast(row.name + " is already full");
+      else if (result.reason === "empty") showToast("No " + result.from + " left to load");
+      else showToast("Nothing called " + row.refillFrom + " to refill from");
+    });
   });
   // an item-backed row belongs to the item, so tapping it opens the item
   document.querySelectorAll("[data-resource-view]").forEach(el => el.addEventListener("click", () => {
@@ -3935,7 +3957,12 @@ function commonItemFieldsHtml(item) {
 function itemResourceFieldsHtml(resource) {
   resource = resource || {};
   return `
-    <div class="field"><label>Full Stack</label><input id="if-res-max" type="number" value="${resource.max != null ? resource.max : 20}"></div>
+    <div class="field"><label>Capacity</label>
+      <input id="if-res-max" type="number" value="${resource.max != null ? resource.max : 0}" placeholder="0">
+      <div class="atk-range" style="margin-top:4px;">Leave at 0 for an uncapped stack — it'll show a bare count.</div>
+    </div>
+    ${comboFieldHtml("if-res-refill", "Refills From (optional)", "e.g. Arrows", resource.refillFrom)}
+    <div class="atk-range" style="margin:-6px 0 12px;">Name another tracked item and this becomes a container: the count is what's loaded, and a Refill button moves units across.</div>
     ${rechargeFieldHtml("if-res", resource.recharge || { on: "none", amount: "all" })}`;
 }
 
@@ -3947,20 +3974,33 @@ function wireItemResourceFields(item) {
 
   function draw() {
     wrap.innerHTML = on ? itemResourceFieldsHtml(item && item.resource) : "";
-    if (on) wireRechargeField("if-res");
+    if (on) { wireRechargeField("if-res"); wireCombo("if-res-refill", resourceRows(character).map(r => r.name)); }
   }
   toggle.addEventListener("click", () => {
     on = !on;
     toggle.classList.toggle("on", on);
     draw();
   });
-  if (on) wireRechargeField("if-res");
+  if (on) { wireRechargeField("if-res"); wireCombo("if-res-refill", resourceRows(character).map(r => r.name)); }
 }
 
-function readItemResourceFields() {
+function readItemResourceFields(existing) {
   const max = document.getElementById("if-res-max");
   if (!max) return null;
-  return { max: parseInt(max.value) || 0, recharge: readRechargeValue("if-res") };
+
+  const block = {
+    max: parseInt(max.value) || 0,
+    recharge: readRechargeValue("if-res")
+  };
+
+  const refillFrom = document.getElementById("if-res-refill").value.trim();
+  if (refillFrom) {
+    block.refillFrom = refillFrom;
+    // a container keeps its own load; start it full if it didn't have one
+    const previous = existing && existing.resource ? existing.resource.loaded : undefined;
+    block.loaded = Math.min(block.max, previous !== undefined ? previous : block.max);
+  }
+  return block;
 }
 
 function readCommonItemFields() {
@@ -4151,7 +4191,7 @@ function openAddInventoryModal(presetCategory, presetType) {
       const attackBonus = parseInt(document.getElementById("if-atkb").value) || 0;
       if (acBonus) item.acBonus = acBonus;
       if (attackBonus) item.attackBonus = attackBonus;
-      const tracked = readItemResourceFields();
+      const tracked = readItemResourceFields(null);
       if (tracked) item.resource = tracked;
 
       applyItemType(item, state.type, state);
@@ -4278,7 +4318,19 @@ function openItemDetailModal(itemId) {
   }
   if (item.acBonus) facts.push(["AC Bonus", formatModifier(item.acBonus)]);
   if (item.attackBonus) facts.push(["Attack Bonus", formatModifier(item.attackBonus)]);
-  if (item.resource) facts.push(["Tracked as", "resource, " + rechargeLabel(item.resource.recharge) + ", full stack " + item.resource.max]);
+  if (item.resource) {
+    const container = isContainer(item);
+    facts.push(["Tracked", container ? "Container, under Resources" : "Stack, under Resources"]);
+    if (container) {
+      facts.push(["Holds", (item.resource.loaded || 0) + " of " + item.resource.max]);
+      facts.push(["Refills from", item.resource.refillFrom]);
+    } else if (item.resource.max) {
+      facts.push(["Capacity", String(item.resource.max)]);
+    }
+    if (rechargeLabel(item.resource.recharge) !== "\u2014") {
+      facts.push(["Recharges", rechargeLabel(item.resource.recharge)]);
+    }
+  }
 
   let weaponBlock = "";
   if (type === "weapon") {
@@ -4346,7 +4398,7 @@ function openItemEditModal(itemId) {
     const atkb = parseInt(document.getElementById("if-atkb").value) || 0;
     if (ac) item.acBonus = ac; else delete item.acBonus;
     if (atkb) item.attackBonus = atkb; else delete item.attackBonus;
-    const tracked = readItemResourceFields();
+    const tracked = readItemResourceFields(item);
     if (tracked) item.resource = tracked; else delete item.resource;
 
     applyItemType(item, state.type, state);
