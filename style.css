@@ -767,3 +767,9 @@ body {
 /* the pill sits in a row of round steppers, so it centres its own label
    rather than relying on the button default */
 .atk-pill { display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
+
+/* the row is the control: tapping what you're concentrating on checks it */
+.conc-check {
+  flex: 1; text-align: left; background: none; border: none; padding: 0;
+  color: var(--text); font-family: inherit; font-size: 14px; cursor: pointer;
+}

@@ -18,21 +18,23 @@ module.exports = function (suite) {
 
   suite.section("short rest");
   resource("Action Surge").current = 0;
-  resource("Second Wind").current = 0;
+  resource("Arcane Recovery").current = 0;
   character.spellSlots[1].current = 0;
-  character.hitDiceSpent = { d10: 5, d8: 2 };          // every die spent
+  character.hitDiceSpent = { d10: 4, d6: 2, d8: 2 };   // every die spent
   applyRest("short");
   suite.is("restores short rest resources", resource("Action Surge").current, 1);
-  suite.is("leaves long rest resources", resource("Second Wind").current, 0);
+  suite.is("leaves long rest resources", resource("Arcane Recovery").current, 0);
   suite.is("leaves long rest slots", character.spellSlots[1].current, 0);
   suite.is("leaves hit dice", calculateHitDice(character)[0].current, 0);
 
   suite.section("long rest");
   applyRest("long");
-  suite.is("restores long rest resources", resource("Second Wind").current, 2);
+  suite.is("restores long rest resources", resource("Arcane Recovery").current, 1);
   suite.is("restores every slot level", character.spellSlots[1].current, character.spellSlots[1].max);
-  suite.is("returns half the d10 pool, minimum one", calculateHitDice(character)[0].current, 2);
-  suite.is("returns half the d8 pool", calculateHitDice(character)[1].current, 1);
+  const pool = die => calculateHitDice(character).find(p => p.die === die).current;
+  suite.is("returns half the d10 pool", pool("d10"), 2);
+  suite.is("half of two d6, minimum one", pool("d6"), 1);
+  suite.is("half of two d8, minimum one", pool("d8"), 1);
   suite.is("restores hit points", character.hp.current, calculateMaxHP(character).total);
   suite.is("clears temporary hit points", character.hp.temp, 0);
 

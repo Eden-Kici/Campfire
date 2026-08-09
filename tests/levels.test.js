@@ -15,18 +15,19 @@ module.exports = function (suite) {
   });
 
   suite.section("the demo character");
-  suite.is("total level is the sum of its classes", totalLevel(character), 7);
+  suite.is("total level is the sum of its classes", totalLevel(character), 8);
   suite.is("proficiency bonus derives from that", calculateProficiencyBonus(character).total, 3);
-  suite.is("the source names the level", calculateProficiencyBonus(character).sources[0].label, "Level 7");
+  suite.is("the source names the level", calculateProficiencyBonus(character).sources[0].label, "Level 8");
   suite.is("the class line is built from the list", classLineFor(character),
-    "Fighter (Champion) 5 / Rogue (Thief) 2");
+    "Fighter (Champion) 4 / Wizard (School of Evocation) 2 / Cleric (Life Domain) 2");
 
   suite.section("hit dice come from class levels");
   const pools = calculateHitDice(character);
-  suite.is("one pool per die size", pools.length, 2);
-  suite.is("five d10 from five Fighter levels", pools.find(p => p.die === "d10").total, 5);
-  suite.is("two d8 from two Rogue levels", pools.find(p => p.die === "d8").total, 2);
-  suite.is("one d10 already spent", pools.find(p => p.die === "d10").current, 4);
+  suite.is("one pool per die size", pools.length, 3);
+  suite.is("four d10 from four Fighter levels", pools.find(p => p.die === "d10").total, 4);
+  suite.is("two d6 from two Wizard levels", pools.find(p => p.die === "d6").total, 2);
+  suite.is("two d8 from two Cleric levels", pools.find(p => p.die === "d8").total, 2);
+  suite.is("one d10 already spent", pools.find(p => p.die === "d10").current, 3);
 
   suite.section("two classes sharing a die size merge");
   const saved = JSON.parse(JSON.stringify(character.classes));
@@ -38,30 +39,27 @@ module.exports = function (suite) {
   suite.is("into a single pool", calculateHitDice(character).length, 1);
   suite.is("of five dice", calculateHitDice(character)[0].total, 5);
   character.classes = saved;
-  character.hitDiceSpent = { d10: 1, d8: 0 };
+  character.hitDiceSpent = { d10: 1 };
 
   suite.section("levelling up");
   const beforeSkill = calculateSkill(character, "Athletics").total;
-  character.classes[0].level = 6;
-  suite.is("total level rises", totalLevel(character), 8);
-  suite.is("proficiency bonus holds at 3 until level 9", calculateProficiencyBonus(character).total, 3);
-  suite.is("the hit die pool grows", calculateHitDice(character).find(p => p.die === "d10").total, 6);
+  character.classes[0].level = 5;
+  suite.is("total level rises", totalLevel(character), 9);
+  suite.is("level 9 raises the bonus to 4", calculateProficiencyBonus(character).total, 4);
+  suite.is("the hit die pool grows", calculateHitDice(character).find(p => p.die === "d10").total, 5);
   suite.is("spent dice are untouched by the new level",
-    calculateHitDice(character).find(p => p.die === "d10").current, 5);
-
-  character.classes[0].level = 7;
-  suite.is("level 9 raises the bonus", calculateProficiencyBonus(character).total, 4);
+    calculateHitDice(character).find(p => p.die === "d10").current, 4);
   suite.is("and it flows into skills", calculateSkill(character, "Athletics").total, beforeSkill + 1);
   suite.is("and into attacks",
     calculateAttack(character, character.inventory.find(i => i.name === "Longsword"))
       .toHitSources.find(s => /Proficiency/.test(s.label)).value, 4);
-  character.classes[0].level = 5;
+  character.classes[0].level = 4;
 
   suite.section("multiclassing");
-  character.classes.push({ name: "Wizard", level: 1, subclass: null, hitDie: "d6" });
-  suite.is("total level counts every class", totalLevel(character), 8);
-  suite.is("a new die size appears", calculateHitDice(character).length, 3);
-  suite.ok("and shows in the class line", /Wizard 1/.test(classLineFor(character)));
+  character.classes.push({ name: "Barbarian", level: 1, subclass: null, hitDie: "d12" });
+  suite.is("total level counts every class", totalLevel(character), 9);
+  suite.is("a new die size appears", calculateHitDice(character).length, 4);
+  suite.ok("and shows in the class line", /Barbarian 1/.test(classLineFor(character)));
   character.classes.pop();
 
   suite.section("overriding the bonus");
@@ -76,17 +74,17 @@ module.exports = function (suite) {
   suite.section("spending and recovering dice");
   character.hitDiceSpent = {};
   spendHitDieOfSize(character, "d10", 3);
-  suite.is("three spent", calculateHitDice(character).find(p => p.die === "d10").current, 2);
-  suite.is("the total is unchanged", calculateHitDice(character).find(p => p.die === "d10").total, 5);
+  suite.is("three spent", calculateHitDice(character).find(p => p.die === "d10").current, 1);
+  suite.is("the total is unchanged", calculateHitDice(character).find(p => p.die === "d10").total, 4);
   applyRest("long");
   suite.is("a long rest returns half, rounded down",
-    calculateHitDice(character).find(p => p.die === "d10").current, 4);
+    calculateHitDice(character).find(p => p.die === "d10").current, 3);
   applyRest("long");
   suite.is("and eventually all of them",
-    calculateHitDice(character).find(p => p.die === "d10").current, 5);
+    calculateHitDice(character).find(p => p.die === "d10").current, 4);
   applyRest("long");
   suite.is("never more than the total",
-    calculateHitDice(character).find(p => p.die === "d10").current, 5);
+    calculateHitDice(character).find(p => p.die === "d10").current, 4);
   suite.ok("spent count never goes negative", (character.hitDiceSpent.d10 || 0) >= 0);
 
   suite.section("edge cases");

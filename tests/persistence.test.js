@@ -28,7 +28,7 @@ module.exports = function (suite) {
   suite.is("hit points survived", app.character.hp.current, 9);
   suite.is("armour survived as an object",
     app.character.inventory.find(i => i.name === "Chain Shirt").armour.base, 13);
-  suite.is("armour class still computes", calculateAC(app.character).total, 16);
+  suite.is("armour class still computes", calculateAC(app.character).total, 17);
   suite.is("recharge survived as an object", app.character.resources[0].recharge.on, "SR");
   suite.ok("effects survived grouped", Array.isArray(app.character.activeEffects[0].effects));
   suite.is("tracked item quantity survived",

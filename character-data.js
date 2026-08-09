@@ -25,9 +25,12 @@ let character = {
      multiclass character is just more than one entry. Proficiency bonus and
      hit dice fall out of this rather than being written down separately. */
   classes: [
-    { name: "Fighter", level: 5, subclass: "Champion", hitDie: "d10" },
-    { name: "Rogue", level: 2, subclass: "Thief", hitDie: "d8" }
+    { name: "Fighter", level: 4, subclass: "Champion", hitDie: "d10" },
+    { name: "Wizard", level: 2, subclass: "School of Evocation", hitDie: "d6" },
+    { name: "Cleric", level: 2, subclass: "Life Domain", hitDie: "d8" }
   ],
+  race: "Half-Elf",
+  subrace: null,
 
   profilePic: null, // data URL, or null for the placeholder
   alignment: "Chaotic Good",
@@ -38,8 +41,9 @@ let character = {
   flaws: "Can't resist a locked door, whether it's hers to open or not.",
   backstory: "Once a militia scout in Chester before the town was razed. Took up the blade professionally after, never quite settling down.",
 
+  // legal multiclass prerequisites: Fighter needs STR 13, Wizard INT 13, Cleric WIS 13
   abilities: {
-    STR: 16, DEX: 14, CON: 14, INT: 10, WIS: 12, CHA: 8
+    STR: 16, DEX: 14, CON: 14, INT: 13, WIS: 13, CHA: 8
   },
 
   // derived from total level unless set; see calculateProficiencyBonus
@@ -48,20 +52,21 @@ let character = {
 
   inspiration: { current: 0, max: 1 },
 
-  hp: { current: 18, temp: 0 },
+  /* 62 = Fighter 1 at a full d10, three more Fighter levels at the d10 average,
+     two Wizard at the d6 average, two Cleric at the d8 average, with
+     Constitution +2 on every one of the eight. */
+  hp: { current: 47, temp: 0 },
 
   // only meaningful at 0 hit points; healing above 0 clears both tracks
   deathSaves: { successes: 0, failures: 0 },
-  baseMaxHP: 24,
+  baseMaxHP: 62,
   maxHpModifiers: [],
 
-  // hit dice are per class in 5e -- Fighter 5 / Rogue 2 means 5d10 + 2d8.
-  // spent individually to heal (die + CON modifier). Their recharge is the
-  // reason `amount` exists: a long rest returns half, not all.
-  /* How many of each die have been spent. The totals come from the class
+  /* Hit dice are per class: this build is 4d10 + 2d6 + 2d8. Only how many of
+     each have been spent is stored. The totals come from the class
      levels above -- see calculateHitDice -- so levelling up can't leave the
      pool disagreeing with the character. */
-  hitDiceSpent: { d10: 1, d8: 0 },
+  hitDiceSpent: { d10: 1 },
 
   // Effects are grouped by their cause. One spell or condition often produces
   // several modifiers that all begin and end together, so duration and
@@ -95,8 +100,10 @@ let character = {
 
      Spell slots deliberately do NOT live here -- see spellSlots below. */
   resources: [
-    { id: 3, name: "Action Surge", recharge: { on: "SR", amount: "all" }, current: 1, max: 1 },
-    { id: 4, name: "Second Wind", recharge: { on: "LR", amount: "all" }, current: 2, max: 2 }
+    { id: 3, name: "Second Wind", recharge: { on: "SR", amount: "all" }, current: 1, max: 1 },
+    { id: 4, name: "Action Surge", recharge: { on: "SR", amount: "all" }, current: 1, max: 1 },
+    { id: 5, name: "Channel Divinity", recharge: { on: "SR", amount: "all" }, current: 1, max: 1 },
+    { id: 6, name: "Arcane Recovery", recharge: { on: "LR", amount: "all" }, current: 1, max: 1 }
   ],
 
   // Weapons declare what they need (proficiencyRequired); this is what the
@@ -111,8 +118,11 @@ let character = {
   // present only for a save that's been manually overridden; value replaces the calculated total
   savingThrowOverride: {},
 
+  /* Soldier background (Athletics, Intimidation), Fighter's two (Perception,
+     Survival), Half-Elf's two (Arcana, Insight). Multiclassing into Wizard or
+     Cleric grants no skills, and nothing in this build grants expertise. */
   skillProficiency: {
-    Athletics: 1, Insight: 1, Perception: 1, Stealth: 2, SleightOfHand: 2
+    Athletics: 1, Intimidation: 1, Perception: 1, Survival: 1, Arcana: 1, Insight: 1
   },
   // present only for a skill that's been manually overridden; value replaces the calculated total
   skillOverride: {},
@@ -127,7 +137,24 @@ let character = {
       { name: "Fey Ancestry", desc: "Advantage on saves against being charmed, and magic can't put you to sleep." }
     ],
     "Background Features": [
-      { name: "Militia Veteran", desc: "You can requisition simple lodging and food from local militia posts." }
+      { name: "Military Rank", desc: "You have a rank from your career as a soldier, and soldiers loyal to your old organisation still recognise it." }
+    ],
+    /* Every feature these eight levels actually grant. Both classes call theirs
+       "Spellcasting", so each says which class it came from -- otherwise one
+       silently stands in for the other. */
+    "Class Features": [
+      { name: "Fighting Style: Defence", desc: "Fighter 1. +1 AC while wearing armour.",
+        effects: [{ category: "Bonus", value: { stat: "AC", amount: 1 } }] },
+      { name: "Second Wind", desc: "Fighter 1. Bonus action to regain 1d10 + Fighter level hit points." },
+      { name: "Action Surge", desc: "Fighter 2. One additional action on your turn." },
+      { name: "Improved Critical", desc: "Champion 3. Weapon attacks crit on a 19 or 20." },
+      { name: "Spellcasting (Wizard)", desc: "Wizard 1. Intelligence, prepared from your spellbook." },
+      { name: "Arcane Recovery", desc: "Wizard 1. Once a day on a short rest, recover spell slots totalling half your Wizard level." },
+      { name: "Sculpt Spells", desc: "Evocation 2. Chosen creatures automatically succeed against your evocations and take no damage." },
+      { name: "Spellcasting (Cleric)", desc: "Cleric 1. Wisdom, prepared from the whole Cleric list." },
+      { name: "Divine Domain: Life", desc: "Cleric 1. Proficiency with heavy armour, and the domain's spells are always prepared." },
+      { name: "Disciple of Life", desc: "Life 1. Your healing spells restore an extra 2 + the spell's level." },
+      { name: "Channel Divinity: Preserve Life", desc: "Cleric 2. Restore hit points totalling five times your Cleric level, split among creatures nearby." }
     ],
     "Feats": [
       {
@@ -137,9 +164,9 @@ let character = {
       }
     ],
     "Proficiencies": [
-      { name: "Armor", desc: "Light, medium, heavy, shields" },
+      { name: "Armour", desc: "Light, medium, heavy, shields" },
       { name: "Weapons", desc: "Simple, martial" },
-      { name: "Tools", desc: "Thieves' tools" }
+      { name: "Tools", desc: "None" }
     ],
     "Languages": [
       { name: "Common", desc: "" },
@@ -242,25 +269,36 @@ let character = {
   // can treat slots and resources with one rule. NOTE: Pact Magic doesn't fit
   // here -- a Warlock's slots recharge on SR *and* live in a separate pool from
   // the shared multiclass pool. That needs its own structure; see notes.
+  /* Two Wizard levels plus two Cleric levels is a caster level of four: four
+     first-level slots and three second. No third-level slots. */
   spellSlots: {
     1: { current: 3, max: 4, recharge: { on: "LR", amount: "all" } },
-    2: { current: 2, max: 3, recharge: { on: "LR", amount: "all" } },
-    3: { current: 1, max: 2, recharge: { on: "LR", amount: "all" } }
+    2: { current: 2, max: 3, recharge: { on: "LR", amount: "all" } }
   },
 
   // maxPreparedByClass is also a raw ingredient (not calculated from level/ability)
   // until the class/level model is built out further.
-  maxPreparedByClass: { Wizard: 4, Cleric: 2 },
+  // ability modifier (+1 each) plus that class's level (2 each)
+  maxPreparedByClass: { Wizard: 3, Cleric: 3 },
 
   // level 0 = cantrip. prepared is only meaningful for level > 0 (cantrips are
   // always available). attackRoll marks spells that roll to-hit using the
   // casting class's spell attack bonus.
   spells: [
-    { id: 1, name: "Fire Bolt", level: 0, classSource: "Wizard", castingTime: "A", attackRoll: true, desc: "Ranged spell attack. 1d10 fire damage." },
-    { id: 2, name: "Guidance", level: 0, classSource: "Cleric", castingTime: "A", attackRoll: false, desc: "Target adds 1d4 to one ability check of their choice." },
-    { id: 3, name: "Shield", level: 1, classSource: "Wizard", castingTime: "R", attackRoll: false, prepared: true, desc: "+5 AC until the start of your next turn, including against the triggering attack." },
-    { id: 4, name: "Magic Missile", level: 1, classSource: "Wizard", castingTime: "A", attackRoll: false, prepared: false, desc: "3 darts, 1d4+1 force damage each, automatically hit." },
-    { id: 5, name: "Cure Wounds", level: 1, classSource: "Cleric", castingTime: "A", attackRoll: false, prepared: false, desc: "Heal 1d8 + spellcasting ability modifier." }
+    { id: 1, name: "Fire Bolt", level: 0, classSource: "Wizard", castingTime: "A", attackRoll: true, desc: "Ranged spell attack, 1d10 fire damage." },
+    { id: 2, name: "Mage Hand", level: 0, classSource: "Wizard", castingTime: "A", attackRoll: false, desc: "A spectral hand that can carry up to 10 pounds." },
+    { id: 3, name: "Prestidigitation", level: 0, classSource: "Wizard", castingTime: "A", attackRoll: false, desc: "A handful of harmless minor effects." },
+    { id: 4, name: "Guidance", level: 0, classSource: "Cleric", castingTime: "A", attackRoll: false, desc: "Concentration. Target adds 1d4 to one ability check." },
+    { id: 5, name: "Sacred Flame", level: 0, classSource: "Cleric", castingTime: "A", attackRoll: false, desc: "Dexterity save or 1d8 radiant damage. Cover doesn't help." },
+    { id: 6, name: "Thaumaturgy", level: 0, classSource: "Cleric", castingTime: "A", attackRoll: false, desc: "A minor wonder: a booming voice, trembling ground, flickering flames." },
+
+    { id: 7, name: "Shield", level: 1, classSource: "Wizard", castingTime: "R", attackRoll: false, prepared: true, desc: "+5 AC until the start of your next turn, including against the triggering attack." },
+    { id: 8, name: "Magic Missile", level: 1, classSource: "Wizard", castingTime: "A", attackRoll: false, prepared: true, desc: "Three darts, 1d4+1 force damage each, automatically hitting." },
+    { id: 9, name: "Cure Wounds", level: 1, classSource: "Cleric", castingTime: "A", attackRoll: false, prepared: true, desc: "Heal 1d8 + Wisdom modifier, plus 2 from Disciple of Life." },
+    { id: 10, name: "Bless", level: 1, classSource: "Cleric", castingTime: "A", attackRoll: false, prepared: true, desc: "Concentration. Three creatures add 1d4 to attack rolls and saving throws." },
+
+    { id: 11, name: "Misty Step", level: 2, classSource: "Wizard", castingTime: "B", attackRoll: false, prepared: true, desc: "Teleport up to 30 feet to a space you can see." },
+    { id: 12, name: "Spiritual Weapon", level: 2, classSource: "Cleric", castingTime: "B", attackRoll: true, prepared: true, desc: "A floating weapon, 1d8 + Wisdom modifier force damage." }
   ],
 
   // mock party roster for the sharing UI -- no real accounts/network yet

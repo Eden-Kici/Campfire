@@ -16,7 +16,7 @@ module.exports = function (suite) {
   const sums = result => result.sources.reduce((total, source) => total + source.value, 0);
 
   suite.section("armour class");
-  suite.is("chain shirt base plus capped Dex plus cloak", calculateAC(character).total, 16);
+  suite.is("chain shirt, capped Dex, cloak and Fighting Style", calculateAC(character).total, 17);
   suite.is("breakdown sums to the total", sums(calculateAC(character)), calculateAC(character).total);
   suite.is("armour contributes its base", calculateAC(character).sources[0].label, "Chain Shirt");
 
@@ -29,22 +29,24 @@ module.exports = function (suite) {
 
   const shirt = item("Chain Shirt");
   shirt.category = "Camp Storage";
-  suite.is("unarmoured falls back to ten plus Dex", calculateAC(character).total, 13);
+  suite.is("unarmoured falls back to ten plus Dex", calculateAC(character).total, 14);
   shirt.category = "Worn";
   shirt.armour = { base: 18, kind: "heavy", dexCap: 0 };
-  suite.is("heavy armour allows no Dex", calculateAC(character).total, 19);
+  suite.is("heavy armour allows no Dex", calculateAC(character).total, 20);
   shirt.armour = { base: 13, kind: "medium", dexCap: 2 };
 
   character.inventory.push({ id: 900, name: "Shield", category: "Worn", weight: 6, qty: 1,
     armour: { base: 2, kind: "shield", dexCap: null } });
-  suite.is("shields stack on worn armour", calculateAC(character).total, 18);
+  suite.is("shields stack on worn armour", calculateAC(character).total, 19);
   character.inventory = character.inventory.filter(i => i.id !== 900);
 
   suite.section("abilities and skills");
   suite.is("ability check equals the modifier", calculateAbilityCheck(character, "STR").total, 3);
   suite.is("skill adds proficiency", calculateSkill(character, "Athletics").total, 6);
-  suite.is("expertise doubles it", calculateSkill(character, "Stealth").total, 8);
+  character.skillProficiency.Stealth = 2;             // nothing in this build grants expertise
+  suite.is("expertise doubles the proficiency bonus", calculateSkill(character, "Stealth").total, 2 + 6);
   suite.is("skill breakdown sums", sums(calculateSkill(character, "Stealth")), 8);
+  delete character.skillProficiency.Stealth;
   suite.is("passive perception is ten plus the skill", calculatePassivePerception(character).total,
     10 + calculateSkill(character, "Perception").total);
 
@@ -111,23 +113,25 @@ module.exports = function (suite) {
   delete sword.proficientOverride;
 
   suite.section("spellcasting");
-  suite.is("spell attack", calculateSpellAttack(character, "INT").total, 3);
-  suite.is("spell save DC", calculateSpellDC(character, "INT").total, 11);
-  suite.is("DC breakdown sums", sums(calculateSpellDC(character, "INT")), 11);
+  suite.is("spell attack", calculateSpellAttack(character, "INT").total, 4);
+  suite.is("spell save DC", calculateSpellDC(character, "INT").total, 12);
+  suite.is("DC breakdown sums", sums(calculateSpellDC(character, "INT")), 12);
 
   suite.section("proficiency bonus is derived, and overridable");
-  suite.is("level 7 gives +3", calculateProficiencyBonus(character).total, 3);
-  suite.is("and says where it came from", calculateProficiencyBonus(character).sources[0].label, "Level 7");
+  suite.is("level 8 gives +3", calculateProficiencyBonus(character).total, 3);
+  suite.is("and says where it came from", calculateProficiencyBonus(character).sources[0].label, "Level 8");
 
   const originalBonus = character.proficiencyBonusOverride;
   character.proficiencyBonusOverride = 6;
   suite.ok("an override is flagged", calculateProficiencyBonus(character).overridden);
   suite.is("the base is what the total starts from", calculateProficiencyBonus(character).total, 6);
   suite.is("it reaches proficient skills", calculateSkill(character, "Athletics").total, 3 + 6);
+  character.skillProficiency.Stealth = 2;
   suite.is("expertise doubles the new value", calculateSkill(character, "Stealth").total, 2 + 12);
+  delete character.skillProficiency.Stealth;
   suite.is("it reaches saves", calculateSavingThrow(character, "STR").total, 3 + 6);
   suite.is("it reaches attacks", calculateAttack(character, item("Longsword")).toHitTotal, 3 + 6 + 1 + 1);
-  suite.is("and spell DCs", calculateSpellDC(character, "INT").total, 8 + 6 + 0);
+  suite.is("and spell DCs", calculateSpellDC(character, "INT").total, 8 + 6 + 1);
   character.proficiencyBonusOverride = originalBonus;
 
   suite.section("item classification");

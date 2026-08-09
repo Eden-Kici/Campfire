@@ -913,7 +913,7 @@ function openThemeModal() {
    A real build would migrate. A POC only needs to notice. */
 
 const STORAGE_KEY = "campfire.characters";
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 function persistCharacters() {
   try {
@@ -3133,7 +3133,7 @@ function renderCombatTab() {
 
     ${concentrationGroups(character).length ? `
       <div class="conc-row">
-        <span>Concentrating \u00B7 ${esc(concentrationGroups(character).map(g => effectGroupLabel(g)).join(", "))}</span>
+        <button class="conc-check" id="concentration-check">Concentrating \u00B7 ${esc(concentrationGroups(character).map(g => effectGroupLabel(g)).join(", "))}</button>
         <button class="toggle-btn" id="concentration-drop">Drop</button>
       </div>
     ` : ""}
@@ -3242,6 +3242,9 @@ function wireCombatTab() {
 
   // dropping concentration removes whatever it was holding up, which is the
   // whole point of hanging effects off a named group
+  const concCheck = document.getElementById("concentration-check");
+  if (concCheck) concCheck.addEventListener("click", () => openConcentrationCheckModal());
+
   const concDrop = document.getElementById("concentration-drop");
   if (concDrop) concDrop.addEventListener("click", () => {
     const dropped = concentrationGroups(character).map(g => effectGroupLabel(g));
@@ -3455,22 +3458,26 @@ function dropConcentration() {
    The window carries a DC and a pair of decisions; nothing happens to the
    character until one of them is chosen, so you can roll as often as you like
    before committing. */
+/* Uses the ordinary roll window, so concentration gets advantage,
+   disadvantage, rerolling and the source breakdown for free.
+
+   Damage is optional. When it's given the check was forced and there's a DC to
+   beat. When the player taps "Concentrating" themselves there is no number to
+   beat -- only the table knows it -- so it rolls a plain save and leaves the
+   verdict to them. */
 function openConcentrationCheckModal(damage) {
   const holding = concentrationGroups(character).map(group => effectGroupLabel(group));
   if (!holding.length) return;
 
-  const dc = concentrationSaveDC(damage);
   const save = calculateSavingThrow(character, "CON");
+  const forced = damage !== undefined && damage !== null;
 
-  showRoll({
-    label: "Concentration · " + holding.join(", "),
+  const config = {
+    label: "Concentration \u00B7 " + holding.join(", "),
     notation: "1d20" + formatModifier(save.total),
     sources: save.sources,
     kind: "save",
     ability: "CON",
-    dc,
-    passLabel: "Success — concentration held",
-    failLabel: "Failure — concentration broken",
     decisions: [
       { label: "Keep it", tone: "outcome-good", action: () => {
           closeModal();
@@ -3484,7 +3491,10 @@ function openConcentrationCheckModal(damage) {
           showToast("Lost " + lost.join(", "));
         } }
     ]
-  });
+  };
+
+  if (forced) config.dc = concentrationSaveDC(damage);
+  showRoll(config);
 }
 
 /* ---------------- death saves ---------------- */

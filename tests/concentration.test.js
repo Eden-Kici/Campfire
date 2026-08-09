@@ -84,8 +84,10 @@ module.exports = function (suite) {
   html = app.rollWindowHtml();
   suite.ok("it is marked as rolled", app.rollState.rolled);
   suite.ok("a verdict appears", /roll-verdict/.test(html));
-  suite.ok("reading success or failure",
-    /Success/.test(html) || /Failure/.test(html));
+  suite.ok("reading plainly as Success or Failure",
+    /roll-verdict pass">Success</.test(html) || /roll-verdict fail">Failure</.test(html));
+  suite.ok("without elaborating on what was held or lost",
+    !/concentration held/.test(html) && !/concentration broken/.test(html));
   suite.ok("and the button becomes a reroll", /id="roll-reroll"/.test(html));
 
   suite.section("rolling as often as you like changes nothing on its own");
@@ -106,6 +108,16 @@ module.exports = function (suite) {
   suite.section("half of heavy damage becomes the DC");
   openConcentrationCheckModal(30);
   suite.ok("thirty damage means DC 15", /roll-dc-value">15</.test(app.rollWindowHtml()));
+
+  suite.section("the player can check it themselves, with no DC");
+  character.activeEffects = [bless()];
+  openConcentrationCheckModal();
+  const manual = app.rollWindowHtml();
+  suite.ok("no difficulty class", !/Difficulty Class/.test(manual));
+  suite.ok("and so no verdict to give", !/roll-verdict/.test(manual));
+  suite.ok("rolled straight away, since the tap was the ask", app.rollState.rolled);
+  suite.ok("still offering both outcomes", /data-roll-decision="0"/.test(manual));
+  suite.ok("the row itself is the control", /id="concentration-check"/.test(app.renderCombatTab()));
 
   suite.section("deciding is what acts");
   openConcentrationCheckModal(14);
