@@ -9,6 +9,7 @@ const SUITES = [
   ["calculations", "./calculations.test.js"],
   ["rests", "./rests.test.js"],
   ["resources", "./resources.test.js"],
+  ["deathsaves", "./deathsaves.test.js"],
   ["escaping", "./escaping.test.js"],
   ["persistence", "./persistence.test.js"],
   ["smoke", "./smoke.test.js"]

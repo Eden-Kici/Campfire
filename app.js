@@ -675,7 +675,7 @@ let savedCharacters = [character];
    A real build would migrate. A POC only needs to notice. */
 
 const STORAGE_KEY = "campfire.characters";
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 function persistCharacters() {
   try {
@@ -2048,6 +2048,9 @@ function applyRest(kind, diceSpend) {
   if (isLong) {
     const maxHP = calculateMaxHP(character);
     if (character.hp.current !== maxHP.total) summary.push("HP restored");
+    // this writes hit points directly rather than going through applyHp, so
+    // the death save tracks have to be cleared here too
+    if (character.hp.current <= 0) { resetDeathSaves(character); summary.push("back on your feet"); }
     character.hp.current = maxHP.total;
     character.hp.temp = 0;                                // temp HP ends on a long rest
   }
@@ -2203,6 +2206,34 @@ function slotRowName(level) {
   return "Spell Slots (" + levelLabel(level).replace(" Level", "") + ")";
 }
 
+// only appears at 0 hit points, so it isn't clutter the rest of the time
+function deathSaveCardHtml() {
+  const state = deathSaveState(character);
+  if (character.hp.current > 0 && !state.dead) return "";
+
+  const status = state.dead ? "Dead"
+    : state.stable ? "Stable"
+    : "Dying";
+
+  return `
+    <div class="death-card ${state.dead ? "dead" : state.stable ? "stable" : ""}">
+      <div class="death-head">
+        <span class="death-title">Death Saves</span>
+        <span class="death-status">${status}</span>
+      </div>
+      <div class="death-track">
+        <span class="death-label">Successes</span>
+        <span class="death-pips">${deathSaveTrackHtml(state.successes, 3, "success")}</span>
+      </div>
+      <div class="death-track">
+        <span class="death-label">Failures</span>
+        <span class="death-pips">${deathSaveTrackHtml(state.failures, 3, "failure")}</span>
+      </div>
+      ${state.dying ? `<button class="btn-primary" id="roll-death-save" style="margin-top:12px;">Roll Death Save</button>` : ""}
+      ${state.dead || state.stable ? `<button class="btn-secondary" id="clear-death-saves">Clear</button>` : ""}
+    </div>`;
+}
+
 function renderCombatTab() {
   const ac = calculateAC(character);
   const maxHP = calculateMaxHP(character);
@@ -2226,6 +2257,8 @@ function renderCombatTab() {
         <div class="hp-bar-text">${character.hp.current} / ${maxHP.total}</div>
       </div>
     </div>
+
+    ${deathSaveCardHtml()}
 
     <div class="stat-grid" style="margin-top:16px;">
       <div class="stat-box" id="ac-box"><div class="stat-label">AC</div><div class="stat-value">${ac.total}</div></div>
@@ -2317,6 +2350,11 @@ function renderCombatTab() {
 
 function wireCombatTab() {
   document.getElementById("hp-card").addEventListener("click", openHpCalculator);
+
+  const deathRoll = document.getElementById("roll-death-save");
+  if (deathRoll) deathRoll.addEventListener("click", rollDeathSave);
+  const deathClear = document.getElementById("clear-death-saves");
+  if (deathClear) deathClear.addEventListener("click", () => { resetDeathSaves(character); renderContent(); });
 
   const ac = calculateAC(character);
   document.getElementById("ac-box").addEventListener("click", () => openBreakdownModal("AC", ac.total, "", ac.sources));
@@ -2486,17 +2524,77 @@ function openHpCalculator() {
 function applyHp(type, amount) {
   if (amount <= 0) return;
   const maxHP = calculateMaxHP(character);
-  if (type === "heal") character.hp.current = Math.min(maxHP.total, character.hp.current + amount);
-  else if (type === "temp") character.hp.temp = Math.max(character.hp.temp, amount);
-  else if (type === "damage") {
+
+  if (type === "heal") {
+    // any healing above zero brings you round and wipes the death save tracks
+    const wasDown = character.hp.current <= 0;
+    character.hp.current = Math.min(maxHP.total, character.hp.current + amount);
+    if (wasDown && character.hp.current > 0) resetDeathSaves(character);
+    return;
+  }
+
+  if (type === "temp") {
+    character.hp.temp = Math.max(character.hp.temp, amount);
+    return;
+  }
+
+  if (type === "damage") {
     let remaining = amount;
     if (character.hp.temp > 0) {
       const absorbed = Math.min(character.hp.temp, remaining);
       character.hp.temp -= absorbed;
       remaining -= absorbed;
     }
+
+    // taking damage while already down is an automatic death save failure
+    const alreadyDown = character.hp.current <= 0;
     character.hp.current = Math.max(0, character.hp.current - remaining);
+    if (alreadyDown && remaining > 0) recordDeathSave("failure", 1);
   }
+}
+
+/* ---------------- death saves ---------------- */
+
+function recordDeathSave(kind, count) {
+  if (!character.deathSaves) resetDeathSaves(character);
+  const track = kind === "success" ? "successes" : "failures";
+  character.deathSaves[track] = Math.min(3, character.deathSaves[track] + (count || 1));
+}
+
+function rollDeathSave() {
+  const roll = rollDie(20);
+
+  if (roll === 20) {
+    // a natural twenty is not a success -- you come round on one hit point
+    resetDeathSaves(character);
+    character.hp.current = 1;
+    renderContent();
+    showToast("Natural 20 — conscious at 1 hit point");
+    return;
+  }
+
+  if (roll === 1) recordDeathSave("failure", 2);
+  else if (roll >= 10) recordDeathSave("success", 1);
+  else recordDeathSave("failure", 1);
+
+  const state = deathSaveState(character);
+  renderContent();
+
+  const outcome = roll === 1 ? "Natural 1 — two failures"
+    : roll >= 10 ? roll + " — success"
+    : roll + " — failure";
+
+  if (state.dead) showToast(outcome + ". Three failures — dead.");
+  else if (state.stable) showToast(outcome + ". Three successes — stable.");
+  else showToast(outcome);
+}
+
+function deathSaveTrackHtml(filled, total, kind) {
+  let pips = "";
+  for (let i = 0; i < total; i++) {
+    pips += `<span class="death-pip ${i < filled ? kind : ""}"></span>`;
+  }
+  return pips;
 }
 
 

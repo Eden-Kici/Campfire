@@ -40,6 +40,9 @@ let character = {
   inspiration: { current: 0, max: 1 },
 
   hp: { current: 18, temp: 0 },
+
+  // only meaningful at 0 hit points; healing above 0 clears both tracks
+  deathSaves: { successes: 0, failures: 0 },
   baseMaxHP: 24,
   maxHpModifiers: [],
 
@@ -655,6 +658,24 @@ function calculateAC(character) {
 
   const total = sources.reduce((sum, s) => sum + s.value, 0);
   return { total, sources };
+}
+
+/* Death saves only exist at 0 hit points. Three successes stabilise you, three
+   failures kill you, and any healing above 0 wipes both tracks -- so the state
+   is derived from hit points rather than being a mode you enter and leave. */
+function deathSaveState(character) {
+  const saves = character.deathSaves || { successes: 0, failures: 0 };
+  return {
+    successes: saves.successes,
+    failures: saves.failures,
+    dying: character.hp.current <= 0 && saves.failures < 3 && saves.successes < 3,
+    stable: character.hp.current <= 0 && saves.successes >= 3,
+    dead: saves.failures >= 3
+  };
+}
+
+function resetDeathSaves(character) {
+  character.deathSaves = { successes: 0, failures: 0 };
 }
 
 function calculateMaxHP(character) {
