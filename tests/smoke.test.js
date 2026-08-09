@@ -39,6 +39,7 @@ module.exports = function (suite) {
   suite.runs("resource detail", () => app.openResourceDetailModal(c.resources[0].id));
 
   suite.section("character");
+  suite.runs("proficiency editor", () => app.openEditProficiencyModal());
   suite.runs("ability editor", () => app.openEditAbilityModal("STR"));
   suite.runs("saving throw editor", () => app.openEditSavingThrowModal("WIS"));
   suite.runs("skill editor", () => app.openEditSkillModal("Stealth"));

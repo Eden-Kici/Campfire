@@ -2333,9 +2333,7 @@ function wireCombatTab() {
   document.getElementById("passive-perception-box").addEventListener("click", () =>
     openBreakdownModal("Passive Perception", passivePerception.total, "", passivePerception.sources));
 
-  const profBonus = calculateProficiencyBonus(character);
-  document.getElementById("prof-bonus-box").addEventListener("click", () =>
-    openBreakdownModal("Proficiency Bonus", formatModifier(profBonus.total), "", profBonus.sources));
+  document.getElementById("prof-bonus-box").addEventListener("click", openEditProficiencyModal);
 
   document.getElementById("insp-minus").addEventListener("click", () => { character.inspiration.current--; renderContent(); });
   document.getElementById("insp-plus").addEventListener("click", () => { character.inspiration.current++; renderContent(); });
@@ -3123,6 +3121,30 @@ function wireCharacterTab() {
   });
   const addFeatureButton = document.getElementById("add-feature-button");
   if (addFeatureButton) addFeatureButton.addEventListener("click", (e) => { e.stopPropagation(); openAddFeatureOrSectionModal(); });
+}
+
+/* The proficiency bonus is normally a function of level, but the app has no
+   level model yet and homebrew content sets it directly, so the base is
+   editable and effects still stack on top. */
+function openEditProficiencyModal() {
+  const bonus = calculateProficiencyBonus(character);
+
+  openModal("center", `
+    <div class="breakdown-title">Proficiency Bonus</div>
+    ${breakdownRowsHtml(bonus.sources)}
+    <hr class="breakdown-divider">
+    <div class="breakdown-total" style="margin-bottom:14px;"><span>Total</span><span>${formatModifier(bonus.total)}</span></div>
+    <div class="field"><label>Base</label><input id="edit-prof-base" type="number" value="${character.proficiencyBonus}"></div>
+    <div class="menu-note" style="margin-top:0;">Anything that grants a bonus to Proficiency Bonus adds on top of this, and flows into every save, skill and attack that uses it.</div>
+    <button class="btn-primary" id="save-prof-button" style="margin-top:14px;">Save</button>
+  `);
+
+  document.getElementById("save-prof-button").addEventListener("click", () => {
+    const value = parseInt(document.getElementById("edit-prof-base").value);
+    if (!isNaN(value)) character.proficiencyBonus = value;
+    closeModal();
+    renderContent();
+  });
 }
 
 function openEditAbilityModal(ability) {
