@@ -35,6 +35,7 @@ module.exports = function (suite) {
   suite.runs("long rest", () => app.openLongRestModal());
   suite.runs("add effect", () => app.openAddEffectModal());
   suite.runs("effect detail", () => app.openEffectDetailModal(c.activeEffects[0].id));
+  suite.runs("concentration check", () => { c.activeEffects.push({ id: 800, name: "Bless", concentration: true, duration: { type: "Rounds", rounds: 10 }, effects: [] }); app.openConcentrationCheckModal(14); });
   suite.runs("add resource", () => app.openAddResourceModal());
   suite.runs("resource detail", () => app.openResourceDetailModal(c.resources[0].id));
 

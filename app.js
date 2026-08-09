@@ -2514,10 +2514,18 @@ function openHpCalculator() {
   document.querySelectorAll("[data-hp]").forEach(b => b.addEventListener("click", () => {
     if (expr.trim() === "") return;
     const result = rollNotation(expr);
+    const wasConcentrating = concentrationGroups(character).length > 0;
+
     applyHp(b.dataset.hp, result.total);
     showRollToast(b.dataset.hp === "heal" ? "Healing" : b.dataset.hp === "temp" ? "Temp HP" : "Damage", expr);
     closeModal();
     renderContent();
+
+    // damage while concentrating calls for a save, so ask straight away rather
+    // than leaving it to be remembered
+    if (b.dataset.hp === "damage" && wasConcentrating && result.total > 0) {
+      openConcentrationCheckModal(result.total);
+    }
   }));
 }
 
@@ -2552,6 +2560,71 @@ function applyHp(type, amount) {
     if (alreadyDown && remaining > 0) recordDeathSave("failure", 1);
   }
 }
+
+/* ---------------- concentration ---------------- */
+
+/* Taking damage while concentrating calls for a Constitution save at DC 10, or
+   half the damage taken if that's higher. Failing ends everything the
+   concentration was holding up, which the effect grouping already handles. */
+function concentrationSaveDC(damage) {
+  return Math.max(10, Math.floor(damage / 2));
+}
+
+function dropConcentration() {
+  const dropped = concentrationGroups(character).map(group => effectGroupLabel(group));
+  character.activeEffects = character.activeEffects.filter(group => !group.concentration);
+  return dropped;
+}
+
+function openConcentrationCheckModal(damage) {
+  const holding = concentrationGroups(character).map(group => effectGroupLabel(group));
+  if (!holding.length) return;
+
+  const dc = concentrationSaveDC(damage);
+  const save = calculateSavingThrow(character, "CON");
+
+  openModal("center", `
+    <div class="modal-heading">Concentration</div>
+    <div class="menu-note" style="margin-top:0;">
+      ${damage} damage taken while concentrating on ${esc(holding.join(", "))}.
+      ${dc > 10 ? "Half the damage is " + Math.floor(damage / 2) + ", so the DC is " + dc + "." : "DC 10, since half the damage is less than that."}
+    </div>
+
+    <div class="breakdown-total" style="margin:16px 0;"><span>DC</span><span>${dc}</span></div>
+    ${breakdownRowsHtml(save.sources)}
+    <hr class="breakdown-divider">
+    <div class="breakdown-total" style="margin-bottom:16px;"><span>Constitution Save</span><span>${formatModifier(save.total)}</span></div>
+
+    <button class="btn-primary" id="conc-roll">Roll the Save</button>
+    <div class="btn-row-2">
+      <button class="btn-secondary" id="conc-keep">Kept it</button>
+      <button class="btn-secondary" id="conc-drop">Lost it</button>
+    </div>
+  `);
+
+  document.getElementById("conc-roll").addEventListener("click", () => {
+    const result = rollNotation("1d20" + formatModifier(save.total));
+    if (result.total >= dc) {
+      closeModal();
+      renderContent();
+      showToast("Concentration held — " + result.total + " against DC " + dc);
+      return;
+    }
+    const lost = dropConcentration();
+    closeModal();
+    renderContent();
+    showToast(result.total + " against DC " + dc + " — lost " + lost.join(", "));
+  });
+
+  document.getElementById("conc-keep").addEventListener("click", () => { closeModal(); renderContent(); });
+  document.getElementById("conc-drop").addEventListener("click", () => {
+    const lost = dropConcentration();
+    closeModal();
+    renderContent();
+    showToast("Lost " + lost.join(", "));
+  });
+}
+
 
 /* ---------------- death saves ---------------- */
 
