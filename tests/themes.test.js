@@ -7,7 +7,8 @@ module.exports = function (suite) {
   const harness = require("./harness");
   const app = harness.loadApp();
   const css = harness.readFile("style.css");
-  const js = harness.readFile("app.js");
+  // every script, not just app.js -- a stray colour hides just as well in any of them
+  const js = harness.scriptFiles().map(harness.readFile).join("\n");
 
   // the palette block is where literals are supposed to live
   const paletteEnd = css.indexOf("* { box-sizing: border-box; }");

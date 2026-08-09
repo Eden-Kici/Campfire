@@ -1,8 +1,9 @@
 /* Minimal test harness.
 
-   The app is three plain files loaded by a browser -- no modules, no build, no
-   dependencies -- so the tests load them the same way the page does: read the
-   source, concatenate it after a small DOM stub, and evaluate the lot. That
+   The app is a handful of plain files loaded by a browser -- no modules, no
+   build, no dependencies -- so the tests load them the same way the page does:
+   take the script list straight out of index.html, read the source in that
+   order, concatenate it after a small DOM stub, and evaluate the lot. That
    keeps the app free of test scaffolding and means the tests exercise exactly
    what ships.
 
@@ -56,11 +57,18 @@ function domStub() {
   };
 }
 
+/* The page is the only place the load order is written down, so the tests read
+   it from there rather than keeping a second list that can drift. */
+function scriptFiles() {
+  const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
+  return [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map(match => match[1]);
+}
+
 /* Loads a fresh copy of the app. Every test file gets its own, so one test
    mutating the character can't affect another. */
 function loadApp() {
   const context = vm.createContext(domStub());
-  const source = ["character-data.js", "app.js"]
+  const source = scriptFiles()
     .map(file => fs.readFileSync(path.join(ROOT, file), "utf8"))
     .join("\n");
 
@@ -146,4 +154,4 @@ class Suite {
   }
 }
 
-module.exports = { loadApp, readFile, Suite, ROOT };
+module.exports = { loadApp, readFile, scriptFiles, Suite, ROOT };
