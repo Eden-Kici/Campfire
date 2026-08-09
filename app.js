@@ -1152,6 +1152,116 @@ const SRD_BACKGROUNDS = [
   { name: "Acolyte", desc: "You've spent your life in service to a temple.", skills: ["Insight", "Religion"], feature: { name: "Shelter of the Faithful", desc: "You command the respect of those who share your faith and can perform religious ceremonies." } }
 ];
 
+/* Starting kit, as real items rather than a list of names -- each entry is
+   spread straight into an inventory entry, so a bow arrives with its damage,
+   its properties and a quiver already feeding it. The shapes here are the same
+   ones the item editor produces.
+
+   Each class offers a few either/or choices, matching how 5e hands out
+   equipment. `gear` is granted regardless. */
+const STARTING_KIT = {
+  Fighter: {
+    gear: ["explorer", "rations"],
+    choices: [
+      { prompt: "Armour", options: [
+        { label: "Chain mail", items: ["chainmail"] },
+        { label: "Leather armour, longbow and arrows", items: ["leather", "longbow", "arrows", "quiver"] }
+      ] },
+      { prompt: "Weapons", options: [
+        { label: "Longsword and shield", items: ["longsword", "shield"] },
+        { label: "Two shortswords", items: ["shortsword", "shortsword"] }
+      ] }
+    ]
+  },
+  Rogue: {
+    gear: ["leather", "thievestools", "rations"],
+    choices: [
+      { prompt: "Main weapon", options: [
+        { label: "Rapier", items: ["rapier"] },
+        { label: "Shortsword", items: ["shortsword"] }
+      ] },
+      { prompt: "Ranged", options: [
+        { label: "Shortbow, arrows and a quiver", items: ["shortbow", "arrows", "quiver"] },
+        { label: "Two daggers", items: ["dagger", "dagger"] }
+      ] }
+    ]
+  },
+  Wizard: {
+    gear: ["spellbook", "rations"],
+    choices: [
+      { prompt: "Weapon", options: [
+        { label: "Quarterstaff", items: ["quarterstaff"] },
+        { label: "Dagger", items: ["dagger"] }
+      ] }
+    ]
+  },
+  Cleric: {
+    gear: ["shield", "rations"],
+    choices: [
+      { prompt: "Armour", options: [
+        { label: "Scale mail", items: ["scalemail"] },
+        { label: "Leather armour", items: ["leather"] }
+      ] },
+      { prompt: "Weapon", options: [
+        { label: "Mace", items: ["mace"] },
+        { label: "Warhammer", items: ["warhammer"] }
+      ] }
+    ]
+  }
+};
+
+const KIT_ITEMS = {
+  chainmail:   { name: "Chain Mail", category: "Worn", weight: 55, armour: { base: 16, kind: "heavy", dexCap: 0 } },
+  scalemail:   { name: "Scale Mail", category: "Worn", weight: 45, armour: { base: 14, kind: "medium", dexCap: 2 } },
+  leather:     { name: "Leather Armour", category: "Worn", weight: 10, armour: { base: 11, kind: "light", dexCap: null } },
+  shield:      { name: "Shield", category: "Worn", weight: 6, armour: { base: 2, kind: "shield", dexCap: null } },
+
+  longsword:   { name: "Longsword", category: "Equipped", weight: 3, isWeapon: true, attackAbility: "STR",
+                 proficiencyRequired: "Martial", magicBonus: 0, weaponType: "melee", range: "5 ft",
+                 properties: ["Versatile (1d10)"], damage: [{ dice: "1d8", type: "Slashing", ability: "STR" }] },
+  shortsword:  { name: "Shortsword", category: "Equipped", weight: 2, isWeapon: true, attackAbility: "DEX",
+                 proficiencyRequired: "Martial", magicBonus: 0, weaponType: "melee", range: "5 ft",
+                 properties: ["Finesse", "Light"], damage: [{ dice: "1d6", type: "Piercing", ability: "DEX" }] },
+  rapier:      { name: "Rapier", category: "Equipped", weight: 2, isWeapon: true, attackAbility: "DEX",
+                 proficiencyRequired: "Martial", magicBonus: 0, weaponType: "melee", range: "5 ft",
+                 properties: ["Finesse"], damage: [{ dice: "1d8", type: "Piercing", ability: "DEX" }] },
+  dagger:      { name: "Dagger", category: "Equipped", weight: 1, isWeapon: true, attackAbility: "DEX",
+                 proficiencyRequired: "Simple", magicBonus: 0, weaponType: "melee", range: "5 ft",
+                 properties: ["Finesse", "Light", "Thrown (range 20/60)"],
+                 damage: [{ dice: "1d4", type: "Piercing", ability: "DEX" }] },
+  mace:        { name: "Mace", category: "Equipped", weight: 4, isWeapon: true, attackAbility: "STR",
+                 proficiencyRequired: "Simple", magicBonus: 0, weaponType: "melee", range: "5 ft",
+                 properties: [], damage: [{ dice: "1d6", type: "Bludgeoning", ability: "STR" }] },
+  warhammer:   { name: "Warhammer", category: "Equipped", weight: 2, isWeapon: true, attackAbility: "STR",
+                 proficiencyRequired: "Martial", magicBonus: 0, weaponType: "melee", range: "5 ft",
+                 properties: ["Versatile (1d10)"], damage: [{ dice: "1d8", type: "Bludgeoning", ability: "STR" }] },
+  quarterstaff:{ name: "Quarterstaff", category: "Equipped", weight: 4, isWeapon: true, attackAbility: "STR",
+                 proficiencyRequired: "Simple", magicBonus: 0, weaponType: "melee", range: "5 ft",
+                 properties: ["Versatile (1d8)"], damage: [{ dice: "1d6", type: "Bludgeoning", ability: "STR" }] },
+  shortbow:    { name: "Shortbow", category: "Equipped", weight: 2, isWeapon: true, attackAbility: "DEX",
+                 proficiencyRequired: "Simple", magicBonus: 0, weaponType: "ranged", range: "80/320 ft",
+                 properties: ["Ammunition", "Two-Handed"], ammunition: "Quiver",
+                 damage: [{ dice: "1d6", type: "Piercing", ability: "DEX" }] },
+  longbow:     { name: "Longbow", category: "Equipped", weight: 2, isWeapon: true, attackAbility: "DEX",
+                 proficiencyRequired: "Martial", magicBonus: 0, weaponType: "ranged", range: "150/600 ft",
+                 properties: ["Ammunition", "Heavy", "Two-Handed"], ammunition: "Quiver",
+                 damage: [{ dice: "1d8", type: "Piercing", ability: "DEX" }] },
+
+  arrows:      { name: "Arrows", category: "Carrying", weight: 0.05, qty: 40,
+                 description: "Loose arrows, kept in the pack.",
+                 resource: { max: 0, recharge: { on: "none", amount: "all" } } },
+  quiver:      { name: "Quiver", category: "Worn", weight: 1,
+                 description: "Holds twenty arrows within easy reach.",
+                 resource: { max: 20, loaded: 20, refillFrom: "Arrows", recharge: { on: "none", amount: "all" } } },
+
+  explorer:    { name: "Explorer's Pack", category: "Carrying", weight: 59,
+                 description: "Backpack, bedroll, mess kit, tinderbox, torches, rations and rope." },
+  spellbook:   { name: "Spellbook", category: "Carrying", weight: 3, description: "Your spells, written down." },
+  thievestools:{ name: "Thieves' Tools", category: "Carrying", weight: 1, description: "Picks, a small file, and a mirror on a handle." },
+  rations:     { name: "Rations", category: "Carrying", weight: 2, qty: 5,
+                 resource: { max: 0, recharge: { on: "none", amount: "all" } } }
+};
+
 const CREATOR_ABILITY_ORDER = ["Strength", "Dexterity", "Constitution", "Intelligence", "Wisdom", "Charisma"];
 const STANDARD_ARRAY = [15, 14, 13, 12, 10, 8];
 const POINT_BUY_LIMIT = 27;
@@ -1164,7 +1274,7 @@ function openCharacterCreator() {
     step: 0, name: "", appearance: "", backstory: "",
     race: null, subrace: null, charClass: null, subclass: null, background: null,
     scores: {}, asiBonus: { plus2: null, plus1: null },
-    raceSkillChoices: [], classSkillChoices: [],
+    raceSkillChoices: [], classSkillChoices: [], equipment: [],
     customBuild: false
   };
   openModal("full", "");
@@ -1215,7 +1325,9 @@ function creatorStepKeys() {
   const cls = SRD_CLASSES.find(c => c.name === creatorState.charClass);
   const keys = ["race", "class"];
   if (cls && cls.subclasses && cls.subclasses.length) keys.push("subclass");
-  keys.push("background", "ability", "skills", "final");
+  keys.push("background", "ability", "skills");
+  if (STARTING_KIT[creatorState.charClass]) keys.push("equipment");
+  keys.push("final");
   return keys;
 }
 
@@ -1313,6 +1425,7 @@ function wireClassStep() {
       creatorState.charClass = btn.dataset.classOption;
       creatorState.subclass = null;
       creatorState.classSkillChoices = [];
+      creatorState.equipment = [];        // a different class offers different kit
       redrawCreator();
     });
   });
@@ -1711,7 +1824,7 @@ function buildCharacterFromCreator() {
     skillAbilityMap: JSON.parse(JSON.stringify(SKILL_ABILITY_MAP)),
 
     traits,
-    inventory: [],
+    inventory: buildStartingInventory(),
     categoryRules: {
       Worn: { countsWeight: true, appliesEffects: true, providesAttacks: false },
       Equipped: { countsWeight: true, appliesEffects: true, providesAttacks: true },
@@ -1728,6 +1841,88 @@ function buildCharacterFromCreator() {
     noteSections: [{ id: 1, name: "Session Notes", autoShare: false, receiveFrom: true }],
     notes: []
   };
+}
+
+
+/* ---------- step: equipment ---------- */
+
+function equipmentStepHtml(stepNum, totalSteps) {
+  const kit = STARTING_KIT[creatorState.charClass];
+  const granted = (kit.gear || []).map(key => KIT_ITEMS[key].name);
+
+  return `
+    <div class="modal-heading">Equipment</div>
+    <div class="breakdown-source">Step ${stepNum} of ${totalSteps} · Starting Gear</div>
+
+    ${kit.choices.map((choice, choiceIndex) => `
+      <div class="breakdown-subhead">${esc(choice.prompt)}</div>
+      ${choice.options.map((option, optionIndex) => `
+        <button class="toggle-btn creator-option ${creatorState.equipment[choiceIndex] === optionIndex ? "active" : ""}"
+          data-kit-choice="${choiceIndex}" data-kit-option="${optionIndex}"
+          style="display:block;width:100%;text-align:left;margin-bottom:8px;padding:12px 14px;">
+          ${esc(option.label)}
+        </button>
+      `).join("")}
+    `).join("")}
+
+    ${granted.length ? `
+      <div class="breakdown-subhead">Also carried</div>
+      <div class="chip-row">${granted.map(name => `<div class="chip chip-stat">${esc(name)}</div>`).join("")}</div>
+    ` : ""}
+
+    <div class="menu-note">Everything here arrives as a real item — weapons with their damage and properties, a bow already fed by its quiver.</div>
+
+    <div class="btn-row-2" style="margin-top:14px;">
+      <button class="btn-secondary" id="creator-back-button">Back</button>
+      <button class="btn-primary" id="creator-next-button">Next</button>
+    </div>`;
+}
+
+function wireEquipmentStep() {
+  document.querySelectorAll("[data-kit-choice]").forEach(button => {
+    button.addEventListener("click", () => {
+      creatorState.equipment[parseInt(button.dataset.kitChoice)] = parseInt(button.dataset.kitOption);
+      redrawCreator();
+    });
+  });
+  document.getElementById("creator-back-button").addEventListener("click", goBack);
+  document.getElementById("creator-next-button").addEventListener("click", () => {
+    const kit = STARTING_KIT[creatorState.charClass];
+    const undecided = kit.choices.findIndex((choice, index) => creatorState.equipment[index] === undefined);
+    if (undecided !== -1) { showToast("Choose your " + kit.choices[undecided].prompt.toLowerCase()); return; }
+    goNext();
+  });
+}
+
+/* Turns the chosen keys into inventory entries. Stacks of the same thing merge
+   rather than appearing twice, so picking two daggers gives you one entry with
+   a quantity of two. */
+function buildStartingInventory() {
+  const kit = STARTING_KIT[creatorState.charClass];
+  if (!kit) return [];
+
+  const keys = (kit.gear || []).slice();
+  kit.choices.forEach((choice, index) => {
+    const chosen = choice.options[creatorState.equipment[index]];
+    if (chosen) keys.push(...chosen.items);
+  });
+
+  const inventory = [];
+  let nextId = 1;
+  keys.forEach(key => {
+    const template = KIT_ITEMS[key];
+    if (!template) return;
+
+    // a second dagger is a quantity, not a second row -- but only for things
+    // that stack; two weapons you wield separately stay separate
+    const stackable = !template.isWeapon && !template.armour;
+    const existing = stackable && inventory.find(entry => entry.name === template.name);
+    if (existing) { existing.qty += (template.qty || 1); return; }
+
+    inventory.push(Object.assign({ id: nextId++, qty: 1 }, JSON.parse(JSON.stringify(template))));
+  });
+
+  return inventory;
 }
 
 
@@ -1794,6 +1989,7 @@ function creatorStepHtml() {
   if (key === "background") return backgroundStepHtml(stepNum, totalSteps);
   if (key === "ability") return abilityStepHtml(stepNum, totalSteps);
   if (key === "skills") return skillsStepHtml(stepNum, totalSteps);
+  if (key === "equipment") return equipmentStepHtml(stepNum, totalSteps);
   return finalStepHtml(stepNum, totalSteps);
 }
 
@@ -1805,6 +2001,7 @@ function wireCreatorStep() {
   if (key === "background") return wireBackgroundStep();
   if (key === "ability") return wireAbilityStep();
   if (key === "skills") return wireSkillsStep();
+  if (key === "equipment") return wireEquipmentStep();
   return wireFinalStep();
 }
 
