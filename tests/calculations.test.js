@@ -115,16 +115,20 @@ module.exports = function (suite) {
   suite.is("spell save DC", calculateSpellDC(character, "INT").total, 11);
   suite.is("DC breakdown sums", sums(calculateSpellDC(character, "INT")), 11);
 
-  suite.section("proficiency bonus is editable and flows onward");
-  const originalBonus = character.proficiencyBonus;
-  character.proficiencyBonus = 6;
+  suite.section("proficiency bonus is derived, and overridable");
+  suite.is("level 7 gives +3", calculateProficiencyBonus(character).total, 3);
+  suite.is("and says where it came from", calculateProficiencyBonus(character).sources[0].label, "Level 7");
+
+  const originalBonus = character.proficiencyBonusOverride;
+  character.proficiencyBonusOverride = 6;
+  suite.ok("an override is flagged", calculateProficiencyBonus(character).overridden);
   suite.is("the base is what the total starts from", calculateProficiencyBonus(character).total, 6);
   suite.is("it reaches proficient skills", calculateSkill(character, "Athletics").total, 3 + 6);
   suite.is("expertise doubles the new value", calculateSkill(character, "Stealth").total, 2 + 12);
   suite.is("it reaches saves", calculateSavingThrow(character, "STR").total, 3 + 6);
   suite.is("it reaches attacks", calculateAttack(character, item("Longsword")).toHitTotal, 3 + 6 + 1 + 1);
   suite.is("and spell DCs", calculateSpellDC(character, "INT").total, 8 + 6 + 0);
-  character.proficiencyBonus = originalBonus;
+  character.proficiencyBonusOverride = originalBonus;
 
   suite.section("item classification");
   suite.is("weapon", itemType(item("Longsword")), "weapon");

@@ -19,7 +19,15 @@ const SKILL_ABILITY_MAP = {
 let character = {
   id: 1,
   name: "Sigrid of Chester",
-  classLine: "Fighter 5 / Rogue 2",
+
+  /* Classes are the real record; the line under the character's name is
+     derived from them. Each carries its own level, hit die and subclass, so a
+     multiclass character is just more than one entry. Proficiency bonus and
+     hit dice fall out of this rather than being written down separately. */
+  classes: [
+    { name: "Fighter", level: 5, subclass: "Champion", hitDie: "d10" },
+    { name: "Rogue", level: 2, subclass: "Thief", hitDie: "d8" }
+  ],
 
   profilePic: null, // data URL, or null for the placeholder
   alignment: "Chaotic Good",
@@ -34,7 +42,8 @@ let character = {
     STR: 16, DEX: 14, CON: 14, INT: 10, WIS: 12, CHA: 8
   },
 
-  proficiencyBonus: 3, // base value — calculateProficiencyBonus() adds effects on top
+  // derived from total level unless set; see calculateProficiencyBonus
+  proficiencyBonusOverride: null,
   baseSpeed: 30,
 
   inspiration: { current: 0, max: 1 },
@@ -49,10 +58,10 @@ let character = {
   // hit dice are per class in 5e -- Fighter 5 / Rogue 2 means 5d10 + 2d8.
   // spent individually to heal (die + CON modifier). Their recharge is the
   // reason `amount` exists: a long rest returns half, not all.
-  hitDice: [
-    { die: "d10", total: 5, current: 4, recharge: { on: "LR", amount: "half" } },
-    { die: "d8", total: 2, current: 2, recharge: { on: "LR", amount: "half" } }
-  ],
+  /* How many of each die have been spent. The totals come from the class
+     levels above -- see calculateHitDice -- so levelling up can't leave the
+     pool disagreeing with the character. */
+  hitDiceSpent: { d10: 1, d8: 0 },
 
   // Effects are grouped by their cause. One spell or condition often produces
   // several modifiers that all begin and end together, so duration and
@@ -641,11 +650,62 @@ function featureEffectSummary(effect) {
 // proficiency bonus is now calculated too, so an item/condition that
 // boosts it (rare, but possible) flows into every save/skill/attack
 // that uses it, automatically.
+/* ---------- levels ---------- */
+
+function totalLevel(character) {
+  return (character.classes || []).reduce((sum, entry) => sum + (entry.level || 0), 0);
+}
+
+// 5e: +2 at level 1, rising by one every four levels thereafter
+function proficiencyBonusForLevel(level) {
+  return 2 + Math.floor(Math.max(1, level - 1) / 4);
+}
+
+function classLineFor(character) {
+  if (!character.classes || !character.classes.length) return "No class";
+  return character.classes
+    .map(entry => entry.name + (entry.subclass ? " (" + entry.subclass + ")" : "") + " " + entry.level)
+    .join(" / ");
+}
+
+/* Hit dice totals are a function of class levels. Only how many have been
+   spent is stored, so a level up adds a die without anyone maintaining two
+   numbers that could disagree. */
+function calculateHitDice(character) {
+  const byDie = {};
+  (character.classes || []).forEach(entry => {
+    const die = entry.hitDie || "d8";
+    byDie[die] = (byDie[die] || 0) + (entry.level || 0);
+  });
+
+  const spent = character.hitDiceSpent || {};
+  return Object.keys(byDie).map(die => ({
+    die,
+    total: byDie[die],
+    current: Math.max(0, byDie[die] - (spent[die] || 0)),
+    recharge: { on: "LR", amount: "half" }
+  }));
+}
+
+function spendHitDieOfSize(character, die, count) {
+  if (!character.hitDiceSpent) character.hitDiceSpent = {};
+  character.hitDiceSpent[die] = Math.max(0, (character.hitDiceSpent[die] || 0) + count);
+}
+
 function calculateProficiencyBonus(character) {
-  const sources = [{ label: "Base", value: character.proficiencyBonus }];
+  const level = totalLevel(character);
+  const override = character.proficiencyBonusOverride;
+  const derived = override === null || override === undefined
+    ? proficiencyBonusForLevel(level)
+    : override;
+
+  const sources = [{
+    label: override === null || override === undefined ? "Level " + level : "Manual override",
+    value: derived
+  }];
   effectsAffectingStat(character, "Proficiency Bonus").forEach(e => sources.push({ label: effectSourceLabel(e), value: e.value.amount }));
   const total = sources.reduce((sum, s) => sum + s.value, 0);
-  return { total, sources };
+  return { total, sources, level, overridden: override !== null && override !== undefined };
 }
 
 function itemType(item) {

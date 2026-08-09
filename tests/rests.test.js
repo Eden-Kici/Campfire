@@ -4,7 +4,7 @@
 module.exports = function (suite) {
   const app = require("./harness").loadApp();
   const { character, applyRest, rechargeLabel, restoreOnRest, calculateMaxHP,
-          concentrationGroups, hasCondition } = app;
+          concentrationGroups, hasCondition, calculateHitDice } = app;
 
   const resource = name => character.resources.find(r => r.name === name);
 
@@ -20,19 +20,19 @@ module.exports = function (suite) {
   resource("Action Surge").current = 0;
   resource("Second Wind").current = 0;
   character.spellSlots[1].current = 0;
-  character.hitDice.forEach(pool => { pool.current = 0; });
+  character.hitDiceSpent = { d10: 5, d8: 2 };          // every die spent
   applyRest("short");
   suite.is("restores short rest resources", resource("Action Surge").current, 1);
   suite.is("leaves long rest resources", resource("Second Wind").current, 0);
   suite.is("leaves long rest slots", character.spellSlots[1].current, 0);
-  suite.is("leaves hit dice", character.hitDice[0].current, 0);
+  suite.is("leaves hit dice", calculateHitDice(character)[0].current, 0);
 
   suite.section("long rest");
   applyRest("long");
   suite.is("restores long rest resources", resource("Second Wind").current, 2);
   suite.is("restores every slot level", character.spellSlots[1].current, character.spellSlots[1].max);
-  suite.is("returns half the d10 pool, minimum one", character.hitDice[0].current, 2);
-  suite.is("returns half the d8 pool", character.hitDice[1].current, 1);
+  suite.is("returns half the d10 pool, minimum one", calculateHitDice(character)[0].current, 2);
+  suite.is("returns half the d8 pool", calculateHitDice(character)[1].current, 1);
   suite.is("restores hit points", character.hp.current, calculateMaxHP(character).total);
   suite.is("clears temporary hit points", character.hp.temp, 0);
 

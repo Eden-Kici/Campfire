@@ -715,7 +715,7 @@ let savedCharacters = [character];
    A real build would migrate. A POC only needs to notice. */
 
 const STORAGE_KEY = "campfire.characters";
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 function persistCharacters() {
   try {
@@ -775,7 +775,7 @@ function showScreen(screen) {
 
 function renderSheetHeader() {
   document.getElementById("char-name-display").textContent = character.name;
-  document.getElementById("char-class-display").textContent = character.classLine;
+  document.getElementById("char-class-display").textContent = classLineFor(character);
   const avatar = document.getElementById("char-avatar");
   avatar.innerHTML = character.profilePic
     ? `<img src="${character.profilePic}" alt="">`
@@ -868,7 +868,7 @@ function renderSelectorScreen() {
         <div class="char-card" data-open-char="${c.id}">
           <div>
             <div class="char-card-name">${esc(c.name)}${c.customBuild ? ` <span class="res-tag" style="background:#5A2C29;color:#F0908A;">CUSTOM</span>` : ""}</div>
-            <div class="char-card-class">${esc(c.classLine)}</div>
+            <div class="char-card-class">${esc(classLineFor(c))}</div>
           </div>
           <button class="char-card-menu" data-char-menu="${c.id}">\u22EF</button>
         </div>
@@ -1674,7 +1674,14 @@ function buildCharacterFromCreator() {
   return {
     id: nextCharacterId(),
     name: creatorState.name,
-    classLine: `${creatorState.charClass}${creatorState.subclass ? " (" + creatorState.subclass + ")" : ""} · ${creatorState.subrace ? creatorState.subrace + " " : ""}${creatorState.race}`,
+    classes: [{
+      name: creatorState.charClass,
+      level: 1,
+      subclass: creatorState.subclass || null,
+      hitDie: cls ? cls.hitDie : "d8"
+    }],
+    race: creatorState.race,
+    subrace: creatorState.subrace || null,
     customBuild: creatorState.customBuild,
 
     profilePic: null,
@@ -1684,14 +1691,14 @@ function buildCharacterFromCreator() {
     backstory: creatorState.backstory,
 
     abilities,
-    proficiencyBonus: 2,                 // level 1
+    proficiencyBonusOverride: null,      // derived from total level
     baseSpeed: 30,
     inspiration: { current: 0, max: 1 },
 
     hp: { current: hitDieSize + constitution, temp: 0 },
     baseMaxHP: hitDieSize + constitution,
     maxHpModifiers: [],
-    hitDice: [{ die: cls ? cls.hitDie : "d8", total: 1, current: 1, recharge: { on: "LR", amount: "half" } }],
+    hitDiceSpent: {},
 
     activeEffects: [],
     resources: [],
@@ -2079,9 +2086,13 @@ function applyRest(kind, diceSpend) {
 
   // hit dice recharge through the same rule as everything else
   let diceRegained = 0;
-  (character.hitDice || []).forEach(pool => {
+  calculateHitDice(character).forEach(pool => {
     const before = pool.current;
-    if (restoreOnRest(pool, isLong)) diceRegained += pool.current - before;
+    if (restoreOnRest(pool, isLong)) {
+      const regained = pool.current - before;
+      spendHitDieOfSize(character, pool.die, -regained);
+      diceRegained += regained;
+    }
   });
   if (diceRegained) summary.push(plural(diceRegained, "hit die").replace("dies", "dice"));
 
@@ -2119,7 +2130,7 @@ const MENU_STUBS = [
 ];
 
 function openShortRestModal() {
-  const pools = character.hitDice || [];
+  const pools = calculateHitDice(character);
   const spend = pools.map(() => 0);
   const conMod = abilityModifier(effectiveAbilityScore(character, "CON"));
 
@@ -2157,6 +2168,76 @@ function openLongRestModal() {
   document.getElementById("cancel-long-rest").addEventListener("click", closeModal);
 }
 
+/* ---------------- levels ---------------- */
+
+/* Levelling adds a level to an existing class or opens a new one. Everything
+   downstream -- proficiency bonus, hit dice, the line under the name -- is
+   derived from the class list, so this only has to touch the list itself.
+
+   What it deliberately does NOT do is grant the features of the new level.
+   Those live in SRD_CLASSES keyed by class, not by level, so there's nothing
+   to look up yet. The modal says so rather than pretending. */
+function openLevelUpModal() {
+  const classes = character.classes || [];
+  const level = totalLevel(character);
+  const known = classes.map(entry => entry.name);
+  const available = SRD_CLASSES.filter(cls => !known.includes(cls.name)).map(cls => cls.name);
+
+  openModal("sheet", `
+    <div class="modal-heading">Level Up</div>
+    <div class="breakdown-source">Currently level ${level} — proficiency bonus ${formatModifier(proficiencyBonusForLevel(level))}.
+      At ${level + 1} it becomes ${formatModifier(proficiencyBonusForLevel(level + 1))}.</div>
+
+    <div class="breakdown-subhead">Advance a class</div>
+    ${classes.map((entry, index) => `
+      <div class="res-row" data-level-class="${index}" style="cursor:pointer;">
+        <div>
+          <div class="res-name">${esc(entry.name)}${entry.subclass ? " (" + esc(entry.subclass) + ")" : ""}</div>
+          <div class="atk-range">Level ${entry.level} → ${entry.level + 1} · ${esc(entry.hitDie)}</div>
+        </div>
+        <span class="add-link">+1</span>
+      </div>
+    `).join("")}
+
+    ${available.length ? `
+      <div class="breakdown-subhead">Or take a level in something new</div>
+      ${comboFieldHtml("levelup-new-class", "Class", "e.g. " + available[0])}
+      <button class="btn-secondary" id="levelup-multiclass">Add at level 1</button>
+    ` : ""}
+
+    <div class="menu-note">Hit dice and proficiency bonus update on their own. Features for the new level aren't granted — add them under Features &amp; Traits.</div>
+  `);
+
+  wireCombo("levelup-new-class", available);
+
+  document.querySelectorAll("[data-level-class]").forEach(row => {
+    row.addEventListener("click", () => {
+      const entry = character.classes[parseInt(row.dataset.levelClass)];
+      entry.level += 1;
+      closeModal();
+      renderContent();
+      renderSheetHeader();
+      showToast(entry.name + " " + entry.level + " — level " + totalLevel(character));
+    });
+  });
+
+  const multiclass = document.getElementById("levelup-multiclass");
+  if (multiclass) multiclass.addEventListener("click", () => {
+    const name = document.getElementById("levelup-new-class").value.trim();
+    if (!name) { showToast("Pick a class"); return; }
+    if (known.some(existing => existing.toLowerCase() === name.toLowerCase())) {
+      showToast("You already have levels in " + name);
+      return;
+    }
+    const srd = SRD_CLASSES.find(cls => cls.name.toLowerCase() === name.toLowerCase());
+    character.classes.push({ name: srd ? srd.name : name, level: 1, subclass: null, hitDie: srd ? srd.hitDie : "d8" });
+    closeModal();
+    renderContent();
+    renderSheetHeader();
+    showToast("Took a level in " + name);
+  });
+}
+
 function openAppMenu() {
   openModal("drawer", `
     <div class="modal-heading">Campfire</div>
@@ -2170,6 +2251,9 @@ function openAppMenu() {
       <button class="drawer-item" data-stub="${esc(item.label)}">${esc(item.label)}<span class="drawer-hint">${item.hint}</span></button>
     `).join("")}
 
+    <div class="drawer-section">Character</div>
+    <button class="drawer-item" id="menu-level-up">Level Up<span class="drawer-hint">level ${totalLevel(character)}</span></button>
+
     <div class="drawer-section">Development</div>
     <button class="drawer-item" id="menu-reset-demo">Reset to Demo Character<span class="drawer-hint">clears saved data</span></button>
   `);
@@ -2179,6 +2263,7 @@ function openAppMenu() {
     button.addEventListener("click", () => { closeModal(); showToast(button.dataset.stub + " isn't built yet"); });
   });
   document.getElementById("menu-reset-demo").addEventListener("click", confirmResetToDemo);
+  document.getElementById("menu-level-up").addEventListener("click", openLevelUpModal);
 }
 
 // development aid: persistence means the demo character keeps whatever state
@@ -2543,7 +2628,7 @@ function openHpCalculator() {
       <button class="calc-temp" data-hp="temp">TEMP</button>
       <button class="calc-damage" data-hp="damage">DAMAGE</button>
     </div>
-    ${(character.hitDice && character.hitDice.length) ? `
+    ${calculateHitDice(character).length ? `
       <div class="breakdown-subhead">Hit Dice</div>
       <div id="hitdice-rows">${hitDiceRowsHtml("calc")}</div>
     ` : ""}
@@ -2724,14 +2809,14 @@ function deathSaveTrackHtml(filled, total, kind) {
    the HP calculator. 5e only allows the former, but a POC gains little from
    enforcing that and loses the ability to correct a miscount mid-session. */
 
-// diceSpend is an array parallel to character.hitDice: how many to spend from
+// diceSpend is an array parallel to calculateHitDice(): how many to spend from
 // each pool. Each die rolls separately and adds the CON modifier.
 function spendHitDice(diceSpend) {
   const conMod = abilityModifier(effectiveAbilityScore(character, "CON"));
   let healed = 0, dice = 0;
-  (character.hitDice || []).forEach((pool, index) => {
+  calculateHitDice(character).forEach((pool, index) => {
     for (let n = 0; n < (diceSpend[index] || 0); n++) {
-      pool.current--;
+      spendHitDieOfSize(character, pool.die, 1);
       healed += Math.max(0, rollNotation("1" + pool.die).total + conMod);
       dice++;
     }
@@ -2753,17 +2838,22 @@ function wireHitDiceCalcRows() {
   }
 
   wrap.querySelectorAll("[data-hd-minus]").forEach(button => {
-    button.addEventListener("click", () => { character.hitDice[button.dataset.hdMinus].current--; redraw(); });
+    button.addEventListener("click", () => {
+      spendHitDieOfSize(character, calculateHitDice(character)[button.dataset.hdMinus].die, 1); redraw();
+    });
   });
   wrap.querySelectorAll("[data-hd-plus]").forEach(button => {
-    button.addEventListener("click", () => { character.hitDice[button.dataset.hdPlus].current++; redraw(); });
+    button.addEventListener("click", () => {
+      spendHitDieOfSize(character, calculateHitDice(character)[button.dataset.hdPlus].die, -1); redraw();
+    });
   });
   wrap.querySelectorAll("[data-hd-spend]").forEach(button => {
     button.addEventListener("click", () => {
       const index = parseInt(button.dataset.hdSpend);
-      const pool = character.hitDice[index];
+      const pools = calculateHitDice(character);
+      const pool = pools[index];
       if (pool.current <= 0) showToast("No " + pool.die + " hit dice left");
-      const spend = character.hitDice.map((p, i) => (i === index ? 1 : 0));
+      const spend = pools.map((p, i) => (i === index ? 1 : 0));
       const result = spendHitDice(spend);
       showRollToast("Hit Die – " + pool.die, "1" + pool.die + formatModifier(abilityModifier(effectiveAbilityScore(character, "CON"))));
       redraw();
@@ -2772,7 +2862,7 @@ function wireHitDiceCalcRows() {
 }
 
 function hitDiceRowsHtml(mode) {
-  return (character.hitDice || []).map((pool, index) => `
+  return calculateHitDice(character).map((pool, index) => `
     <div class="hitdice-row">
       <span class="hitdice-die">${esc(pool.die)}</span>
       <span class="hitdice-count">${pool.current} of ${pool.total} left<span class="res-tag">${esc(rechargeLabel(pool.recharge))}</span></span>
@@ -3386,19 +3476,29 @@ function wireCharacterTab() {
 function openEditProficiencyModal() {
   const bonus = calculateProficiencyBonus(character);
 
+  let overrideOn = bonus.overridden;
+
   openModal("center", `
     <div class="breakdown-title">Proficiency Bonus</div>
     ${breakdownRowsHtml(bonus.sources)}
     <hr class="breakdown-divider">
     <div class="breakdown-total" style="margin-bottom:14px;"><span>Total</span><span>${formatModifier(bonus.total)}</span></div>
-    <div class="field"><label>Base</label><input id="edit-prof-base" type="number" value="${character.proficiencyBonus}"></div>
-    <div class="menu-note" style="margin-top:0;">Anything that grants a bonus to Proficiency Bonus adds on top of this, and flows into every save, skill and attack that uses it.</div>
+    <div class="field"><label>Base</label><input id="edit-prof-base" type="number" value="${bonus.sources[0].value}"></div>
+    <div class="toggle-line"><span>Set it manually</span><div class="switch ${bonus.overridden ? "on" : ""}" id="prof-override-switch"><div class="knob"></div></div></div>
+    <div class="menu-note" style="margin-top:0;">Normally ${proficiencyBonusForLevel(bonus.level)} at level ${bonus.level}. Set it manually for homebrew or a table ruling. Anything granting a bonus adds on top either way.</div>
     <button class="btn-primary" id="save-prof-button" style="margin-top:14px;">Save</button>
   `);
 
+  const overrideSwitch = document.getElementById("prof-override-switch");
+  overrideSwitch.addEventListener("click", () => {
+    overrideOn = !overrideOn;
+    overrideSwitch.classList.toggle("on", overrideOn);
+  });
+
   document.getElementById("save-prof-button").addEventListener("click", () => {
     const value = parseInt(document.getElementById("edit-prof-base").value);
-    if (!isNaN(value)) character.proficiencyBonus = value;
+    if (overrideOn && !isNaN(value)) character.proficiencyBonusOverride = value;
+    else character.proficiencyBonusOverride = null;
     closeModal();
     renderContent();
   });
