@@ -113,9 +113,13 @@ const CONTENT_CATEGORIES = [
   // SRD_FEATS starts empty and fills in once the feats pass is done -- the
   // category and its plumbing (duplicate, detail view) are real starting now
   { key: "features", label: "Features", kind: "feature", srdList: () => SRD_FEATS, customList: () => customContent.features },
-  { key: "weapons", label: "Weapons", kind: "item", srdList: () => Object.values(KIT_ITEMS).filter(i => i.isWeapon), customList: () => customContent.items.filter(i => i.type === "weapon") },
-  { key: "armour", label: "Armour", kind: "item", srdList: () => Object.values(KIT_ITEMS).filter(i => i.armour), customList: () => customContent.items.filter(i => i.type === "armour") },
-  { key: "gear", label: "Gear", kind: "item", srdList: () => Object.values(KIT_ITEMS).filter(i => !i.isWeapon && !i.armour), customList: () => customContent.items.filter(i => i.type === "gear") },
+  // SRD_WEAPONS/SRD_ARMOUR/SRD_GEAR/SRD_TOOLS are the full equipment
+  // catalogue (Equipment step); KIT_ITEMS stays a separate, smaller table
+  // purely for STARTING_KIT's own references, so it isn't merged in here --
+  // that would just duplicate rows like Longsword that exist in both
+  { key: "weapons", label: "Weapons", kind: "item", srdList: () => SRD_WEAPONS, customList: () => customContent.items.filter(i => i.type === "weapon") },
+  { key: "armour", label: "Armour", kind: "item", srdList: () => SRD_ARMOUR, customList: () => customContent.items.filter(i => i.type === "armour") },
+  { key: "gear", label: "Gear", kind: "item", srdList: () => SRD_GEAR.concat(SRD_TOOLS), customList: () => customContent.items.filter(i => i.type === "gear") },
   // magic items span weapon/armour/gear the same way they do in the rules --
   // this isn't a 4th item type, just SRD_MAGIC_ITEMS entries (and any Custom
   // item with a rarity set) called out as their own browsing category
@@ -627,8 +631,10 @@ function srdItemDetailHtml(item) {
   const kind = itemType(item);
   return `
     <div class="modal-heading">${esc(item.name)}</div>
+    ${item.official === false ? `<div class="breakdown-source" style="margin-bottom:6px;">Third-party (not core SRD)</div>` : ""}
     ${item.description ? `<div class="trait-desc" style="margin:6px 0 12px;">${esc(item.description)}</div>` : ""}
     <div class="breakdown-row"><span>Weight</span><span>${item.weight} lb</span></div>
+    ${item.cost ? `<div class="breakdown-row"><span>Cost</span><span>${esc(item.cost)}</span></div>` : ""}
     ${item.rarity ? `<div class="breakdown-row"><span>Rarity</span><span>${esc(item.rarity)}</span></div>` : ""}
     ${item.rarity ? `<div class="breakdown-row"><span>Attunement</span><span>${item.attunement ? "Required" : "Not required"}</span></div>` : ""}
     ${kind === "weapon" ? `

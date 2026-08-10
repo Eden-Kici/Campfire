@@ -102,6 +102,45 @@ module.exports = function (suite) {
     suite.is("every feat is well-formed", failures, []);
   }
 
+  function checkItemTable(label, items, failures) {
+    checkNoDuplicates(label, items.map(i => i.name), failures);
+    items.forEach(i => {
+      if (!i.name) failures.push("an " + label + " entry has no name");
+      if (i.weight == null || typeof i.weight !== "number") failures.push(label + "." + (i.name || "?") + " has no numeric weight");
+      suite.runs(label + "." + (i.name || "?") + " resolves an item type", () => app.itemType(i));
+    });
+  }
+
+  suite.section("SRD_WEAPONS");
+  {
+    const failures = [];
+    checkItemTable("SRD_WEAPONS", app.SRD_WEAPONS, failures);
+    app.SRD_WEAPONS.forEach(w => {
+      if (!w.isWeapon) failures.push("SRD_WEAPONS." + w.name + " isn't tagged isWeapon");
+      if (!Array.isArray(w.damage)) failures.push("SRD_WEAPONS." + w.name + " has no damage array");
+    });
+    suite.is("every weapon is well-formed", failures, []);
+  }
+
+  suite.section("SRD_ARMOUR");
+  {
+    const failures = [];
+    checkItemTable("SRD_ARMOUR", app.SRD_ARMOUR, failures);
+    app.SRD_ARMOUR.forEach(a => {
+      if (!a.armour) { failures.push("SRD_ARMOUR." + a.name + " has no armour block"); return; }
+      if (!app.ARMOUR_KINDS.some(k => k.value === a.armour.kind)) failures.push("SRD_ARMOUR." + a.name + " has an unknown kind: " + a.armour.kind);
+    });
+    suite.is("every armour entry is well-formed", failures, []);
+  }
+
+  suite.section("SRD_GEAR + SRD_TOOLS");
+  {
+    const failures = [];
+    checkItemTable("SRD_GEAR", app.SRD_GEAR, failures);
+    checkItemTable("SRD_TOOLS", app.SRD_TOOLS, failures);
+    suite.is("every gear and tool entry is well-formed", failures, []);
+  }
+
   suite.section("SRD_MAGIC_ITEMS");
   {
     const failures = [];
