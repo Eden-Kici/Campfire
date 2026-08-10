@@ -98,9 +98,11 @@ function fieldLabelHtml(label, opts) {
 }
 
 function textFieldHtml(id, label, value, opts) {
-  const { placeholder } = opts || {};
+  const { placeholder, maxlength, inputmode } = opts || {};
   return fieldHtml(label, `<input id="${id}" type="text" value="${esc(value == null ? "" : value)}"` +
-    (placeholder ? ` placeholder="${esc(placeholder)}"` : "") + ">", opts);
+    (placeholder ? ` placeholder="${esc(placeholder)}"` : "") +
+    (maxlength ? ` maxlength="${maxlength}"` : "") +
+    (inputmode ? ` inputmode="${inputmode}"` : "") + ">", opts);
 }
 
 /* Numbers are kept as text on the way in and parsed on the way out, so an
@@ -134,6 +136,16 @@ function toggleLineHtml(id, label, on, opts) {
     "</span>" +
     `<div class="switch ${on ? "on" : ""}" id="${id}"><div class="knob"></div></div>` +
     "</div>";
+}
+
+/* An in-app replacement for <input type="checkbox">, which renders as a
+   bare, unstyled OS control -- same reasoning as selectFieldHtml below. It's
+   a button carrying data attributes, so an existing click listener on
+   data-whatever="value" keeps working; only the tag and the "checked" class
+   change. `disabled` greys it out and drops the pointer, same meaning as the
+   native attribute. */
+function miniCheckboxHtml(dataAttr, value, checked, disabled) {
+  return `<button type="button" class="mini-checkbox ${checked ? "checked" : ""} ${disabled ? "disabled" : ""}" data-${dataAttr}="${esc(value)}"${disabled ? " disabled" : ""}></button>`;
 }
 
 /* An in-app replacement for <select>, which renders as an OS picker on mobile.
@@ -253,7 +265,12 @@ function wireConditionField(idPrefix, existingValue) {
   if (existingValue && existingValue.condition) reveal(existingValue.condition);
 }
 
-function effectSubfieldsHtml(category, idPrefix) {
+/* `existingValue` (an effect's current .value, when there is one) is what
+   lets the Amount field render as a tier list from the start when it's
+   already scaling -- prefillEffectSubfields can set a plain input's value
+   after the fact, but it can't retroactively turn a number field into a
+   tier list, so the amount fields below need to know up front. */
+function effectSubfieldsHtml(category, idPrefix, existingValue) {
   if (category === "Condition") {
     return comboFieldHtml(idPrefix + "-condition", "Condition", "Choose one, or type your own") +
       `<div id="${idPrefix}-condition-extra"></div>`;
@@ -268,24 +285,27 @@ function effectSubfieldsHtml(category, idPrefix) {
     </div>`;
   }
   if (category === "Ability Score" || category === "Saving Throw") {
-    return `<div class="field-row">
-      ${selectFieldHtml(idPrefix + "-ability", "Ability", Object.keys(ABILITY_FULL_NAMES))}
-      ${numberFieldHtml(idPrefix + "-amount", "Amount", -2)}
-    </div>`;
+    return selectFieldHtml(idPrefix + "-ability", "Ability", Object.keys(ABILITY_FULL_NAMES)) +
+      scalingValueFieldsHtml(idPrefix + "-amount", (existingValue && existingValue.amount !== undefined) ? existingValue.amount : -2, "Amount");
   }
   if (category === "Skill") {
+    return selectFieldHtml(idPrefix + "-skill", "Skill", Object.keys(character.skillAbilityMap)) +
+      scalingValueFieldsHtml(idPrefix + "-amount", (existingValue && existingValue.amount !== undefined) ? existingValue.amount : 2, "Amount");
+  }
+  if (category === "Reroll") {
     return `<div class="field-row">
-      ${selectFieldHtml(idPrefix + "-skill", "Skill", Object.keys(character.skillAbilityMap))}
-      ${numberFieldHtml(idPrefix + "-amount", "Amount", 2)}
+      ${selectFieldHtml(idPrefix + "-rolltype", "Applies To", REROLL_ROLL_TYPES)}
+      ${numberFieldHtml(idPrefix + "-threshold", "Reroll At Or Below", 1, { min: 1, max: 19, hint: "e.g. 1 rerolls a 1; 2 rerolls a 1 or 2" })}
     </div>`;
   }
-  return `<div class="field-row">
-    ${selectFieldHtml(idPrefix + "-stat", "Stat", MODIFIER_STATS)}
-    ${numberFieldHtml(idPrefix + "-amount", "Amount", 1)}
-  </div>`;
+  return selectFieldHtml(idPrefix + "-stat", "Stat", MODIFIER_STATS) +
+    scalingValueFieldsHtml(idPrefix + "-amount", (existingValue && existingValue.amount !== undefined) ? existingValue.amount : 1, "Amount");
 }
 
-function readEffectValueFromForm(category, idPrefix) {
+// `existingValue` (the effect's value before this read) tells the amount
+// field whether it's currently rendered as a tier list or a plain number --
+// same reason effectSubfieldsHtml needs it on the way in.
+function readEffectValueFromForm(category, idPrefix, existingValue) {
   if (category === "Condition") {
     const condition = document.getElementById(idPrefix + "-condition").value.trim();
     const value = { condition };
@@ -300,19 +320,26 @@ function readEffectValueFromForm(category, idPrefix) {
       mode: document.getElementById(idPrefix + "-mode").value
     };
   }
+  const amount = () => syncScalingValueFields(idPrefix + "-amount", (existingValue && existingValue.amount !== undefined) ? existingValue.amount : 0);
   if (category === "Ability Score" || category === "Saving Throw") {
-    return { ability: document.getElementById(idPrefix + "-ability").value, amount: parseInt(document.getElementById(idPrefix + "-amount").value) || 0 };
+    return { ability: document.getElementById(idPrefix + "-ability").value, amount: amount() };
   }
   if (category === "Skill") {
-    return { skill: document.getElementById(idPrefix + "-skill").value, amount: parseInt(document.getElementById(idPrefix + "-amount").value) || 0 };
+    return { skill: document.getElementById(idPrefix + "-skill").value, amount: amount() };
   }
-  return { stat: document.getElementById(idPrefix + "-stat").value, amount: parseInt(document.getElementById(idPrefix + "-amount").value) || 0 };
+  if (category === "Reroll") {
+    return { rollType: document.getElementById(idPrefix + "-rolltype").value, threshold: Math.max(1, parseInt(document.getElementById(idPrefix + "-threshold").value) || 1) };
+  }
+  return { stat: document.getElementById(idPrefix + "-stat").value, amount: amount() };
 }
 
 function prefillEffectSubfields(eff, idPrefix) {
   if (!eff.value) return;
-  const map = { ability: "-ability", skill: "-skill", stat: "-stat", amount: "-amount", condition: "-condition",
-                rollType: "-rolltype", mode: "-mode" };
+  // "amount" is handled at render time (effectSubfieldsHtml takes the
+  // existing value directly) since a scaling amount is a tier list, not a
+  // single input a value can be poked into after the fact
+  const map = { ability: "-ability", skill: "-skill", stat: "-stat", condition: "-condition",
+                rollType: "-rolltype", mode: "-mode", threshold: "-threshold" };
   Object.keys(map).forEach(key => {
     if (eff.value[key] !== undefined) {
       const el = document.getElementById(idPrefix + map[key]);
@@ -403,6 +430,124 @@ function readRechargeValue(idPrefix) {
   }
 
   return { on, amount };
+}
+
+
+/* ============================================================
+   SCALING VALUE FIELD
+
+   A number that's either flat (the common case) or scales by character
+   level -- a resource's max uses, an effect's bonus amount. Same shape
+   resolveScalingValue()/effectAmount()/effectiveResourceMax() (character-
+   data.js) read: a plain number, or { tiers: [{level, value}, ...] }.
+
+   The toggle swaps between a single number field and a repeatable list of
+   level breakpoints, the same "toggle reveals a different body" pattern the
+   race form's skill-choice switch already uses. `accessor` is how it reads
+   and writes wherever the value actually lives -- this widget has no idea
+   whether that's a feature's resource.max or an effect's value.amount, and
+   doesn't need to.
+   ============================================================ */
+
+function scalingValueBodyHtml(idPrefix, value) {
+  const scaling = value && typeof value === "object" && Array.isArray(value.tiers);
+  if (!scaling) return numberFieldHtml(idPrefix + "-flat", "Amount", typeof value === "number" ? value : 1);
+  return `
+    ${value.tiers.map((t, i) => `
+      <div class="field-row" data-tier-row="${i}">
+        ${numberFieldHtml(idPrefix + "-tier-" + i + "-level", "At Level", t.level, { min: 1, max: 20 })}
+        ${numberFieldHtml(idPrefix + "-tier-" + i + "-value", "Becomes", t.value)}
+        <button type="button" class="chip-remove" data-tier-remove="${i}" style="align-self:center;margin-top:18px;">✕</button>
+      </div>
+    `).join("")}
+    <button type="button" class="add-link" data-tier-add="1">+ Add Level Breakpoint</button>
+  `;
+}
+
+function scalingValueFieldsHtml(idPrefix, value, label) {
+  const scaling = value && typeof value === "object" && Array.isArray(value.tiers);
+  return `
+    ${toggleLineHtml(idPrefix + "-scaleon", (label || "Amount") + " scales by level", scaling)}
+    <div id="${idPrefix}-body">${scalingValueBodyHtml(idPrefix, value)}</div>
+  `;
+}
+
+// reads whatever's currently on screen back into the value shape, given a
+// hint of which mode it's in (a fresh render always knows; a caller mid-edit
+// passes the mode it last rendered)
+function readScalingValueFromForm(idPrefix, wasScaling, tierCount) {
+  if (!wasScaling) {
+    const flatEl = document.getElementById(idPrefix + "-flat");
+    return flatEl ? (parseInt(flatEl.value) || 0) : 0;
+  }
+  const tiers = [];
+  for (let i = 0; i < tierCount; i++) {
+    const lvlEl = document.getElementById(idPrefix + "-tier-" + i + "-level");
+    if (!lvlEl) continue;
+    tiers.push({ level: parseInt(lvlEl.value) || 1, value: parseInt(document.getElementById(idPrefix + "-tier-" + i + "-value").value) || 0 });
+  }
+  return { tiers };
+}
+
+// used at outer save/sync time -- resolves the current on-screen value with
+// no live accessor needed, the same "read every field back" pattern
+// syncFeatureList (content.js) already uses for the rest of a feature row
+function syncScalingValueFields(idPrefix, currentValue) {
+  const scaling = currentValue && typeof currentValue === "object" && Array.isArray(currentValue.tiers);
+  return readScalingValueFromForm(idPrefix, scaling, scaling ? currentValue.tiers.length : 0);
+}
+
+function wireScalingValueFields(idPrefix, accessor) {
+  const switchEl = document.getElementById(idPrefix + "-scaleon");
+  const bodyEl = document.getElementById(idPrefix + "-body");
+  if (!switchEl || !bodyEl) return;
+
+  function redraw() {
+    const value = accessor.get();
+    const scaling = value && typeof value === "object" && Array.isArray(value.tiers);
+    switchEl.classList.toggle("on", scaling);
+    bodyEl.innerHTML = scalingValueBodyHtml(idPrefix, value);
+    wireBody();
+  }
+
+  function wireBody() {
+    const value = accessor.get();
+    const scaling = value && typeof value === "object" && Array.isArray(value.tiers);
+    if (!scaling) return;
+    bodyEl.querySelectorAll("[data-tier-remove]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const tiers = readScalingValueFromForm(idPrefix, true, value.tiers.length).tiers;
+        tiers.splice(parseInt(btn.dataset.tierRemove), 1);
+        accessor.set({ tiers });
+        redraw();
+      });
+    });
+    const addBtn = bodyEl.querySelector("[data-tier-add]");
+    if (addBtn) addBtn.addEventListener("click", () => {
+      const tiers = readScalingValueFromForm(idPrefix, true, value.tiers.length).tiers;
+      const lastLevel = tiers.length ? tiers[tiers.length - 1].level : 0;
+      tiers.push({ level: Math.min(20, lastLevel + 1), value: 0 });
+      accessor.set({ tiers });
+      redraw();
+    });
+  }
+
+  switchEl.addEventListener("click", () => {
+    const value = accessor.get();
+    const scaling = value && typeof value === "object" && Array.isArray(value.tiers);
+    if (scaling) {
+      // collapsing back to flat keeps the highest tier's value -- what it was
+      // worth eventually is a more useful starting point than what it started at
+      const tiers = readScalingValueFromForm(idPrefix, true, value.tiers.length).tiers;
+      accessor.set(tiers.length ? tiers.sort((a, b) => b.level - a.level)[0].value : 0);
+    } else {
+      const flat = readScalingValueFromForm(idPrefix, false, 0);
+      accessor.set({ tiers: [{ level: 1, value: flat }] });
+    }
+    redraw();
+  });
+
+  wireBody();
 }
 
 

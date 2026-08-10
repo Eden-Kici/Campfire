@@ -6,10 +6,12 @@ let creatorState = null;
 
 function openCharacterCreator() {
   creatorState = {
+    started: false,               // hasn't chosen build-from-scratch vs. import yet
     step: 0, name: "", appearance: "", backstory: "",
     race: null, subrace: null, charClass: null, subclass: null, background: null,
     scores: {}, asiBonus: { plus2: null, plus1: null },
     raceSkillChoices: [], classSkillChoices: [], equipment: [],
+    choiceAnswers: {},        // featureName -> { chosen: [...] } or { manual: "..." }
     customBuild: false
   };
   openModal("full", "");
@@ -18,8 +20,69 @@ function openCharacterCreator() {
 
 function redrawCreator() {
   const box = document.querySelector("#modal-overlay .modal-content");
+  if (!creatorState.started) {
+    box.innerHTML = creatorStartHtml();
+    wireCreatorStart();
+    return;
+  }
   box.innerHTML = creatorStepHtml();
   wireCreatorStep();
+}
+
+/* ---------- step: start (build from scratch, or import) ----------
+
+   Import used to be its own button on the character list, next to New
+   Character but doing something unrelated to it. Both are really the same
+   action -- "get a new character onto the list" -- so New Character is now
+   the one entry point and this is the first thing it asks. */
+
+function creatorStartHtml() {
+  return `
+    <div class="modal-heading">New Character</div>
+    <div class="breakdown-source" style="margin-bottom:14px;">Build one from scratch, or bring one in from a file.</div>
+    <button class="btn-primary" id="creator-build-button" style="margin-bottom:8px;">Build a Character</button>
+    <button class="btn-secondary" id="creator-import-button">Import from File</button>
+    <input type="file" id="creator-import-input" accept=".json" style="display:none;">
+  `;
+}
+
+function wireCreatorStart() {
+  document.getElementById("creator-build-button").addEventListener("click", () => {
+    creatorState.started = true;
+    redrawCreator();
+  });
+
+  const fileInput = document.getElementById("creator-import-input");
+  document.getElementById("creator-import-button").addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      let parsed;
+      try {
+        parsed = JSON.parse(reader.result);
+      } catch (err) {
+        showToast("That file isn't valid JSON");
+        return;
+      }
+      if (!parsed || typeof parsed !== "object" || !parsed.name || !parsed.abilities) {
+        showToast("That doesn't look like a character");
+        return;
+      }
+      // an imported character gets a fresh id so it can't collide with one you already have
+      parsed.id = nextCharacterId();
+      savedCharacters.push(parsed);
+      selectCharacter(parsed.id);
+      closeModal();
+      showScreen("sheet");
+      showToast("Imported " + parsed.name);
+    };
+    reader.onerror = () => showToast("Couldn't read that file");
+    reader.readAsText(file);
+  });
 }
 
 function pointBuyCost(v) {
@@ -52,15 +115,64 @@ function featureRowHtml(f) {
   </div>`;
 }
 
+/* Same markup, escaped -- for a feature list that might include Custom
+   Content (a homebrew subclass's own features) rather than only the app's
+   own SRD data. featureRowHtml is left unescaped and SRD-only on purpose;
+   subclassStepHtml is the one place a feature list can now carry either
+   kind, since subclassesForClass() merges Custom Content subclasses in
+   alongside a class's own SRD ones. */
+function featureRowEscHtml(f) {
+  return `<div class="trait-item" style="border-top:1px solid var(--border);padding:8px 0;">
+    <div class="trait-name">${esc(f.name)}</div>
+    <div class="trait-desc">${esc(f.desc)}</div>
+  </div>`;
+}
+
 function optionButtonHtml(label, active, dataAttr, value) {
-  return `<button class="toggle-btn creator-option ${active ? "active" : ""}" data-${dataAttr}="${value}" style="display:block;width:100%;text-align:left;margin-bottom:8px;padding:12px 14px;">${esc(label)}</button>`;
+  return `<button class="toggle-btn creator-option ${active ? "active" : ""}" data-${dataAttr}="${esc(value)}" style="display:block;width:100%;text-align:left;margin-bottom:8px;padding:12px 14px;">${esc(label)}</button>`;
+}
+
+/* Every race/class-1 feature carrying a `.choice` descriptor (srd-data.js),
+   in the same shape pendingChoiceFor() (rests.js) turns a granted feature
+   into once the character actually exists. Computed straight from
+   creatorState rather than a half-built character, since the "choices" step
+   has to exist before there's anything to grant it to. */
+function creatorPendingChoices() {
+  const race = SRD_RACES.find(r => r.name === creatorState.race);
+  const subrace = race && race.subraces ? race.subraces.find(s => s.name === creatorState.subrace) : null;
+  const raceFeatures = (race ? race.features : []).concat(subrace ? subrace.features : []);
+  const classFeatures = creatorState.charClass ? featuresAtLevel(creatorState.charClass, creatorState.subclass, 1) : [];
+
+  const out = [];
+  raceFeatures.forEach(f => { if (f.choice) out.push(Object.assign({ traitCategory: "Race Traits", featureName: f.name }, f.choice)); });
+  classFeatures.forEach(f => { if (f.choice) out.push(Object.assign({ traitCategory: "Class Features", featureName: f.name }, f.choice)); });
+  return out;
+}
+
+/* Same three kinds choiceOptionsFor() (choices.js) offers, but read off
+   creatorState instead of a live character -- there isn't one yet. Language
+   and skill options depend on picks made earlier in the wizard (skills has
+   to come before this step); fighting style and cantrip are static lists
+   either way, so those two are identical to the resolved-character version. */
+function creatorChoiceOptionsFor(pending) {
+  if (pending.kind === "language") return SRD_LANGUAGES.filter(l => l !== "Common");
+  if (pending.kind === "skill") {
+    const bg = SRD_BACKGROUNDS.find(b => b.name === creatorState.background);
+    const known = (bg ? bg.skills : []).concat(creatorState.raceSkillChoices, creatorState.classSkillChoices);
+    return known.filter((name, i) => known.indexOf(name) === i);
+  }
+  if (pending.kind === "fightingStyle") return FIGHTING_STYLES.map(f => f.label);
+  if (pending.kind === "cantrip") return SRD_CANTRIPS.map(c => c.name);
+  if (pending.kind === "custom") return (pending.options || []).map(o => o.label);
+  return null;
 }
 
 function creatorStepKeys() {
   const cls = SRD_CLASSES.find(c => c.name === creatorState.charClass);
   const keys = ["race", "class"];
-  if (cls && cls.subclasses && cls.subclasses.length) keys.push("subclass");
+  if (cls && subclassesForClass(cls.name).length) keys.push("subclass");
   keys.push("background", "ability", "skills");
+  if (creatorPendingChoices().length) keys.push("choices");
   if (STARTING_KIT[creatorState.charClass]) keys.push("equipment");
   keys.push("final");
   return keys;
@@ -124,6 +236,7 @@ function wireRaceStep() {
       creatorState.race = btn.dataset.raceOption;
       creatorState.subrace = null;
       creatorState.raceSkillChoices = [];
+      creatorState.choiceAnswers = {};
       redrawCreator();
     });
   });
@@ -169,6 +282,7 @@ function wireClassStep() {
       creatorState.subclass = null;
       creatorState.classSkillChoices = [];
       creatorState.equipment = [];        // a different class offers different kit
+      creatorState.choiceAnswers = {};
       redrawCreator();
     });
   });
@@ -184,15 +298,16 @@ function wireClassStep() {
 
 function subclassStepHtml(stepNum, totalSteps) {
   const cls = SRD_CLASSES.find(c => c.name === creatorState.charClass);
+  const subclasses = subclassesForClass(cls.name);
   return `
     <div class="modal-heading">New Character</div>
     <div class="breakdown-source">Step ${stepNum} of ${totalSteps} \u00B7 Subclass</div>
     <div style="margin-top:10px;">
-      ${cls.subclasses.map(sc => optionButtonHtml(sc.name, creatorState.subclass === sc.name, "subclass-option", sc.name)).join("")}
+      ${subclasses.map(sc => optionButtonHtml(sc.name, creatorState.subclass === sc.name, "subclass-option", sc.name)).join("")}
     </div>
     ${creatorState.subclass ? `
       <div class="breakdown-subhead">Subclass Features</div>
-      ${cls.subclasses.find(sc => sc.name === creatorState.subclass).features.map(featureRowHtml).join("")}
+      ${subclasses.find(sc => sc.name === creatorState.subclass).features.map(featureRowEscHtml).join("")}
     ` : ""}
     ${creatorNavHtml()}
   `;
@@ -263,12 +378,12 @@ function abilityStepHtml(stepNum, totalSteps) {
         <div class="mini-stepper" style="justify-content:flex-start;">
           <button data-as-minus="${a}">\u2212</button><span>${finalScoreFor(a)}</span><button data-as-plus="${a}">+</button>
         </div>
-        <label style="font-size:11px;color:var(--text-dim);display:flex;align-items:center;gap:3px;margin-left:12px;">
-          <input type="checkbox" data-bonus2="${a}" ${creatorState.asiBonus.plus2 === a ? "checked" : ""}> +2
-        </label>
-        <label style="font-size:11px;color:var(--text-dim);display:flex;align-items:center;gap:3px;margin-left:8px;">
-          <input type="checkbox" data-bonus1="${a}" ${creatorState.asiBonus.plus1 === a ? "checked" : ""}> +1
-        </label>
+        <span style="font-size:11px;color:var(--text-dim);display:flex;align-items:center;gap:5px;margin-left:12px;">
+          ${miniCheckboxHtml("bonus2", a, creatorState.asiBonus.plus2 === a)} +2
+        </span>
+        <span style="font-size:11px;color:var(--text-dim);display:flex;align-items:center;gap:5px;margin-left:8px;">
+          ${miniCheckboxHtml("bonus1", a, creatorState.asiBonus.plus1 === a)} +1
+        </span>
       </div>`;
     }).join("")}
     <div class="btn-row-2" style="margin-top:10px;">
@@ -376,13 +491,17 @@ function skillsStepHtml(stepNum, totalSteps) {
       if (isBg) {
         raceSlot = `<span style="display:inline-block;width:44px;text-align:center;"><span class="res-tag" style="background:var(--control-raised);color:var(--accent-soft);">BG</span></span>`;
       } else {
+        // a skill picked from one source is off the table for every other --
+        // 5e never lets the same proficiency be chosen twice over, and picking
+        // it twice here would silently do nothing anyway (skillProficiency is
+        // a single flag, not a count)
         if (raceChoice && raceChoice.options.includes(s.name)) {
-          const disabled = !isRace && creatorState.raceSkillChoices.length >= raceChoice.count;
-          raceSlot = `<span style="display:inline-block;width:44px;text-align:center;"><input type="checkbox" data-race-skill="${esc(s.name)}" ${isRace ? "checked" : ""} ${disabled ? "disabled" : ""}></span>`;
+          const disabled = isClass || (!isRace && creatorState.raceSkillChoices.length >= raceChoice.count);
+          raceSlot = `<span style="display:inline-block;width:44px;text-align:center;">${miniCheckboxHtml("race-skill", s.name, isRace, disabled)}</span>`;
         }
         if (cls && cls.skillChoices.options.includes(s.name)) {
-          const disabled = !isClass && creatorState.classSkillChoices.length >= cls.skillChoices.count;
-          classSlot = `<span style="display:inline-block;width:44px;text-align:center;"><input type="checkbox" data-class-skill="${esc(s.name)}" ${isClass ? "checked" : ""} ${disabled ? "disabled" : ""}></span>`;
+          const disabled = isRace || (!isClass && creatorState.classSkillChoices.length >= cls.skillChoices.count);
+          classSlot = `<span style="display:inline-block;width:44px;text-align:center;">${miniCheckboxHtml("class-skill", s.name, isClass, disabled)}</span>`;
         }
       }
 
@@ -435,6 +554,89 @@ function wireSkillsStep() {
   });
   document.getElementById("creator-back-button").addEventListener("click", goBack);
   document.getElementById("creator-next-button").addEventListener("click", goNext);
+}
+
+
+/* ---------- step: choices ----------
+
+   Only reached when creatorPendingChoices() found something to ask -- not
+   every race/class combination owes one. Answering here means the finished
+   character comes out of the wizard with nothing left on its pendingChoices
+   banner, instead of handing that back to the player as a chore. Skipping a
+   card is still allowed, same as everywhere else a choice can be resolved:
+   Next only requires each one has EITHER a picked option or manual text. */
+
+function choiceCardHtml(pending) {
+  const key = pending.featureName;
+  const answer = creatorState.choiceAnswers[key] || {};
+  const options = creatorChoiceOptionsFor(pending);
+  const selected = answer.chosen || [];
+
+  return `
+    <div class="collapse-card" style="margin-bottom:12px;">
+      <div class="collapse-head" style="cursor:default;"><span>${esc(pending.prompt)}</span></div>
+      <div class="collapse-body open" style="padding:2px 14px 14px;">
+        <div class="breakdown-source" style="margin-bottom:8px;">From ${esc(pending.featureName)} — pick ${pending.count}</div>
+        ${options && options.length ? options.map(opt => `
+          <button type="button" class="toggle-btn creator-option ${selected.includes(opt) ? "active" : ""}"
+            data-choice-pick="${esc(key)}|||${esc(opt)}" style="display:block;width:100%;text-align:left;margin-bottom:6px;padding:10px 12px;">
+            <div>${esc(opt)}</div>
+            ${choiceOptionDescFor(pending, opt) ? `<div class="field-hint" style="margin-top:2px;">${esc(choiceOptionDescFor(pending, opt))}</div>` : ""}
+          </button>
+        `).join("") : `<div class="empty-hint" style="margin-bottom:8px;">Nothing to pick from — use the field below.</div>`}
+        ${textFieldHtml("choice-manual-" + key, "Or track it yourself", answer.manual || "", { placeholder: "What did you pick?" })}
+      </div>
+    </div>
+  `;
+}
+
+function choicesStepHtml(stepNum, totalSteps) {
+  const pendings = creatorPendingChoices();
+  return `
+    <div class="modal-heading">Choices</div>
+    <div class="breakdown-source" style="margin-bottom:10px;">Step ${stepNum} of ${totalSteps} · What your features grant</div>
+    ${pendings.map(choiceCardHtml).join("")}
+    ${creatorNavHtml()}
+  `;
+}
+
+function wireChoicesStep() {
+  const pendings = creatorPendingChoices();
+
+  pendings.forEach(pending => {
+    const input = document.getElementById("choice-manual-" + pending.featureName);
+    if (input) input.addEventListener("input", () => {
+      creatorState.choiceAnswers[pending.featureName] = { manual: input.value };
+    });
+  });
+
+  document.querySelectorAll("[data-choice-pick]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const [key, opt] = btn.dataset.choicePick.split("|||");
+      const pending = pendings.find(p => p.featureName === key);
+      const chosen = (creatorState.choiceAnswers[key] && creatorState.choiceAnswers[key].chosen || []).slice();
+      const idx = chosen.indexOf(opt);
+      if (idx >= 0) chosen.splice(idx, 1);
+      else {
+        if (chosen.length >= pending.count) { showToast("You can only pick " + pending.count); return; }
+        chosen.push(opt);
+      }
+      creatorState.choiceAnswers[key] = { chosen };
+      redrawCreator();
+    });
+  });
+
+  document.getElementById("creator-back-button").addEventListener("click", goBack);
+  document.getElementById("creator-next-button").addEventListener("click", () => {
+    const unresolved = pendings.find(p => {
+      const a = creatorState.choiceAnswers[p.featureName];
+      if (!a) return true;
+      if (a.manual && a.manual.trim()) return false;
+      return !(a.chosen && a.chosen.length === p.count);
+    });
+    if (unresolved) { showToast("Resolve “" + unresolved.prompt + "” to continue"); return; }
+    goNext();
+  });
 }
 
 
@@ -495,17 +697,31 @@ function buildCharacterFromCreator() {
   const savingThrowProficiency = { STR: 0, DEX: 0, CON: 0, INT: 0, WIS: 0, CHA: 0 };
   (cls ? cls.saves : []).forEach(save => { savingThrowProficiency[ABILITY_ABBREVIATIONS[save]] = 1; });
 
+  // kept raw (not stripped to {name, desc}) up front, so the choice-granting
+  // pass below can still see any `.choice` descriptor after `traits` has
+  // already stripped its own copy down to display text
+  const raceFeatures = (race ? race.features : []).concat(subrace ? subrace.features : []);
+  const classFeatures = featuresAtLevel(creatorState.charClass, creatorState.subclass, 1);
+
+  // carries .effects and .resource through from the raw feature -- both are
+  // optional, permanent parts of the feature itself (Lucky's reroll, Second
+  // Wind's usable resource), not a one-time choice like .choice is
+  const asTraitEntry = f => {
+    const entry = { name: f.name, desc: f.desc };
+    if (f.effects) entry.effects = f.effects;
+    if (f.resource) entry.resource = Object.assign({ name: f.name }, f.resource);
+    return entry;
+  };
+
   const traits = {
-    "Race Traits": (race ? race.features : []).concat(subrace ? subrace.features : [])
-      .map(f => ({ name: f.name, desc: f.desc })),
-    "Class Features": featuresAtLevel(creatorState.charClass, creatorState.subclass, 1),
+    "Race Traits": raceFeatures.map(asTraitEntry),
+    "Class Features": classFeatures.map(asTraitEntry),
     "Background Features": background ? [{ name: background.feature.name, desc: background.feature.desc }] : [],
     "Feats": [],
     "Proficiencies": cls ? [
       { name: "Armor", desc: cls.armorProf },
       { name: "Weapons", desc: cls.weaponProf }
-    ] : [],
-    "Languages": [{ name: "Common", desc: "" }]
+    ] : []
   };
 
   // a first-level character has one hit die and takes its maximum for HP
@@ -514,7 +730,7 @@ function buildCharacterFromCreator() {
 
   const weaponProficiencies = parseWeaponProficiencies(cls ? cls.weaponProf : "");
 
-  return {
+  const built = {
     id: nextCharacterId(),
     name: creatorState.name,
     classes: [{
@@ -547,6 +763,8 @@ function buildCharacterFromCreator() {
     resources: [],
 
     weaponProficiencies,
+    languages: ["Common"],
+    pendingChoices: [],
     savingThrowProficiency,
     savingThrowOverride: {},
     skillProficiency,
@@ -571,6 +789,30 @@ function buildCharacterFromCreator() {
     noteSections: [{ id: 1, name: "Session Notes", autoShare: false, receiveFrom: true }],
     notes: []
   };
+
+  // race and level-1 class features can each owe a choice ("choose an extra
+  // language," "choose a fighting style") -- grantPendingChoice reads the raw
+  // feature objects (still carrying `.choice`) rather than the stripped
+  // copies that went into `traits` above.
+  raceFeatures.forEach(f => grantPendingChoice(built, f, "Race Traits"));
+  classFeatures.forEach(f => grantPendingChoice(built, f, "Class Features"));
+
+  // the "choices" step (when it appeared) collected an answer for each of
+  // those in creatorState.choiceAnswers -- apply them the same way resolving
+  // one from the Character tab banner would, so a build-time choice and a
+  // later one go through identical mechanics. Anything left unanswered
+  // (there shouldn't be, the step's Next button checks) simply stays pending
+  // rather than being silently dropped.
+  built.pendingChoices.slice().forEach(pending => {
+    // defensive: a creatorState built by hand (verification scripts, tests
+    // that construct a minimal state) may not carry this field at all
+    const answer = (creatorState.choiceAnswers || {})[pending.featureName];
+    if (!answer) return;
+    if (answer.chosen && answer.chosen.length) applyChoiceResolution(built, pending, answer.chosen.slice());
+    else if (answer.manual && answer.manual.trim()) resolveChoiceManually(built, pending, answer.manual.trim());
+  });
+
+  return built;
 }
 
 
@@ -705,6 +947,7 @@ function creatorStepHtml() {
   if (key === "background") return backgroundStepHtml(stepNum, totalSteps);
   if (key === "ability") return abilityStepHtml(stepNum, totalSteps);
   if (key === "skills") return skillsStepHtml(stepNum, totalSteps);
+  if (key === "choices") return choicesStepHtml(stepNum, totalSteps);
   if (key === "equipment") return equipmentStepHtml(stepNum, totalSteps);
   return finalStepHtml(stepNum, totalSteps);
 }
@@ -717,6 +960,7 @@ function wireCreatorStep() {
   if (key === "background") return wireBackgroundStep();
   if (key === "ability") return wireAbilityStep();
   if (key === "skills") return wireSkillsStep();
+  if (key === "choices") return wireChoicesStep();
   if (key === "equipment") return wireEquipmentStep();
   return wireFinalStep();
 }

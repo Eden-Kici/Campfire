@@ -41,6 +41,7 @@ function renderContent() {
 
 loadTheme();
 loadSettings();
+loadCustomContent();
 const restored = loadCharacters();
 showScreen("selector");
 if (restored && restored.stale) {

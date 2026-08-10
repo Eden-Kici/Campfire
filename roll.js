@@ -6,6 +6,18 @@ function rollDie(sides) {
   return Math.floor(Math.random() * sides) + 1;
 }
 
+/* Great Weapon Fighting ("reroll 1s and 2s on damage dice") and Halfling
+   Lucky ("reroll a 1") are both a forced reroll-and-keep, once per die --
+   the PHB wording for Lucky is "you can reroll... but must use the new
+   roll," so there's no second choice being modeled away here. Rerolling
+   more than once even if the second roll also lands low isn't RAW for
+   either trait, so this only ever rerolls a die a single time. */
+function dieValueWithReroll(sides, threshold) {
+  let value = rollDie(sides);
+  if (threshold && value <= threshold) value = rollDie(sides);
+  return value;
+}
+
 // dieValue decides what each die contributes, so the same parser can roll a
 // notation, or report the best it could possibly do (for the MAX readout).
 function evaluateNotation(notation, dieValue) {
@@ -56,8 +68,8 @@ function evaluateNotation(notation, dieValue) {
   return { total: Math.round(total * 100) / 100, breakdown: resolvedTokens.join(" ") };
 }
 
-function rollNotation(notation) {
-  return evaluateNotation(notation, sides => rollDie(sides));
+function rollNotation(notation, rerollThreshold) {
+  return evaluateNotation(notation, sides => rerollThreshold ? dieValueWithReroll(sides, rerollThreshold) : rollDie(sides));
 }
 
 function maxNotation(notation) {
@@ -66,13 +78,13 @@ function maxNotation(notation) {
 
 // A roll is one or more parts summed together. Single-notation rolls are just
 // the one-part case, so damage that deals several types shares this path.
-function rollParts(parts) {
-  const results = parts.map(part => Object.assign({}, part, { result: rollNotation(part.notation) }));
+function rollParts(parts, rerollThreshold) {
+  const results = parts.map(part => Object.assign({}, part, { result: rollNotation(part.notation, rerollThreshold) }));
   return { total: results.reduce((sum, r) => sum + r.result.total, 0), parts: results };
 }
 
 function rollPartsFor(config) {
-  return rollParts(config.parts && config.parts.length ? config.parts : [{ notation: config.notation }]);
+  return rollParts(config.parts && config.parts.length ? config.parts : [{ notation: config.notation }], config.rerollThreshold);
 }
 
 // 5e resolves advantage on the d20, but every other term is constant, so
@@ -174,6 +186,10 @@ function repositionToasts() {
 let rollState = null;
 
 function showRoll(config) {
+  // a caller can set config.rerollThreshold itself; otherwise it's read off
+  // the character the same way advantage/disadvantage is derived below
+  if (config.rerollThreshold === undefined) config.rerollThreshold = rerollThresholdFor(character, config.kind);
+
   const derived = derivedRollMode(character, config.kind, config.ability);
   rollState = { config, derived, mode: derived.mode, manual: false, rolled: false };
 
@@ -273,6 +289,7 @@ function rollWindowHtml() {
       `).join("")}
     </div>
     <div class="roll-why">${rollModeExplanation()}</div>
+    ${config.rerollThreshold ? `<div class="roll-why">Rerolling ${config.rerollThreshold <= 1 ? "1s" : "1s through " + config.rerollThreshold + "s"} automatically</div>` : ""}
 
     ${rolled
       ? `<button class="roll-reroll" id="roll-reroll" title="Roll again">↻</button>`

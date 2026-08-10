@@ -114,6 +114,23 @@ let character = {
   // can drift. Armour and tool proficiencies have no model yet.
   weaponProficiencies: ["Simple", "Martial"],
 
+  // flat list, same shape as weaponProficiencies -- the authoritative record.
+  // Nothing renders a "Languages" trait category anymore; this is the only
+  // place a known language lives, so there's nowhere for it to drift from.
+  languages: ["Common", "Elvish"],
+
+  /* A choice a granted feature owes you but hasn't answered yet -- "choose an
+     extra language," "choose a fighting style." Not every feature creates
+     one; only features with a `.choice` descriptor in the SRD data do (see
+     srd-data.js). Resolving one applies it (writes to `languages`, sets
+     `skillProficiency` to 2 for Expertise, attaches `.effects` to the
+     originating trait for a mechanical Fighting Style, adds a spell for a
+     Cantrip) and removes it from this list -- there's no partial/resolved
+     state to track once it's answered. Choosing "I'll track this myself"
+     removes it the same way, just without the mechanical part; the feature
+     text granted it is already sitting in traits regardless. */
+  pendingChoices: [],
+
   savingThrowProficiency: { STR: 1, DEX: 0, CON: 1, INT: 0, WIS: 0, CHA: 0 },
   // present only for a save that's been manually overridden; value replaces the calculated total
   savingThrowOverride: {},
@@ -167,10 +184,6 @@ let character = {
       { name: "Armour", desc: "Light, medium, heavy, shields" },
       { name: "Weapons", desc: "Simple, martial" },
       { name: "Tools", desc: "None" }
-    ],
-    "Languages": [
-      { name: "Common", desc: "" },
-      { name: "Elvish", desc: "" }
     ]
   },
 
@@ -449,6 +462,15 @@ function weaponList(character) {
   });
 }
 
+// Dueling reads "while you are wielding a melee weapon in one hand and no
+// other weapons" -- not just "your off hand is empty," but genuinely no
+// other weapon on the Attacks list. A generic Bonus effect can't express
+// that condition, so it's checked here rather than baked into the effect.
+function qualifiesForDueling(character, weapon) {
+  if (weapon.weaponType !== "melee" || weapon.twoHanded || weapon.offHand) return false;
+  return weaponList(character).every(w => w.id === weapon.id);
+}
+
 function attackCategories(character) {
   return Object.keys(character.categoryRules).filter(name => character.categoryRules[name].providesAttacks);
 }
@@ -503,13 +525,25 @@ function isContainer(item) {
   return !!(item.resource && item.resource.refillFrom);
 }
 
+/* A resource added from a level-scaling feature (see "+ Add to Resources"
+   on the Character tab) carries its max as a { tiers } table instead of a
+   flat number, the same shape an effect's scaling amount uses -- resolved
+   here rather than at add-time, so leveling up moves the ceiling without
+   anyone having to come back and edit the resource by hand. `maxOverride`
+   is the same derived-plus-override shape as everything else on this sheet:
+   set it to replace the computed ceiling with a table ruling. */
+function effectiveResourceMax(character, resource) {
+  if (resource.maxOverride !== undefined && resource.maxOverride !== null) return resource.maxOverride;
+  return resolveScalingValue(resource.max, totalLevel(character));
+}
+
 function resourceRows(character) {
   const rows = character.resources.map(resource => ({
     key: "res:" + resource.id,
     name: resource.name,
     recharge: resource.recharge,
     current: resource.current,
-    max: resource.max,
+    max: effectiveResourceMax(character, resource),
     resource
   }));
 
@@ -627,7 +661,7 @@ function effectsAffectingAbility(character, ability) {
 
 function effectiveAbilityScore(character, ability) {
   let score = character.abilities[ability];
-  effectsAffectingAbility(character, ability).forEach(e => { score += e.value.amount; });
+  effectsAffectingAbility(character, ability).forEach(e => { score += effectAmount(character, e); });
   return score;
 }
 
@@ -641,6 +675,49 @@ function effectsAffectingSkill(character, skillName) {
 
 function effectsAffectingStat(character, statName) {
   return getAllEffects(character).filter(e => e.category === "Bonus" && e.value.stat === statName);
+}
+
+/* An effect's numeric amount is either a flat number (the common case) or a
+   { tiers: [{level, value}, ...] } table for something that scales with
+   level (a custom 2024-style Second Wind, a homebrew feature whose bonus
+   improves later). `level == null` means "no character to scale against" --
+   used by the handful of display-only call sites that don't have one handy
+   -- and falls back to the highest tier, i.e. the value it eventually
+   becomes, rather than guessing at zero. */
+function resolveScalingValue(value, level) {
+  if (typeof value === "number") return value;
+  if (!value || !Array.isArray(value.tiers) || !value.tiers.length) return 0;
+  if (level == null) return Math.max(...value.tiers.map(t => t.value));
+  const eligible = value.tiers.filter(t => t.level <= level);
+  if (!eligible.length) return 0;
+  return eligible.sort((a, b) => b.level - a.level)[0].value;
+}
+
+function effectAmount(character, effect) {
+  return resolveScalingValue(effect.value.amount, totalLevel(character));
+}
+
+/* "d20" covers attack rolls, ability checks and saving throws (Halfling
+   Lucky); "damage" is its own bucket (Great Weapon Fighting). A roll kind
+   of "check"/"attack"/"save" all read the d20 bucket; "damage" reads its
+   own. Multiple sources stack to the highest threshold rather than adding,
+   since "reroll 1s" and "reroll 1s and 2s" aren't cumulative in 5e. */
+function rerollThresholdFor(character, kind) {
+  const bucket = kind === "damage" ? "damage" : "d20";
+  let max = 0;
+  getAllEffects(character).forEach(e => {
+    if (e.category === "Reroll" && e.value.rollType === bucket) max = Math.max(max, e.value.threshold || 0);
+  });
+  return max;
+}
+
+// A resolved Fighting Style renames its granting feature to "Fighting Style:
+// <label>" (see applyChoiceResolution in choices.js) -- this is the same
+// lookup, used by calculateAttack for styles like Two-Weapon Fighting that
+// change behavior without a generic effect to attach.
+function hasFightingStyle(character, label) {
+  const target = "Fighting Style: " + label;
+  return Object.keys(character.traits).some(cat => character.traits[cat].some(t => t.name === target));
 }
 
 function hasCondition(character, conditionName) {
@@ -662,13 +739,21 @@ function advantageLabel(effect) {
   return mode + " on " + rollTypeLabel(effect.value.rollType);
 }
 
-function effectSummaryLabel(effect) {
+// `level` is optional -- callers with a character handy pass totalLevel(it)
+// so a scaling amount shows what it's actually worth right now; callers
+// without one (there are a couple) get resolveScalingValue's fallback,
+// the value it eventually becomes.
+function effectSummaryLabel(effect, level) {
   if (effect.category === "Condition") return effect.value.condition;
   if (effect.category === "Advantage") return advantageLabel(effect);
-  if (effect.category === "Ability Score") return formatModifier(effect.value.amount) + " " + effect.value.ability;
-  if (effect.category === "Saving Throw") return formatModifier(effect.value.amount) + " " + effect.value.ability + " Save";
-  if (effect.category === "Skill") return formatModifier(effect.value.amount) + " " + effect.value.skill;
-  if (effect.category === "Bonus") return formatModifier(effect.value.amount) + " " + effect.value.stat;
+  if (effect.category === "Ability Score") return formatModifier(resolveScalingValue(effect.value.amount, level)) + " " + effect.value.ability;
+  if (effect.category === "Saving Throw") return formatModifier(resolveScalingValue(effect.value.amount, level)) + " " + effect.value.ability + " Save";
+  if (effect.category === "Skill") return formatModifier(resolveScalingValue(effect.value.amount, level)) + " " + effect.value.skill;
+  if (effect.category === "Bonus") return formatModifier(resolveScalingValue(effect.value.amount, level)) + " " + effect.value.stat;
+  if (effect.category === "Reroll") {
+    const label = effect.value.rollType === "damage" ? "Damage Rolls" : "Attack Rolls, Checks & Saves";
+    return "Reroll " + (effect.value.threshold <= 1 ? "1s" : "1-" + effect.value.threshold + "s") + " on " + label;
+  }
   return effect.category;
 }
 
@@ -680,12 +765,13 @@ function durationLabel(effect) {
   return "Permanent";
 }
 
-function featureEffectSummary(effect) {
+function featureEffectSummary(effect, level) {
   if (effect.category === "Advantage") return advantageLabel(effect);
-  if (effect.category === "Ability Score") return formatModifier(effect.value.amount) + " " + effect.value.ability;
-  if (effect.category === "Saving Throw") return formatModifier(effect.value.amount) + " " + effect.value.ability + " Save";
-  if (effect.category === "Skill") return formatModifier(effect.value.amount) + " " + effect.value.skill;
-  if (effect.category === "Bonus") return formatModifier(effect.value.amount) + " " + effect.value.stat;
+  if (effect.category === "Ability Score") return formatModifier(resolveScalingValue(effect.value.amount, level)) + " " + effect.value.ability;
+  if (effect.category === "Saving Throw") return formatModifier(resolveScalingValue(effect.value.amount, level)) + " " + effect.value.ability + " Save";
+  if (effect.category === "Skill") return formatModifier(resolveScalingValue(effect.value.amount, level)) + " " + effect.value.skill;
+  if (effect.category === "Bonus") return formatModifier(resolveScalingValue(effect.value.amount, level)) + " " + effect.value.stat;
+  if (effect.category === "Reroll") return effectSummaryLabel(effect);
   return "";
 }
 
@@ -750,7 +836,7 @@ function calculateProficiencyBonus(character) {
     label: override === null || override === undefined ? "Level " + level : "Manual override",
     value: derived
   }];
-  effectsAffectingStat(character, "Proficiency Bonus").forEach(e => sources.push({ label: effectSourceLabel(e), value: e.value.amount }));
+  effectsAffectingStat(character, "Proficiency Bonus").forEach(e => sources.push({ label: effectSourceLabel(e), value: effectAmount(character, e) }));
   const total = sources.reduce((sum, s) => sum + s.value, 0);
   return { total, sources, level, overridden: override !== null && override !== undefined };
 }
@@ -807,7 +893,7 @@ function calculateAC(character) {
   equippedEffectItems(character).forEach(item => {
     if (item.acBonus && !item.armour) sources.push({ label: item.name, value: item.acBonus });
   });
-  effectsAffectingStat(character, "AC").forEach(e => sources.push({ label: effectSourceLabel(e), value: e.value.amount }));
+  effectsAffectingStat(character, "AC").forEach(e => sources.push({ label: effectSourceLabel(e), value: effectAmount(character, e) }));
 
   const total = sources.reduce((sum, s) => sum + s.value, 0);
   return { total, sources };
@@ -849,7 +935,7 @@ function calculateMaxHP(character) {
 function calculateInitiative(character) {
   const sources = [];
   sources.push({ label: ABILITY_FULL_NAMES.DEX + " modifier", value: abilityModifier(effectiveAbilityScore(character, "DEX")) });
-  effectsAffectingStat(character, "Initiative").forEach(e => sources.push({ label: effectSourceLabel(e), value: e.value.amount }));
+  effectsAffectingStat(character, "Initiative").forEach(e => sources.push({ label: effectSourceLabel(e), value: effectAmount(character, e) }));
   const total = sources.reduce((sum, s) => sum + s.value, 0);
   return { total, sources };
 }
@@ -859,7 +945,7 @@ function calculateSpeed(character) {
   if (hasCondition(character, "Restrained") || hasCondition(character, "Grappled")) {
     sources.push({ label: "Restrained/Grappled", value: -character.baseSpeed });
   }
-  effectsAffectingStat(character, "Speed").forEach(e => sources.push({ label: effectSourceLabel(e), value: e.value.amount }));
+  effectsAffectingStat(character, "Speed").forEach(e => sources.push({ label: effectSourceLabel(e), value: effectAmount(character, e) }));
 
   // exhaustion halves speed at 2 and removes it entirely at 5
   const exhaustion = exhaustionLevel(character);
@@ -887,9 +973,10 @@ function calculateAbilityCheck(character, ability) {
   let runningScore = baseScore;
   effectsAffectingAbility(character, ability).forEach(effect => {
     const before = abilityModifier(runningScore);
-    runningScore += effect.value.amount;
+    const amount = effectAmount(character, effect);
+    runningScore += amount;
     sources.push({
-      label: effectSourceLabel(effect) + " (" + formatModifier(effect.value.amount) + " score)",
+      label: effectSourceLabel(effect) + " (" + formatModifier(amount) + " score)",
       value: abilityModifier(runningScore) - before
     });
   });
@@ -908,7 +995,7 @@ function calculateSavingThrow(character, ability) {
   if (character.savingThrowProficiency[ability]) {
     sources.push({ label: "Proficiency", value: calculateProficiencyBonus(character).total });
   }
-  effectsAffectingSavingThrow(character, ability).forEach(e => sources.push({ label: effectSourceLabel(e), value: e.value.amount }));
+  effectsAffectingSavingThrow(character, ability).forEach(e => sources.push({ label: effectSourceLabel(e), value: effectAmount(character, e) }));
   const total = sources.reduce((sum, s) => sum + s.value, 0);
   return { total, sources, overridden: false };
 }
@@ -926,7 +1013,7 @@ function calculateSkill(character, skillName) {
   if (profLevel === 1) sources.push({ label: "Proficiency", value: profBonus });
   else if (profLevel === 2) sources.push({ label: "Expertise", value: profBonus * 2 });
 
-  effectsAffectingSkill(character, skillName).forEach(e => sources.push({ label: effectSourceLabel(e), value: e.value.amount }));
+  effectsAffectingSkill(character, skillName).forEach(e => sources.push({ label: effectSourceLabel(e), value: effectAmount(character, e) }));
   const total = sources.reduce((sum, s) => sum + s.value, 0);
   return { total, sources, overridden: false };
 }
@@ -952,7 +1039,7 @@ function calculateSpellAttack(character, ability) {
   const sources = [];
   sources.push({ label: "Proficiency Bonus", value: calculateProficiencyBonus(character).total });
   sources.push({ label: ABILITY_FULL_NAMES[ability] + " Modifier", value: abilityModifier(effectiveAbilityScore(character, ability)) });
-  effectsAffectingStat(character, "Spell Attack").forEach(e => sources.push({ label: effectSourceLabel(e), value: e.value.amount }));
+  effectsAffectingStat(character, "Spell Attack").forEach(e => sources.push({ label: effectSourceLabel(e), value: effectAmount(character, e) }));
   const total = sources.reduce((sum, s) => sum + s.value, 0);
   return { total, sources };
 }
@@ -961,7 +1048,7 @@ function calculateSpellDC(character, ability) {
   const sources = [{ label: "Base", value: 8 }];
   sources.push({ label: "Proficiency Bonus", value: calculateProficiencyBonus(character).total });
   sources.push({ label: ABILITY_FULL_NAMES[ability] + " Modifier", value: abilityModifier(effectiveAbilityScore(character, ability)) });
-  effectsAffectingStat(character, "Spell DC").forEach(e => sources.push({ label: effectSourceLabel(e), value: e.value.amount }));
+  effectsAffectingStat(character, "Spell DC").forEach(e => sources.push({ label: effectSourceLabel(e), value: effectAmount(character, e) }));
   const total = sources.reduce((sum, s) => sum + s.value, 0);
   return { total, sources };
 }
@@ -1023,7 +1110,7 @@ function calculateAttack(character, weapon) {
       toHitSources.push({ label: item.name, value: item.attackBonus });
     }
   });
-  effectsAffectingStat(character, "Attack Rolls").forEach(e => toHitSources.push({ label: effectSourceLabel(e), value: e.value.amount }));
+  effectsAffectingStat(character, "Attack Rolls").forEach(e => toHitSources.push({ label: effectSourceLabel(e), value: effectAmount(character, e) }));
 
   const toHitTotal = toHitSources.reduce((sum, s) => sum + s.value, 0);
 
@@ -1033,7 +1120,13 @@ function calculateAttack(character, weapon) {
      attack normally don't get it. */
   const onceOnly = [];
   if (weapon.magicBonus) onceOnly.push({ label: weapon.name + " (magic bonus)", value: weapon.magicBonus });
-  effectsAffectingStat(character, "Damage Rolls").forEach(e => onceOnly.push({ label: effectSourceLabel(e), value: e.value.amount }));
+  // Dueling's bonus only counts on a weapon that actually qualifies for it --
+  // everything else with a blanket "Damage Rolls" effect (homebrew, magic
+  // items) still applies unconditionally.
+  effectsAffectingStat(character, "Damage Rolls").forEach(e => {
+    if (e.source === "Fighting Style: Dueling" && !qualifiesForDueling(character, weapon)) return;
+    onceOnly.push({ label: effectSourceLabel(e), value: effectAmount(character, e) });
+  });
 
   // Two-handing a versatile weapon swaps the base damage die for the larger one
   // written in the property. Only the weapon's own first damage part changes;
@@ -1041,10 +1134,15 @@ function calculateAttack(character, weapon) {
   const versatile = versatileDie(weapon);
   const twoHanded = !!weapon.twoHanded && !!versatile;
 
+  // RAW: an off-hand attack doesn't add your ability modifier to damage
+  // unless you have Two-Weapon Fighting. Every other weapon on the sheet
+  // keeps the modifier it's always had -- this only touches offHand: true.
+  const suppressAbilityDamage = !!weapon.offHand && !hasFightingStyle(character, "Two-Weapon Fighting");
+
   const damage = (weapon.damage || []).map((part, index) => {
     const sources = [];
     const partAbility = (finesse && ["STR", "DEX"].includes(part.ability)) ? finesse : part.ability;
-    if (partAbility) {
+    if (partAbility && !suppressAbilityDamage) {
       sources.push({
         label: ABILITY_FULL_NAMES[partAbility] + " modifier" + (partAbility !== part.ability ? " (Finesse)" : ""),
         value: abilityModifier(effectiveAbilityScore(character, partAbility))
@@ -1074,6 +1172,8 @@ function calculateAttack(character, weapon) {
     damage,
     damageNotation: damage.map(d => d.notation).join(" + ") || "—",
     versatile, twoHanded,
+    offHand: !!weapon.offHand,
+    suppressedOffHandAbility: suppressAbilityDamage,
     finesse: usesFinesse ? finesse : null,
     ammunition: ammunitionResource(character, weapon)
   };

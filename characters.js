@@ -21,7 +21,7 @@ let savedCharacters = [character];
    A real build would migrate. A POC only needs to notice. */
 
 const STORAGE_KEY = "campfire.characters";
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;   // added character.languages and character.pendingChoices
 
 function persistCharacters() {
   try {
@@ -75,6 +75,7 @@ function showScreen(screen) {
   currentScreen = screen;
   document.getElementById("selector-screen").style.display = screen === "selector" ? "flex" : "none";
   document.getElementById("sheet-screen").style.display = screen === "sheet" ? "flex" : "none";
+  refreshMyPartyIdentity();          // no-op unless you're actually in a party
   if (screen === "selector") renderSelectorScreen();
   else { renderSheetHeader(); renderContent(); }
 }
@@ -163,9 +164,12 @@ function renderSelectorScreen() {
   const listHtml = savedCharacters.length
     ? savedCharacters.map(c => `
         <div class="char-card" data-open-char="${c.id}">
-          <div>
-            <div class="char-card-name">${esc(c.name)}${c.customBuild ? ` <span class="res-tag" style="background:var(--danger-surface);color:var(--danger-text);">CUSTOM</span>` : ""}</div>
-            <div class="char-card-class">${esc(classLineFor(c))}</div>
+          <div class="recipient-left">
+            <div class="char-avatar">${c.profilePic ? `<img src="${c.profilePic}" alt="">` : c.name.trim().charAt(0).toUpperCase()}</div>
+            <div>
+              <div class="char-card-name">${esc(c.name)}${c.customBuild ? ` <span class="res-tag" style="background:var(--danger-surface);color:var(--danger-text);">CUSTOM</span>` : ""}</div>
+              <div class="char-card-class">${esc(classLineFor(c))}</div>
+            </div>
           </div>
           <button class="char-card-menu" data-char-menu="${c.id}">\u22EF</button>
         </div>
@@ -182,10 +186,8 @@ function renderSelectorScreen() {
     </div>
     <div class="content">${listHtml}</div>
     <div class="selector-actions">
-      <button class="btn-secondary" id="import-char-button">Import</button>
       <button class="btn-primary" id="new-char-button">+ New Character</button>
     </div>
-    <input type="file" id="import-file-input" accept=".json" style="display:none;">
   `;
 
   document.getElementById("party-finder-button").addEventListener("click", openPartyFinder);
@@ -206,38 +208,6 @@ function renderSelectorScreen() {
 
   document.getElementById("new-char-button").addEventListener("click", () => {
     openCharacterCreator();
-  });
-
-  document.getElementById("import-char-button").addEventListener("click", () => {
-    document.getElementById("import-file-input").click();
-  });
-
-  document.getElementById("import-file-input").addEventListener("change", (e) => {
-    const file = e.target.files[0];
-    e.target.value = "";
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      let parsed;
-      try {
-        parsed = JSON.parse(reader.result);
-      } catch (err) {
-        showToast("That file isn't valid JSON");
-        return;
-      }
-      if (!parsed || typeof parsed !== "object" || !parsed.name || !parsed.abilities) {
-        showToast("That doesn't look like a character");
-        return;
-      }
-      // an imported character gets a fresh id so it can't collide with one you already have
-      parsed.id = nextCharacterId();
-      savedCharacters.push(parsed);
-      renderSelectorScreen();
-      showToast("Imported " + parsed.name);
-    };
-    reader.onerror = () => showToast("Couldn't read that file");
-    reader.readAsText(file);
   });
 }
 

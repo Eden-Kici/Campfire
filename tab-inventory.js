@@ -633,7 +633,9 @@ function openItemDetailModal(itemId) {
       `).join("")}
       <div class="breakdown-row"><span>Proficiency</span><span>${atk.proficiency.proficient ? "yes" : "no"}${atk.proficiency.required ? " (needs " + esc(atk.proficiency.required) + ")" : ""}</span></div>
       ${item.properties && item.properties.length ? `<div class="breakdown-row"><span>Properties</span><span>${esc(item.properties.join(", "))}</span></div>` : ""}
-      ${rule.providesAttacks ? "" : `<div class="menu-note">Stowed in ${esc(item.category)}, so it isn't on your Attacks list.</div>`}`;
+      ${rule.providesAttacks ? "" : `<div class="menu-note">Stowed in ${esc(item.category)}, so it isn't on your Attacks list.</div>`}
+      ${toggleLineHtml("item-offhand-switch", "Off-hand weapon", atk.offHand,
+        { hint: atk.suppressedOffHandAbility ? "No ability modifier on damage without Two-Weapon Fighting." : "", style: "margin-top:10px;" })}`;
   }
 
   openModal("full", `
@@ -653,6 +655,14 @@ function openItemDetailModal(itemId) {
     </div>
     ${item.resource ? `<button class="btn-secondary" id="detail-untrack-button">Stop tracking as a resource</button>` : ""}
   `);
+
+  const offHandSwitch = document.getElementById("item-offhand-switch");
+  if (offHandSwitch) offHandSwitch.addEventListener("click", () => {
+    item.offHand = !item.offHand;
+    closeModal();
+    renderContent();
+    openItemDetailModal(itemId);
+  });
 
   const untrack = document.getElementById("detail-untrack-button");
   if (untrack) untrack.addEventListener("click", () => {

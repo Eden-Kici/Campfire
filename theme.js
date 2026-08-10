@@ -29,9 +29,12 @@ const THEME_KEY = "campfire.theme";
 const SETTINGS_KEY = "campfire.settings";
 
 /* App preferences, kept apart from character data so they survive a reset and
-   aren't copied around when a character is exported. */
+   aren't copied around when a character is exported. `username` is the closest
+   thing this POC has to an account -- it's what a party sees for you before
+   you've opened a character, the way a real login would. */
 let settings = {
-  alwaysShowDeathSaves: false
+  alwaysShowDeathSaves: false,
+  username: "Adventurer"
 };
 
 function persistSettings() {
@@ -48,9 +51,17 @@ function loadSettings() {
 function openSettingsModal() {
   openModal("sheet", `
     <div class="modal-heading">Options</div>
+    ${textFieldHtml("setting-username", "Username", settings.username,
+      { hint: "Shown to other players when you join or host a party" })}
     ${toggleLineHtml("setting-death-saves", "Always show death saves", settings.alwaysShowDeathSaves,
       { hint: "Otherwise they appear only at 0 hit points" })}
   `);
+  const usernameInput = document.getElementById("setting-username");
+  usernameInput.addEventListener("blur", () => {
+    settings.username = usernameInput.value.trim() || settings.username;
+    usernameInput.value = settings.username;
+    persistSettings();
+  });
   const toggle = document.getElementById("setting-death-saves");
   toggle.addEventListener("click", () => {
     settings.alwaysShowDeathSaves = !settings.alwaysShowDeathSaves;

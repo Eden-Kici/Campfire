@@ -2,7 +2,7 @@
    CHARACTER TAB
    ============================================================ */
 
-let openSections = { abilityScores: true, savingThrows: true, skills: true, features: true };
+let openSections = { abilityScores: true, savingThrows: true, skills: true, languages: true, features: true };
 let openFeatureCategories = {};
 
 function renderCollapseSection(title, key, bodyHtml) {
@@ -64,6 +64,29 @@ function renderCharacterTab() {
     </div>
   `;
 
+  const choicesHtml = character.pendingChoices.length ? `
+    <div class="collapse-card" style="border:1px solid var(--accent-soft);">
+      <div class="collapse-head" style="cursor:default;"><span>Choices to Make</span></div>
+      <div class="collapse-body open">
+        ${character.pendingChoices.map(p => `
+          <div class="trait-item" data-resolve-choice="${p.id}" style="cursor:pointer;">
+            <div class="trait-name">${esc(p.prompt)}</div>
+            <div class="trait-desc">From ${esc(p.source)}</div>
+            <span class="add-link">Resolve</span>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  ` : "";
+
+  const languagesHtml = `
+    <div class="chip-row">
+      ${character.languages.map(lang => `
+        <div class="chip chip-stat">${esc(lang)}<button class="chip-remove" data-remove-language="${esc(lang)}">✕</button></div>
+      `).join("") || `<div class="empty-hint">None yet</div>`}
+    </div>
+  `;
+
   const featuresHtml = `
     ${Object.keys(character.traits).map(category => `
       <div class="collapse-card">
@@ -79,7 +102,10 @@ function renderCharacterTab() {
             <div class="trait-item" data-feature-view="${esc(category)}|||${index}">
               <div class="trait-name">${esc(t.name)}</div>
               ${t.desc ? `<div class="trait-desc">${esc(t.desc)}</div>` : ""}
-              ${t.effects && t.effects.length ? `<div class="trait-effect">Grants: ${t.effects.map(e => featureEffectSummary(e)).join(", ")}</div>` : ""}
+              ${t.effects && t.effects.length ? `<div class="trait-effect">Grants: ${t.effects.map(e => featureEffectSummary(e, totalLevel(character))).join(", ")}</div>` : ""}
+              ${t.resource && !character.resources.some(r => r.name === t.resource.name) ? `
+                <button class="add-link" data-add-resource-from-feature="${esc(category)}|||${index}">+ Add to Resources</button>
+              ` : ""}
             </div>
           `).join("") || `<div class="empty-hint">Nothing yet</div>`}
         </div>
@@ -88,9 +114,15 @@ function renderCharacterTab() {
   `;
 
   return `
+    ${choicesHtml}
     ${renderCollapseSection("Ability Scores", "abilityScores", abilityScoresHtml)}
     ${renderCollapseSection("Saving Throws", "savingThrows", savingThrowsHtml)}
     ${renderCollapseSection("Skills", "skills", skillsHtml)}
+    <div class="section-head-row" data-section-toggle="languages" style="cursor:pointer;">
+      <div class="section-head">Languages</div>
+      <button class="add-link" id="add-language-button">+ Add</button>
+    </div>
+    ${openSections.languages ? languagesHtml : ""}
     <div class="section-head-row" data-section-toggle="features" style="cursor:pointer;">
       <div class="section-head">Features & Traits</div>
       <button class="add-link" id="add-feature-button">+ Add</button>
@@ -145,6 +177,20 @@ function wireCharacterTab() {
   });
   document.querySelectorAll("[data-edit-skill]").forEach(btn => btn.addEventListener("click", (e) => { e.stopPropagation(); openEditSkillModal(btn.dataset.editSkill); }));
 
+  document.querySelectorAll("[data-resolve-choice]").forEach(row => {
+    row.addEventListener("click", () => openResolveChoiceModal(parseInt(row.dataset.resolveChoice)));
+  });
+
+  const addLanguageButton = document.getElementById("add-language-button");
+  if (addLanguageButton) addLanguageButton.addEventListener("click", (e) => { e.stopPropagation(); openAddLanguageModal(); });
+  document.querySelectorAll("[data-remove-language]").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      character.languages = character.languages.filter(l => l !== btn.dataset.removeLanguage);
+      renderContent();
+    });
+  });
+
   document.querySelectorAll("[data-trait-category]").forEach(head => {
     head.addEventListener("click", (e) => {
       if (e.target.closest("[data-edit-subsection]")) return;
@@ -157,9 +203,28 @@ function wireCharacterTab() {
     btn.addEventListener("click", (e) => { e.stopPropagation(); openEditSubsectionModal(btn.dataset.editSubsection); });
   });
   document.querySelectorAll("[data-feature-view]").forEach(row => {
-    row.addEventListener("click", () => {
+    row.addEventListener("click", (e) => {
+      if (e.target.closest("[data-add-resource-from-feature]")) return;
       const [category, index] = row.dataset.featureView.split("|||");
       openEditFeatureModal(category, parseInt(index));
+    });
+  });
+  document.querySelectorAll("[data-add-resource-from-feature]").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const [category, index] = btn.dataset.addResourceFromFeature.split("|||");
+      const trait = character.traits[category][parseInt(index)];
+      const newId = Math.max(0, ...character.resources.map(r => r.id)) + 1;
+      // trait.resource.max is carried through as-is, flat number or scaling
+      // tiers table alike -- that's what lets the resource's ceiling keep
+      // moving as the character levels, instead of freezing whatever it was
+      // worth on the day it got added
+      character.resources.push({
+        id: newId, name: trait.resource.name, recharge: trait.resource.recharge,
+        current: effectiveResourceMax(character, trait.resource), max: trait.resource.max
+      });
+      renderContent();
+      showToast("Added " + trait.resource.name + " to Resources");
     });
   });
   const addFeatureButton = document.getElementById("add-feature-button");
@@ -345,50 +410,86 @@ function openEditSubsectionModal(category) {
   });
 }
 
-// shared by the feature editor and the active-effect editor; the two differ
-// only in whether "Condition" is an allowed category.
-function renderFeatureEffectsList(container, formEffects, categories) {
+// shared by the feature editor, the active-effect editor, and custom
+// content's per-feature effects list (content.js). `idPrefix` namespaces the
+// DOM ids -- the character tab only ever has one of these lists open at a
+// time so it never needed one, but custom content can have a whole page of
+// feature rows each with their own effects list, and those ids collide
+// without something to tell them apart. Categories differ per caller too:
+// "Condition" is only valid for the active-effect editor.
+function renderFeatureEffectsList(container, formEffects, categories, idPrefix) {
   categories = categories || EFFECT_CATEGORIES_FEATURE;
+  idPrefix = idPrefix || "feature-effect";
   container.innerHTML = formEffects.map((eff, idx) => `
     <div class="feature-effect-row">
       <div class="subcard-head">
         <span>Modifier ${idx + 1}</span>
         <button class="chip-remove" data-remove-effect="${idx}">\u2715</button>
       </div>
-      ${selectFieldHtml("eff-category-" + idx, "Effect Category", categories, eff.category)}
+      ${selectFieldHtml(idPrefix + "-cat-" + idx, "Effect Category", categories, eff.category)}
       <div data-subfields-index="${idx}"></div>
     </div>
   `).join("");
 
   formEffects.forEach((eff, idx) => {
     const subEl = container.querySelector(`[data-subfields-index="${idx}"]`);
-    subEl.innerHTML = effectSubfieldsHtml(eff.category, "feature-effect-" + idx);
-    prefillEffectSubfields(eff, "feature-effect-" + idx);
-    wireConditionField("feature-effect-" + idx, eff.value);
+    subEl.innerHTML = effectSubfieldsHtml(eff.category, idPrefix + "-" + idx, eff.value);
+    prefillEffectSubfields(eff, idPrefix + "-" + idx);
+    wireConditionField(idPrefix + "-" + idx, eff.value);
     wireSelectsIn(subEl);
+    // the four categories with an Amount field can scale by level -- wire
+    // the toggle/tier controls with an accessor that reads and writes this
+    // exact effect's value.amount, wherever formEffects itself lives
+    if (["Ability Score", "Saving Throw", "Skill", "Bonus"].includes(eff.category)) {
+      wireScalingValueFields(idPrefix + "-" + idx + "-amount", {
+        get: () => formEffects[idx].value.amount,
+        set: v => { formEffects[idx].value.amount = v; }
+      });
+    }
   });
 
   formEffects.forEach((eff, idx) => {
-    wireSelect("eff-category-" + idx);
-    document.getElementById("eff-category-" + idx).addEventListener("change", (e) => {
+    wireSelect(idPrefix + "-cat-" + idx);
+    document.getElementById(idPrefix + "-cat-" + idx).addEventListener("change", (e) => {
       formEffects[idx].category = e.target.value;
       formEffects[idx].value = {};
-      renderFeatureEffectsList(container, formEffects, categories);
+      renderFeatureEffectsList(container, formEffects, categories, idPrefix);
     });
   });
   container.querySelectorAll("[data-remove-effect]").forEach(btn => {
     btn.addEventListener("click", () => {
       formEffects.splice(parseInt(btn.dataset.removeEffect), 1);
-      renderFeatureEffectsList(container, formEffects, categories);
+      renderFeatureEffectsList(container, formEffects, categories, idPrefix);
     });
   });
 }
 
-function readFeatureEffectsFromForm(formEffects) {
+function readFeatureEffectsFromForm(formEffects, idPrefix) {
+  idPrefix = idPrefix || "feature-effect";
   return formEffects.map((eff, idx) => ({
     category: eff.category,
-    value: readEffectValueFromForm(eff.category, "feature-effect-" + idx)
+    value: readEffectValueFromForm(eff.category, idPrefix + "-" + idx, eff.value)
   }));
+}
+
+/* Manual management, same as any other line on a paper sheet -- a language
+   doesn't have to arrive through a resolved choice. comboFieldHtml offers
+   the SRD list as suggestions but takes free text just as happily. */
+function openAddLanguageModal() {
+  openModal("full", `
+    <div class="modal-heading">Add Language</div>
+    ${comboFieldHtml("add-language-input", "Language", "e.g. Draconic", "")}
+    <button class="btn-primary" id="add-language-confirm" style="margin-top:14px;">Add Language</button>
+  `);
+  wireCombo("add-language-input", SRD_LANGUAGES.filter(l => !character.languages.includes(l)));
+  document.getElementById("add-language-confirm").addEventListener("click", () => {
+    const name = document.getElementById("add-language-input").value.trim();
+    if (!name) { showToast("Enter a language"); return; }
+    if (character.languages.includes(name)) { showToast("Already known"); return; }
+    character.languages.push(name);
+    closeModal();
+    renderContent();
+  });
 }
 
 function openAddFeatureOrSectionModal() {

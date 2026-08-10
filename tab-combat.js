@@ -202,7 +202,7 @@ function renderCombatTab() {
         <div class="atk-row" data-atk-detail="${weapon.id}">
           <div class="atk-icon">${icon}</div>
           <div style="flex:1;min-width:0;">
-            <div class="atk-name">${esc(weapon.name)}${atk.proficiency.proficient ? "" : `<span class="atk-warn" title="Not proficient">!</span>`}</div>
+            <div class="atk-name">${esc(weapon.name)}${atk.proficiency.proficient ? "" : `<span class="atk-warn" title="Not proficient">!</span>`}${atk.offHand ? `<span class="res-tag" style="margin-left:6px;">OFF-HAND</span>` : ""}</div>
             <div class="atk-range">${esc([
               weapon.range,
               atk.damage.map(d => d.type).filter(Boolean).join(" + "),
@@ -774,7 +774,7 @@ function openEffectDetailModal(effectId) {
     ${exhaustionBlockHtml(group)}
     ${modifiers.length ? `
       <div class="breakdown-subhead">Modifiers</div>
-      ${modifiers.map(e => `<div class="breakdown-row"><span>${esc(e.category)}</span><span>${esc(effectSummaryLabel(e))}</span></div>`).join("")}
+      ${modifiers.map(e => `<div class="breakdown-row"><span>${esc(e.category)}</span><span>${esc(effectSummaryLabel(e, totalLevel(character)))}</span></div>`).join("")}
     ` : `<div class="empty-hint">No mechanical effect — this is a reminder only.</div>`}
     <button class="btn-primary" id="remove-effect-button" style="background:var(--danger-surface);color:var(--danger-text);">Remove Effect</button>
   `);
@@ -821,10 +821,22 @@ function openAddResourceModal() {
 
 function openResourceDetailModal(resourceId) {
   const r = character.resources.find(x => x.id == resourceId);
+  // added from a feature whose uses scale by level -- max is a tiers table,
+  // not a plain number, so it's shown as computed with an optional override
+  // rather than a plain editable field (same derived-plus-override shape as
+  // proficiency bonus and every skill/save on the sheet)
+  const scaling = r.max && typeof r.max === "object";
+  const effective = effectiveResourceMax(character, r);
+  let overrideOn = r.maxOverride !== undefined && r.maxOverride !== null;
+
   openModal("sheet", `
     <div class="modal-heading">Edit Resource</div>
     ${textFieldHtml("edit-res-name", "Name", r.name)}
-    ${numberFieldHtml("edit-res-max", "Max Uses", r.max)}
+    ${scaling ? `
+      <div class="breakdown-row"><span>Max Uses (scales by level)</span><span>${effective}</span></div>
+      ${toggleLineHtml("res-max-override-switch", "Override the scaled max", overrideOn)}
+      <div id="res-max-override-wrap">${overrideOn ? numberFieldHtml("edit-res-max-override", "Max Uses", r.maxOverride != null ? r.maxOverride : effective) : ""}</div>
+    ` : numberFieldHtml("edit-res-max", "Max Uses", r.max)}
     ${rechargeFieldHtml("edit-res", r.recharge)}
     <div class="btn-row-2">
       <button class="btn-primary" id="save-edit-res-button">Save Changes</button>
@@ -832,9 +844,25 @@ function openResourceDetailModal(resourceId) {
     </div>
   `);
   wireRechargeField("edit-res");
+
+  if (scaling) {
+    const switchEl = document.getElementById("res-max-override-switch");
+    const wrap = document.getElementById("res-max-override-wrap");
+    switchEl.addEventListener("click", () => {
+      overrideOn = !overrideOn;
+      switchEl.classList.toggle("on", overrideOn);
+      wrap.innerHTML = overrideOn ? numberFieldHtml("edit-res-max-override", "Max Uses", effective) : "";
+    });
+  }
+
   document.getElementById("save-edit-res-button").addEventListener("click", () => {
     r.name = document.getElementById("edit-res-name").value.trim() || r.name;
-    r.max = parseInt(document.getElementById("edit-res-max").value) || r.max;
+    if (scaling) {
+      if (overrideOn) r.maxOverride = parseInt(document.getElementById("edit-res-max-override").value) || effective;
+      else delete r.maxOverride;
+    } else {
+      r.max = parseInt(document.getElementById("edit-res-max").value) || r.max;
+    }
     r.recharge = readRechargeValue("edit-res");
     closeModal();
     renderContent();
@@ -963,6 +991,9 @@ function openAttackDetailModal(weaponId) {
     ${atk.versatile ? `
       ${toggleLineHtml("atk-grip-switch", "Wielding two-handed", atk.twoHanded,
         { note: "(" + atk.versatile + ")", style: "margin-top:10px;" })}` : ""}
+    ${toggleLineHtml("atk-offhand-switch", "Off-hand weapon", atk.offHand,
+      { hint: atk.suppressedOffHandAbility ? "No ability modifier on damage without Two-Weapon Fighting." : (atk.offHand ? "Two-Weapon Fighting adds it back to damage." : ""),
+        style: "margin-top:10px;" })}
 
     <div class="breakdown-subhead">To Hit</div>
     ${breakdownRowsHtml(atk.toHitSources)}
@@ -988,6 +1019,13 @@ function openAttackDetailModal(weaponId) {
     weapon.twoHanded = !weapon.twoHanded;
     gripSwitch.classList.toggle("on", weapon.twoHanded);
     renderContent();
+  });
+
+  document.getElementById("atk-offhand-switch").addEventListener("click", () => {
+    weapon.offHand = !weapon.offHand;
+    closeModal();
+    renderContent();
+    openAttackDetailModal(weaponId);
   });
 
   // a weapon IS an inventory item, so editing one is editing that item -- the

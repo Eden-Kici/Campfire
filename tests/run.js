@@ -17,6 +17,7 @@ const SUITES = [
   ["themes", "./themes.test.js"],
   ["escaping", "./escaping.test.js"],
   ["persistence", "./persistence.test.js"],
+  ["content-data", "./content-data.test.js"],
   ["structure", "./structure.test.js"],
   ["smoke", "./smoke.test.js"]
 ];

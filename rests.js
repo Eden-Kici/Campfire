@@ -57,7 +57,16 @@ function applyRest(kind, diceSpend) {
     if (spent.dice) summary.push(plural(spent.dice, "hit die").replace("dies", "dice") + " for " + spent.healed + " HP");
   }
 
-  let resources = character.resources.filter(r => restoreOnRest(r, isLong)).length;
+  // a level-scaling resource carries its max as a tiers table rather than a
+  // plain number (see effectiveResourceMax) -- restoreOnRest needs a real
+  // number to restore toward, so it's resolved into a shim the same way an
+  // item-backed resource already gets one just below
+  let resources = character.resources.filter(r => {
+    const shim = { recharge: r.recharge, current: r.current, max: effectiveResourceMax(character, r) };
+    const changed = restoreOnRest(shim, isLong);
+    r.current = shim.current;
+    return changed;
+  }).length;
   // items tracked as resources recharge through the same rule, writing back
   // to the quantity that is their count
   character.inventory.forEach(item => {
@@ -125,7 +134,6 @@ function applyRest(kind, diceSpend) {
 // for app-level actions, and these mark out the shape of it before the features
 // behind them exist.
 const MENU_STUBS = [
-  { label: "Party", hint: "Not connected" },
   { label: "Export Character", hint: "" },
   { label: "Dice History", hint: "" },
   { label: "Help & Rules", hint: "" }
@@ -189,18 +197,66 @@ function openLongRestModal() {
 
 let levelUpState = null;
 
+/* A class's subclasses plus any Custom Content subclasses authored for it
+   (content.js) -- customContent.subclasses entries carry `.forClass`, the
+   class name they attach to, rather than living nested inside the class the
+   way SRD subclasses and a duplicated custom class's own subclasses do. That
+   split is what lets a custom subclass attach to an SRD class without
+   forking the whole class into Custom Content just to add one. Works for
+   any class found by name, SRD or custom, so this is the one place both
+   "which class" question gets answered from. */
+function subclassesForClass(className) {
+  const cls = SRD_CLASSES.find(c => c.name === className) ||
+    (typeof customContent !== "undefined" ? customContent.classes.find(c => c.name === className) : null);
+  const own = (cls && cls.subclasses) || [];
+  const custom = (typeof customContent !== "undefined" ? customContent.subclasses : [])
+    .filter(sc => sc.forClass === className);
+  return own.concat(custom);
+}
+
 /* Which features a class hands over at a particular level, including its
    subclass's. Used both when creating a character at level 1 and when
-   levelling up. */
+   levelling up. Returns the raw SRD feature objects rather than stripping
+   them to {name, desc} -- a feature with a `.choice` descriptor needs that
+   preserved long enough for grantFeatures() to notice it. Callers that only
+   want display text strip it themselves. */
 function featuresAtLevel(className, subclassName, level) {
   const cls = SRD_CLASSES.find(c => c.name === className);
   if (!cls) return [];
 
   const own = (cls.features || []).filter(f => f.level === level);
-  const subclass = (cls.subclasses || []).find(sub => sub.name === subclassName);
+  const subclass = subclassesForClass(className).find(sub => sub.name === subclassName);
   const fromSubclass = subclass ? (subclass.features || []).filter(f => f.level === level) : [];
 
-  return own.concat(fromSubclass).map(f => ({ name: f.name, desc: f.desc }));
+  return own.concat(fromSubclass);
+}
+
+/* Turns a `.choice` descriptor on a raw SRD feature into a pendingChoices
+   entry, or returns null for a feature that doesn't have one -- most don't.
+   `traitCategory` + `featureName` are how a resolved answer finds its way
+   back to annotate the feature it came from (see applyChoiceResolution in
+   choices.js). */
+function pendingChoiceFor(feature, traitCategory) {
+  if (!feature.choice) return null;
+  return {
+    source: feature.name,
+    traitCategory,
+    featureName: feature.name,
+    kind: feature.choice.kind,
+    prompt: feature.choice.prompt || ("Choose for " + feature.name),
+    count: feature.choice.count || 1
+  };
+}
+
+// shared by the creator (building a level-1 character) and levelling up --
+// one place decides whether a granted feature owes the player a choice
+function grantPendingChoice(character, feature, traitCategory) {
+  const choice = pendingChoiceFor(feature, traitCategory);
+  if (!choice) return;
+  const already = character.pendingChoices.some(p => p.featureName === choice.featureName && p.traitCategory === choice.traitCategory);
+  if (already) return;
+  choice.id = Math.max(0, ...character.pendingChoices.map(p => p.id)) + 1;
+  character.pendingChoices.push(choice);
 }
 
 function grantFeatures(character, features) {
@@ -208,7 +264,17 @@ function grantFeatures(character, features) {
   if (!character.traits["Class Features"]) character.traits["Class Features"] = [];
   features.forEach(feature => {
     const already = character.traits["Class Features"].some(t => t.name === feature.name);
-    if (!already) character.traits["Class Features"].push(feature);
+    if (!already) {
+      // carries .effects and .resource through from the raw SRD feature, the
+      // same as the creator's own asTraitEntry -- a level-up-granted feature
+      // (Action Surge, Channel Divinity) needs the same treatment a level-1
+      // one gets, or the two paths quietly diverge
+      const entry = { name: feature.name, desc: feature.desc };
+      if (feature.effects) entry.effects = feature.effects;
+      if (feature.resource) entry.resource = Object.assign({ name: feature.name }, feature.resource);
+      character.traits["Class Features"].push(entry);
+    }
+    grantPendingChoice(character, feature, "Class Features");
   });
 }
 
@@ -477,20 +543,38 @@ function applyLevelUp() {
   const entry = target.isNew
     ? character.classes[character.classes.length - 1]
     : target.entry;
+
+  // captured before granting features, so only choices THIS level-up created
+  // get chained into -- an older unresolved one stays on the banner rather
+  // than being swept into a flow the player didn't ask for right now
+  const beforeChoiceIds = character.pendingChoices.map(p => p.id);
   grantFeatures(character, featuresAtLevel(entry.name, entry.subclass, entry.level));
+  const newChoiceIds = character.pendingChoices.filter(p => !beforeChoiceIds.includes(p.id)).map(p => p.id);
 
   // a level never reduces your maximum, however the dice fell
   const gainedHitPoints = Math.max(1, hp.total);
   character.baseMaxHP += gainedHitPoints;
   character.hp.current += gainedHitPoints;
 
-  closeModal();
-  renderContent();
-  renderSheetHeader();
-  showToast("Level " + totalLevel(character) + " — " + gainedHitPoints + " hit points");
+  function finishLevelUp() {
+    closeModal();
+    renderContent();
+    renderSheetHeader();
+    showToast("Level " + totalLevel(character) + " — " + gainedHitPoints + " hit points");
+  }
+
+  // resolved right here, in the same flow that granted them -- not left for
+  // the Character tab banner to nag about after the fact
+  if (newChoiceIds.length) resolveChoicesThen(newChoiceIds, finishLevelUp);
+  else finishLevelUp();
+}
+
+function customContentTotal() {
+  return customContent.races.length + customContent.classes.length + customContent.backgrounds.length + customContent.items.length;
 }
 
 function openAppMenu() {
+  const contentCount = customContentTotal();
   openModal("drawer", `
     <div class="modal-heading">Campfire</div>
 
@@ -499,9 +583,11 @@ function openAppMenu() {
     <button class="drawer-item" id="menu-long-rest">Long Rest<span class="drawer-hint">8 hours</span></button>
 
     <div class="drawer-section">App</div>
+    <button class="drawer-item" id="menu-party">Party<span class="drawer-hint">${esc(party.status === "none" ? "Not connected" : (party.status === "hosting" ? "Hosting" : "Connected"))}</span></button>
     ${MENU_STUBS.map(item => `
       <button class="drawer-item" data-stub="${esc(item.label)}">${esc(item.label)}<span class="drawer-hint">${item.hint}</span></button>
     `).join("")}
+    <button class="drawer-item" id="menu-content">Manage Content<span class="drawer-hint">${contentCount ? contentCount + " custom" : ""}</span></button>
     <button class="drawer-item" id="menu-theme">Theme<span class="drawer-hint">${esc((THEMES.find(t => t.value === theme.base) || {}).label || "")}</span></button>
     <button class="drawer-item" id="menu-options">Options</button>
 
@@ -513,6 +599,8 @@ function openAppMenu() {
   `);
   document.getElementById("menu-short-rest").addEventListener("click", openShortRestModal);
   document.getElementById("menu-long-rest").addEventListener("click", openLongRestModal);
+  document.getElementById("menu-party").addEventListener("click", openPartyFinder);
+  document.getElementById("menu-content").addEventListener("click", openContentManager);
   document.querySelectorAll("[data-stub]").forEach(button => {
     button.addEventListener("click", () => { closeModal(); showToast(button.dataset.stub + " isn't built yet"); });
   });

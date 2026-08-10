@@ -43,6 +43,41 @@ module.exports = function (suite) {
   c.weaponProficiencies = [HOSTILE];
   c.categoryRules[HOSTILE] = { countsWeight: true, appliesEffects: true, providesAttacks: true };
   c.inventory[0].category = HOSTILE;
+  c.languages = [HOSTILE];
+  c.pendingChoices = [
+    { id: 900, source: HOSTILE, traitCategory: "Race Traits", featureName: HOSTILE, kind: "language", prompt: HOSTILE, count: 1 }
+  ];
+
+  // custom content's feature-row extras (choice prompt, resource fields) are
+  // a new writable surface this pass added -- poison those the same way
+  app.customContent.races.push({
+    id: 900, name: HOSTILE,
+    features: [{ name: HOSTILE, desc: HOSTILE, choice: { kind: "language", count: 1, prompt: HOSTILE },
+      resource: { max: 1, recharge: { on: HOSTILE, amount: "all" } }, effects: [{ category: "Bonus", value: { stat: "AC", amount: 1 } }] }],
+    skillChoice: null, subraces: [{ name: HOSTILE, features: [{ name: HOSTILE, desc: HOSTILE }] }]
+  });
+  app.customContent.classes.push({
+    id: 900, name: HOSTILE, description: HOSTILE, hitDie: "d8", mainAbility: "Strength", saves: [], armorProf: HOSTILE, weaponProf: HOSTILE,
+    skillChoices: { count: 0, options: [] },
+    features: [{ level: 1, name: HOSTILE, desc: HOSTILE, choice: { kind: "skill", count: 1, prompt: HOSTILE } }],
+    subclasses: [{ name: HOSTILE, features: [{ level: 3, name: HOSTILE, desc: HOSTILE }] }]
+  });
+  app.customContent.backgrounds.push({
+    id: 900, name: HOSTILE, desc: HOSTILE, skills: [],
+    feature: { name: HOSTILE, desc: HOSTILE, choice: { kind: "cantrip", count: 1, prompt: HOSTILE } }
+  });
+  // a custom subclass attaches to an existing class by name and is the one
+  // piece of Custom Content actually read outside the manager itself -- the
+  // character creator's own Subclass step -- so its text needs checking there too
+  app.customContent.subclasses.push({
+    id: 900, forClass: "Fighter", name: HOSTILE,
+    features: [{ level: 3, name: HOSTILE, desc: HOSTILE }]
+  });
+  app.customContent.items.push({ id: 900, name: HOSTILE, weight: 1, description: HOSTILE, type: "gear" });
+  // a standalone Custom feature -- no race/class/background wrapper around it
+  app.customContent.features.push({
+    id: 900, name: HOSTILE, desc: HOSTILE, choice: { kind: "language", count: 1, prompt: HOSTILE }
+  });
 
   const survived = html => typeof html === "string" && html.includes("<img src=x");
 
@@ -75,8 +110,11 @@ module.exports = function (suite) {
     ["character editor", () => app.openCharacterEditorModal()],
     ["category editor", () => app.openEditCategoryModal(c.inventory[0].category)],
     ["app menu", () => app.openAppMenu()],
+    ["resolve choice", () => app.openResolveChoiceModal(900)],
+    ["add language", () => app.openAddLanguageModal()],
     ["short rest", () => app.openShortRestModal()],
-    ["give item", () => app.openGiveToModal(c.inventory[0], 1)]
+    ["give item", () => app.openGiveToModal(c.inventory[0], 1)],
+    ["attack detail off-hand toggle", () => weapon && app.openAttackDetailModal(weapon.id)]
   ];
 
   cases.forEach(([name, open]) => {
@@ -89,6 +127,62 @@ module.exports = function (suite) {
       suite.ok(name, false, err.message);
     }
   });
+
+  /* The content manager and the character creator both open a blank modal
+     shell and redraw real content into it afterward via a direct DOM write --
+     openModal() only ever captures that first, empty call, so running these
+     through the "modals" loop above would silently check nothing. The state
+     each open*Form() sets up is real, though, so calling the plain
+     Html()-returning function straight after gets the actual markup. */
+  suite.section("content manager screens (checked directly -- see comment above)");
+  app.openRaceForm(900);
+  suite.ok("custom race form", !survived(app.raceFormHtml()), "raw markup survived");
+  app.openClassForm(900);
+  suite.ok("custom class form", !survived(app.classFormHtml()), "raw markup survived");
+  app.openBackgroundForm(900);
+  suite.ok("custom background form", !survived(app.backgroundFormHtml()), "raw markup survived");
+  app.openSubclassForm(900);
+  suite.ok("custom subclass form", !survived(app.subclassFormHtml()), "raw markup survived");
+  app.openFeatureForm(900);
+  suite.ok("custom feature form", !survived(app.featureFormHtml()), "raw markup survived");
+  app.contentScreen = "list";
+  app.contentCategoryFilter = "all";
+  app.contentCategorySearch = "";
+  suite.ok("content manager list", !survived(app.contentManagerHtml()), "raw markup survived");
+
+  // the unified category browser (SRD + Custom merged) renders a custom
+  // entry's name, its "for <class>" subtitle on subclasses, and search/filter
+  // state -- all real writable surfaces now that the two sections were merged
+  ["races", "classes", "subclasses", "backgrounds", "features", "gear"].forEach(key => {
+    app.contentSrdCategory = key;
+    app.contentCategoryFilter = "all";
+    app.contentCategorySearch = "";
+    app.contentScreen = "category";
+    suite.ok("category browser: " + key, !survived(app.contentCategoryHtml()), "raw markup survived");
+  });
+  // the search box itself is user-typed text, echoed back into its own value --
+  // checked both inside a category and at the top-level Manage Content screen,
+  // since search now works from both places over the same shared state
+  app.contentSrdCategory = "races";
+  app.contentCategorySearch = HOSTILE;
+  suite.ok("category browser search box", !survived(app.contentCategoryHtml()), "raw markup survived");
+  app.contentScreen = "list";
+  suite.ok("Manage Content search box + cross-category results", !survived(app.contentListHtml()), "raw markup survived");
+  app.contentCategorySearch = "";
+
+  // the inline "are you sure" delete confirmation echoes the entry's name
+  // back into its own row rather than a separate modal
+  app.contentPendingDelete = { catKey: "races", source: "custom", ref: 900 };
+  suite.ok("inline delete confirmation", !survived(app.contentResultsHtml("races")), "raw markup survived");
+  app.contentPendingDelete = null;
+
+  // the character creator does the same "blank modal, then a direct DOM
+  // write" thing content manager screens do, so its Subclass step needs the
+  // same direct-call treatment -- this is the one creator screen that can
+  // now carry Custom Content text (subclassesForClass merges it in)
+  app.openCharacterCreator();
+  app.creatorState.charClass = "Fighter";
+  suite.ok("creator subclass step", !survived(app.subclassStepHtml(1, 5)), "raw markup survived");
 
   suite.section("the roll window");
   try {
