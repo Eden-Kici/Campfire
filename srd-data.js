@@ -517,9 +517,57 @@ const ITEM_RARITIES = ["Common", "Uncommon", "Rare", "Very Rare", "Legendary", "
    background. Same shape as any other feature (name/desc, optional
    effects/choice/resource), plus `prereq`: free text rather than modeled
    data, since prerequisites range from an ability score minimum to "must be
-   a spellcaster" to nothing at all. Empty until the actual pass over
-   5esrd.com's feat list (SRD and third-party alike). */
-const SRD_FEATS = [];
+   a spellcaster" to nothing at all.
+
+   The 5.1 SRD only released one feat as Open Game Content -- Grappler,
+   marked `official: true` below, same tagging convention as SRD_CONDITIONS.
+   Every other feat that could plausibly be built is 5esrd.com's own
+   third-party database, which runs to 1,385 entries across dozens of
+   publishers -- not a bounded list the way Conditions was. Rather than
+   import that wholesale, the rest here is a curated set from "Fifth Edition
+   Feats" (Total Party Kill Games, 2016): the one sourcebook in that database
+   that reads as a generic, table-agnostic feat expansion rather than
+   setting-specific splatbook content, so its feats are broadly useful
+   regardless of campaign. More can be added the same way later.
+
+   Mechanics: only bullets that map cleanly onto this app's existing effect
+   categories got one -- a flat, unconditional bonus (Alertness, Blocking
+   Expertise) or a real choice (Acrobatic's Strength-or-Dexterity pick, same
+   pattern as a Fighting Style option). Bullets that are conditional on
+   something the sheet has no concept of (a specific enemy type, "while you
+   can hear but not see," negating a crit on a die roll) are recorded as
+   text only, same standard as Protection in FIGHTING_STYLES -- forcing a
+   generic effect onto a narrower rule would misrepresent it. Combat
+   Reflexes is the clearest case: "advantage on opportunity attacks" is not
+   the same as advantage on attack rolls generally, and the effect system
+   has no way to scope it, so it stays text-only rather than overgrant. */
+const SRD_FEATS = [
+  { name: "Grappler", official: true, prereq: "Strength 13 or higher",
+    desc: "You have advantage on attack rolls against a creature you are grappling. You can also use your action to try to pin a creature grappled by you -- make another grapple check, and on a success you're both restrained until the grapple ends." },
+  { name: "Acrobatic", official: false, prereq: "Dexterity 13+, Acrobatics proficiency",
+    desc: "Your Strength or Dexterity score (choose one) increases by 1. You gain expertise with Acrobatics, can stand from prone by spending only 5 feet of movement instead of half your speed, and once per short rest can gain advantage on a Dexterity-based skill check.",
+    choice: { kind: "custom", count: 1, prompt: "Choose Strength or Dexterity to increase by 1",
+      options: [
+        { label: "Strength +1", effects: [{ category: "Ability Score", value: { ability: "STR", amount: 1 } }] },
+        { label: "Dexterity +1", effects: [{ category: "Ability Score", value: { ability: "DEX", amount: 1 } }] }
+      ] } },
+  { name: "Alertness", official: false, prereq: "Perception proficiency",
+    desc: "You have a +2 bonus to initiative. You are never surprised unless stunned or unconscious, and enemies never gain advantage attacking you from stealth.",
+    effects: [{ category: "Bonus", value: { stat: "Initiative", amount: 2 } }] },
+  { name: "Athletic", official: false, prereq: "Strength and Constitution 13+, Athletics proficiency",
+    desc: "You gain expertise with Athletics, can climb at your full speed instead of half, can make a running jump after moving only 5 feet instead of 10, and once per short rest can gain advantage on a Strength- or Constitution-based skill check." },
+  { name: "Blind-Fight", official: false, prereq: "Wisdom 13+, Perception proficiency",
+    desc: "As long as you can hear an opponent you can't see, it gets no advantage attacking you and you suffer no disadvantage attacking it. You can make a Perception check to locate an unseen target within 30 feet, at disadvantage beyond that." },
+  { name: "Bodyguard", official: false, prereq: "Shield proficiency, Combat Reflexes",
+    desc: "You can grant your shield's AC bonus to an adjacent ally instead of yourself. When an adjacent ally is attacked, you can use your reaction to impose disadvantage on the attack, or to redirect it to yourself instead." },
+  { name: "Combat Reflexes", official: false, prereq: "Dexterity 13+",
+    desc: "You can make a number of opportunity attacks per round equal to your Dexterity modifier (minimum 1), and you have advantage on all of them." },
+  { name: "Blocking Expertise", official: false, prereq: "Shield proficiency",
+    desc: "Your Strength score increases by 1. While wielding a shield, a critical hit against you has a 50% chance to be treated as a normal hit instead.",
+    effects: [{ category: "Ability Score", value: { ability: "STR", amount: 1 } }] },
+  { name: "Beast Slayer", official: false, prereq: "Wisdom 13+, Nature proficiency",
+    desc: "You gain +1 to attack rolls against beasts and +1 AC against their attacks, your proficiency bonus applies to Survival checks made to track beasts, and your critical threat range against them increases by 1." }
+];
 
 /* Magic items reuse the mundane item shape (weapon / armour / gear) with two
    extra optional fields: `rarity` (one of ITEM_RARITIES) and `attunement`

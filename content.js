@@ -550,6 +550,7 @@ function conditionDetailHtml(cond) {
 function featureDetailHtml(f) {
   return `
     <div class="modal-heading">${esc(f.name)}</div>
+    ${f.official === false ? `<div class="breakdown-source" style="margin-bottom:6px;">Third-party (not core SRD)</div>` : ""}
     ${f.prereq ? `<div class="breakdown-source" style="margin-bottom:6px;">Prerequisite: ${esc(f.prereq)}</div>` : ""}
     <div class="trait-desc" style="margin:10px 0;">${esc(f.desc)}</div>
     <button class="btn-primary" id="content-duplicate-button" style="margin-top:14px;">Duplicate to Custom</button>
