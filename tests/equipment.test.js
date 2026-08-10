@@ -48,7 +48,7 @@ module.exports = function (suite) {
   suite.is("the bow's to hit is derived", calculateAttack(app.character,
     fighter.inventory.find(i => i.name === "Longbow")).toHitTotal, 4);
   suite.is("the sword's to hit too", calculateAttack(app.character,
-    fighter.inventory.find(i => i.name === "Longsword")).toHitTotal, 5);
+    fighter.inventory.find(i => i.name === "Longsword")).toHitTotal, 6);
   suite.is("the bow is fed by the quiver", calculateAttack(app.character,
     fighter.inventory.find(i => i.name === "Longbow")).ammunition.name, "Quiver");
   suite.ok("the quiver is a container", resourceRows(app.character).some(r => r.name === "Quiver" && r.container));

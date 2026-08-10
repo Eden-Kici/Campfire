@@ -561,11 +561,12 @@ function featureDetailHtml(f) {
 function raceDetailHtml(race) {
   return `
     <div class="modal-heading">${esc(race.name)}</div>
+    ${race.official === false ? `<div class="breakdown-source" style="margin-bottom:6px;">Third-party (not core SRD)</div>` : ""}
     <div class="breakdown-subhead">Features</div>
     ${race.features.map(featureRowHtml).join("")}
     ${race.skillChoice ? `<div class="item-effect" style="margin-top:8px;">Grants ${race.skillChoice.count} bonus skill ${race.skillChoice.count === 1 ? "proficiency" : "proficiencies"} from: ${esc(race.skillChoice.options.join(", "))}</div>` : ""}
     ${(race.subraces || []).map(sr => `
-      <div class="breakdown-subhead" style="margin-top:14px;">${esc(sr.name)}</div>
+      <div class="breakdown-subhead" style="margin-top:14px;">${esc(sr.name)}${sr.official === false ? ` <span class="res-tag" style="background:var(--control-raised);color:var(--text-dim);">3PP</span>` : ""}</div>
       ${sr.features.map(featureRowHtml).join("")}
     `).join("")}
     <button class="btn-primary" id="content-duplicate-button" style="margin-top:14px;">Duplicate to Custom</button>

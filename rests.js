@@ -238,7 +238,7 @@ function featuresAtLevel(className, subclassName, level) {
    choices.js). */
 function pendingChoiceFor(feature, traitCategory) {
   if (!feature.choice) return null;
-  return {
+  const pending = {
     source: feature.name,
     traitCategory,
     featureName: feature.name,
@@ -246,6 +246,16 @@ function pendingChoiceFor(feature, traitCategory) {
     prompt: feature.choice.prompt || ("Choose for " + feature.name),
     count: feature.choice.count || 1
   };
+  // "custom" is the one kind whose options live on the granting feature
+  // itself (content.js's author-written choices, and now a couple of SRD
+  // race features) rather than in a static list -- carry them along, or
+  // choiceOptionsFor()/applyChoiceResolution() (choices.js) have nothing to
+  // resolve against. creatorPendingChoices() (creator.js) already did this
+  // via a blanket Object.assign(...feature.choice); this is the same fix
+  // for the level-up/grantFeatures path, which builds the pending entry by
+  // hand and quietly dropped it.
+  if (feature.choice.kind === "custom") pending.options = feature.choice.options || [];
+  return pending;
 }
 
 // shared by the creator (building a level-1 character) and levelling up --
