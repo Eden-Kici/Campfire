@@ -268,6 +268,7 @@ function classStepHtml(stepNum, totalSteps) {
       <div class="breakdown-row"><span>Saving Throws</span><span>${cls.saves.join(", ")}</span></div>
       <div class="breakdown-row"><span>Armor</span><span>${cls.armorProf}</span></div>
       <div class="breakdown-row"><span>Weapons</span><span>${cls.weaponProf}</span></div>
+      ${cls.toolProf ? `<div class="breakdown-row"><span>Tools</span><span>${cls.toolProf}</span></div>` : ""}
       <div class="breakdown-subhead">Class Features</div>
       ${cls.features.map(featureRowHtml).join("")}
     ` : ""}
@@ -720,7 +721,8 @@ function buildCharacterFromCreator() {
     "Feats": [],
     "Proficiencies": cls ? [
       { name: "Armor", desc: cls.armorProf },
-      { name: "Weapons", desc: cls.weaponProf }
+      { name: "Weapons", desc: cls.weaponProf },
+      ...(cls.toolProf ? [{ name: "Tools", desc: cls.toolProf }] : [])
     ] : []
   };
 

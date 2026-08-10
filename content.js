@@ -587,6 +587,7 @@ function classDetailHtml(cls) {
     <div class="breakdown-row"><span>Saving Throws</span><span>${esc(cls.saves.join(", "))}</span></div>
     <div class="breakdown-row"><span>Armor</span><span>${esc(cls.armorProf)}</span></div>
     <div class="breakdown-row"><span>Weapons</span><span>${esc(cls.weaponProf)}</span></div>
+    ${cls.toolProf ? `<div class="breakdown-row"><span>Tools</span><span>${esc(cls.toolProf)}</span></div>` : ""}
     <div class="breakdown-row"><span>Skill Choices</span><span>${cls.skillChoices.count} of ${cls.skillChoices.options.length}</span></div>
     <div class="breakdown-subhead">Features</div>
     ${cls.features.map(leveledFeatureRowHtml).join("")}

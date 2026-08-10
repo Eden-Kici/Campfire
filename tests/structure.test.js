@@ -27,7 +27,12 @@ module.exports = function (suite) {
 
   suite.section("the load order");
   suite.is("reference data comes first", listed[0], "srd-data.js");
-  suite.is("then the character", listed[1], "character-data.js");
+  const refDataFiles = listed.filter(f => /^srd-/.test(f));
+  const afterRefData = listed[refDataFiles.length];
+  suite.ok("every srd-*.js file loads as one contiguous block up front",
+    listed.slice(0, refDataFiles.length).every(f => /^srd-/.test(f)),
+    "found a non-reference-data file inside the srd-*.js block: " + listed.slice(0, refDataFiles.length).join(", "));
+  suite.is("then the character, right after the reference data block", afterRefData, "character-data.js");
   suite.is("and app.js starts everything last", listed[listed.length - 1], "app.js");
 
   suite.section("no two files declare the same name");

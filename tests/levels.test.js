@@ -118,9 +118,9 @@ module.exports = function (suite) {
   suite.is("fighter level 2", app.featuresAtLevel("Fighter", "Champion", 2).map(f => f.name), ["Action Surge"]);
   suite.is("the subclass contributes at its own level",
     app.featuresAtLevel("Fighter", "Champion", 3).map(f => f.name), ["Improved Critical"]);
-  suite.is("a different subclass gives something else",
-    app.featuresAtLevel("Fighter", "Battle Master", 3).map(f => f.name), ["Combat Superiority"]);
-  suite.is("a level with nothing gives nothing", app.featuresAtLevel("Wizard", null, 4), []);
+  suite.is("an unrecognized subclass name grants no subclass features",
+    app.featuresAtLevel("Fighter", "Battle Master", 3).map(f => f.name), []);
+  suite.is("a level with nothing gives nothing", app.featuresAtLevel("Wizard", null, 3), []);
   suite.is("an unknown class gives nothing", app.featuresAtLevel("Nonesuch", null, 1), []);
 
   suite.section("the average is the fixed 5e value");

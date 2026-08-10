@@ -552,6 +552,7 @@ function openClassForm(id) {
     saves: (src && src.saves || []).slice(),
     armorProf: (src && src.armorProf) || "",
     weaponProf: (src && src.weaponProf) || "",
+    toolProf: (src && src.toolProf) || "",
     skillChoices: {
       count: (src && src.skillChoices && src.skillChoices.count) || 1,
       options: (src && src.skillChoices && src.skillChoices.options ? src.skillChoices.options : []).slice()
@@ -581,6 +582,7 @@ function classFormHtml() {
 
     ${textFieldHtml("cf-armor", "Armor Proficiency", s.armorProf, { placeholder: "e.g. Light armor" })}
     ${textFieldHtml("cf-weapon", "Weapon Proficiency", s.weaponProf, { placeholder: "e.g. Simple weapons" })}
+    ${textFieldHtml("cf-tools", "Tool Proficiency", s.toolProf, { placeholder: "e.g. Thieves' tools (optional)" })}
 
     ${numberFieldHtml("cf-sc-count", "Skill Choices", s.skillChoices.count, { min: 0, max: ALL_SKILL_NAMES.length })}
     ${fieldLabelHtml("From")}
@@ -698,6 +700,7 @@ function wireClassForm() {
       saves: s.saves.slice(),
       armorProf: document.getElementById("cf-armor").value.trim(),
       weaponProf: document.getElementById("cf-weapon").value.trim(),
+      toolProf: document.getElementById("cf-tools").value.trim(),
       skillChoices: {
         count: parseInt(document.getElementById("cf-sc-count").value) || 0,
         options: s.skillChoices.options.slice()
