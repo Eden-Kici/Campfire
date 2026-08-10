@@ -433,11 +433,3 @@ const SRD_FEATS = [
     desc: "You gain +1 to attack rolls against beasts and +1 AC against their attacks, your proficiency bonus applies to Survival checks made to track beasts, and your critical threat range against them increases by 1." }
 ];
 
-/* Magic items reuse the mundane item shape (weapon / armour / gear) with two
-   extra optional fields: `rarity` (one of ITEM_RARITIES) and `attunement`
-   (boolean). Kept in its own table rather than folded into KIT_ITEMS because
-   KIT_ITEMS is starting-equipment scaffolding for the creator, and nothing
-   here is ever handed out at character creation. Empty until the pass over
-   5esrd.com's magic item list. */
-const SRD_MAGIC_ITEMS = [];
-
