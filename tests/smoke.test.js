@@ -287,6 +287,37 @@ module.exports = function (suite) {
     if (!html.includes("Custom Battle Master")) throw new Error("expected the custom subclass listed as an option");
   });
 
+  suite.section("custom choice options can carry their own description");
+  suite.runs("Draconic Ancestry's options explain the breath weapon, not just the label", () => {
+    app.openCharacterCreator();
+    app.creatorState.race = "Dragonborn";
+    const html = app.raceStepHtml(1, 8);
+    if (!html.includes("Breath Weapon: exhale fire in a 15-foot cone")) {
+      throw new Error("expected the Gold ancestry option's own desc to render, not just its label");
+    }
+  });
+  suite.runs("choiceOptionDescFor prefers an option's own desc over an effects summary", () => {
+    const pending = { kind: "custom", options: [
+      { label: "With desc", desc: "The real explanation.", effects: [{ category: "Bonus", value: { stat: "AC", amount: 1 } }] },
+      { label: "No desc", effects: [{ category: "Bonus", value: { stat: "AC", amount: 1 } }] },
+      { label: "Neither" }
+    ] };
+    if (app.choiceOptionDescFor(pending, "With desc") !== "The real explanation.") throw new Error("expected desc to win over the effects summary");
+    if (!app.choiceOptionDescFor(pending, "No desc").startsWith("Grants:")) throw new Error("expected the effects-summary fallback");
+    if (app.choiceOptionDescFor(pending, "Neither") !== "") throw new Error("expected nothing for an option with neither");
+  });
+  suite.runs("a level-up custom choice (Hunter's Prey) also surfaces each option's own desc", () => {
+    let character = { classes: [{ name: "Ranger", level: 1, subclass: "Hunter", hitDie: "d10" }],
+      traits: { "Class Features": [], "Race Traits": [], "Background": [], "Other": [] },
+      pendingChoices: [] };
+    app.grantFeatures(character, app.featuresAtLevel("Ranger", "Hunter", 3));
+    const pending = character.pendingChoices.find(p => p.featureName === "Hunter's Prey");
+    const html = app.resolveChoiceHtml(pending);
+    if (!html.includes("Your tenacity can wear down the most potent foes")) {
+      throw new Error("expected Colossus Slayer's own desc to render in the level-up resolver too");
+    }
+  });
+
   suite.section("choices resolved right after the step that granted them");
   app.creatorState = {
     step: 0, started: true, name: "Test", appearance: "", backstory: "",

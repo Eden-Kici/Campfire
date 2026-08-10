@@ -714,29 +714,32 @@ const SRD_CLASSES = [
         { level: 3, name: "Hunter's Prey", desc: "Gain one Hunter's Prey option: Colossus Slayer (extra 1d8 damage once per turn to a foe below its hit point maximum), Giant Killer (reaction attack against a Large or larger creature that hits or misses you), or Horde Breaker (once per turn, an additional weapon attack against a different nearby foe).",
           choice: { kind: "custom", count: 1, prompt: "Choose a Hunter's Prey option",
             options: [
-              { label: "Colossus Slayer" },
-              { label: "Giant Killer" },
-              { label: "Horde Breaker" }
+              { label: "Colossus Slayer",
+                desc: "Your tenacity can wear down the most potent foes. When you hit a creature with a weapon attack, the creature takes an extra 1d8 damage if it's below its hit point maximum. You can deal this extra damage only once per turn." },
+              { label: "Giant Killer",
+                desc: "When a Large or larger creature within 5 feet of you hits or misses you with an attack, you can use your reaction to attack that creature immediately after its attack, provided you can see the creature." },
+              { label: "Horde Breaker",
+                desc: "Once on each of your turns when you make a weapon attack, you can make another attack with the same weapon against a different creature that is within 5 feet of the original target and within range of your weapon." }
             ] } },
         { level: 7, name: "Defensive Tactics", desc: "Gain one Defensive Tactics option: Escape the Horde (opportunity attacks against you have disadvantage), Multiattack Defense (+4 AC against subsequent attacks from a creature that just hit you this turn), or Steel Will (advantage on saves against being frightened).",
           choice: { kind: "custom", count: 1, prompt: "Choose a Defensive Tactics option",
             options: [
-              { label: "Escape the Horde" },
-              { label: "Multiattack Defense" },
-              { label: "Steel Will" }
+              { label: "Escape the Horde", desc: "Opportunity attacks against you are made with disadvantage." },
+              { label: "Multiattack Defense", desc: "When a creature hits you with an attack, you gain a +4 bonus to AC against all subsequent attacks made by that creature for the rest of the turn." },
+              { label: "Steel Will", desc: "You have advantage on saving throws against being frightened." }
             ] } },
         { level: 11, name: "Multiattack", desc: "Gain one Multiattack option: Volley (ranged attack against any number of creatures within 10 feet of a point in range, separate attack roll each) or Whirlwind Attack (melee attack against any number of creatures within 5 feet of you, separate attack roll each).",
           choice: { kind: "custom", count: 1, prompt: "Choose a Multiattack option",
             options: [
-              { label: "Volley" },
-              { label: "Whirlwind Attack" }
+              { label: "Volley", desc: "You can use your action to make a ranged attack against any number of creatures within 10 feet of a point you can see within your weapon's range. You must have ammunition for each target, as normal, and you make a separate attack roll for each target." },
+              { label: "Whirlwind Attack", desc: "You can use your action to make a melee attack against any number of creatures within 5 feet of you, with a separate attack roll for each target." }
             ] } },
         { level: 15, name: "Superior Hunter's Defense", desc: "Gain one Superior Hunter's Defense option: Evasion (no damage on a successful Dex save against a half-damage effect, half on failure), Stand Against the Tide (redirect a missed melee attack against you onto another creature), or Uncanny Dodge (reaction to halve an attack's damage against you).",
           choice: { kind: "custom", count: 1, prompt: "Choose a Superior Hunter's Defense option",
             options: [
-              { label: "Evasion" },
-              { label: "Stand Against the Tide" },
-              { label: "Uncanny Dodge" }
+              { label: "Evasion", desc: "When you are subjected to an effect, such as a red dragon's fiery breath or a lightning bolt spell, that allows you to make a Dexterity saving throw to take only half damage, you instead take no damage if you succeed on the saving throw, and only half damage if you fail." },
+              { label: "Stand Against the Tide", desc: "When a hostile creature misses you with a melee attack, you can use your reaction to force that creature to repeat the same attack against another creature (other than itself) of your choice." },
+              { label: "Uncanny Dodge", desc: "When an attacker that you can see hits you with an attack, you can use your reaction to halve the attack's damage against you." }
             ] } }
       ] }
     ]

@@ -71,6 +71,7 @@ function customChoiceOptionRowHtml(idPrefix, i, j, opt) {
         <button type="button" class="chip-remove" data-remove-choice-option="${j}">✕</button>
       </div>
       ${textFieldHtml(idPrefix + "-choice-" + i + "-opt-" + j + "-label", "Label", opt.label, { placeholder: "e.g. Bear Totem" })}
+      ${textAreaFieldHtml(idPrefix + "-choice-" + i + "-opt-" + j + "-desc", "Description (optional)", opt.desc || "", { placeholder: "What picking this actually gets you — shown to the player alongside the label" })}
       ${toggleLineHtml(idPrefix + "-choice-" + i + "-opt-" + j + "-fxon", "Grants an effect", !!opt.effects)}
       <div id="${idPrefix}-choice-${i}-opt-${j}-fxwrap"></div>
     </div>
@@ -87,6 +88,9 @@ function syncChoiceOptions(idPrefix, i, choice) {
     const labelEl = document.getElementById(idPrefix + "-choice-" + i + "-opt-" + j + "-label");
     if (!labelEl) return;
     opt.label = labelEl.value;
+    const descEl = document.getElementById(idPrefix + "-choice-" + i + "-opt-" + j + "-desc");
+    const descVal = descEl ? descEl.value.trim() : "";
+    if (descVal) opt.desc = descVal; else delete opt.desc;
     if (opt.effects) opt.effects = readFeatureEffectsFromForm(opt.effects, idPrefix + "-choice-" + i + "-opt-" + j + "-fx");
   });
 }

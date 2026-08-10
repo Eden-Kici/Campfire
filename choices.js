@@ -87,7 +87,17 @@ function choiceOptionDescFor(pending, label) {
   }
   if (pending.kind === "custom") {
     const opt = (pending.options || []).find(o => o.label === label);
-    if (!opt || !opt.effects || !opt.effects.length) return "";
+    if (!opt) return "";
+    // an author-written (or SRD-authored) description of what the option
+    // actually does takes priority -- Draconic Ancestry's options and the
+    // Ranger's Hunter subclass options are informational-only (no clean
+    // effect category fits a breath weapon's shape/damage type), so without
+    // this the label alone ("Gold -- Fire, 15 ft. cone (Dex save)") was all
+    // the player ever saw. Falls back to summarizing the option's effects
+    // when there's no desc but there is a mechanic (Half-Elf's +1 ability
+    // score picks, every class's ASI options), same as before.
+    if (opt.desc) return opt.desc;
+    if (!opt.effects || !opt.effects.length) return "";
     return "Grants: " + opt.effects.map(e => featureEffectSummary(e, totalLevel(character))).join(", ");
   }
   return "";
