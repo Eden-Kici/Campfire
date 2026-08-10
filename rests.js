@@ -250,7 +250,8 @@ function pendingChoiceFor(feature, traitCategory) {
   // itself (content.js's author-written choices, and now a couple of SRD
   // race features) rather than in a static list -- carry them along, or
   // choiceOptionsFor()/applyChoiceResolution() (choices.js) have nothing to
-  // resolve against. creatorPendingChoices() (creator.js) already did this
+  // resolve against. creator.js's creatorRaceChoices()/creatorClassChoices()/
+  // creatorSubclassChoices() already do this
   // via a blanket Object.assign(...feature.choice); this is the same fix
   // for the level-up/grantFeatures path, which builds the pending entry by
   // hand and quietly dropped it.

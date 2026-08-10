@@ -135,17 +135,60 @@ function optionButtonHtml(label, active, dataAttr, value) {
 /* Every race/class-1 feature carrying a `.choice` descriptor (srd-data.js),
    in the same shape pendingChoiceFor() (rests.js) turns a granted feature
    into once the character actually exists. Computed straight from
-   creatorState rather than a half-built character, since the "choices" step
-   has to exist before there's anything to grant it to. */
-function creatorPendingChoices() {
+   creatorState rather than a half-built character, since a choice has to be
+   answerable before there's anything to grant it to.
+
+   Split by source and step rather than one flat list: a choice is asked
+   right after the pick that granted it -- a race's own choices (Dragonborn's
+   ancestry, Half-Elf's ASI split) on the Race step, a class's own choices
+   (Fighting Style) on the Class step, a subclass's own on the Subclass step
+   -- instead of dumping everything into one "Choices" step at the end of the
+   wizard. The one exception is "skill" kind: Expertise-style "pick skills
+   you're proficient in" (and Half-Elf's Skill Versatility) can't be answered
+   until Skills has actually run, since its options are which skills ended up
+   known -- those still collect into creatorSkillChoices() for the trailing
+   step, same as the whole set used to. */
+function creatorRaceChoices() {
+  const race = SRD_RACES.find(r => r.name === creatorState.race);
+  const subrace = race && race.subraces ? race.subraces.find(s => s.name === creatorState.subrace) : null;
+  const raceFeatures = (race ? race.features : []).concat(subrace ? subrace.features : []);
+  const out = [];
+  raceFeatures.forEach(f => {
+    if (f.choice && f.choice.kind !== "skill") out.push(Object.assign({ traitCategory: "Race Traits", featureName: f.name }, f.choice));
+  });
+  return out;
+}
+
+function creatorClassChoices() {
+  const cls = SRD_CLASSES.find(c => c.name === creatorState.charClass);
+  if (!cls) return [];
+  const out = [];
+  (cls.features || []).filter(f => f.level === 1).forEach(f => {
+    if (f.choice && f.choice.kind !== "skill") out.push(Object.assign({ traitCategory: "Class Features", featureName: f.name }, f.choice));
+  });
+  return out;
+}
+
+function creatorSubclassChoices() {
+  const cls = SRD_CLASSES.find(c => c.name === creatorState.charClass);
+  const subclass = cls && creatorState.subclass ? subclassesForClass(cls.name).find(s => s.name === creatorState.subclass) : null;
+  if (!subclass) return [];
+  const out = [];
+  (subclass.features || []).filter(f => f.level === 1).forEach(f => {
+    if (f.choice && f.choice.kind !== "skill") out.push(Object.assign({ traitCategory: "Class Features", featureName: f.name }, f.choice));
+  });
+  return out;
+}
+
+function creatorSkillChoices() {
   const race = SRD_RACES.find(r => r.name === creatorState.race);
   const subrace = race && race.subraces ? race.subraces.find(s => s.name === creatorState.subrace) : null;
   const raceFeatures = (race ? race.features : []).concat(subrace ? subrace.features : []);
   const classFeatures = creatorState.charClass ? featuresAtLevel(creatorState.charClass, creatorState.subclass, 1) : [];
 
   const out = [];
-  raceFeatures.forEach(f => { if (f.choice) out.push(Object.assign({ traitCategory: "Race Traits", featureName: f.name }, f.choice)); });
-  classFeatures.forEach(f => { if (f.choice) out.push(Object.assign({ traitCategory: "Class Features", featureName: f.name }, f.choice)); });
+  raceFeatures.forEach(f => { if (f.choice && f.choice.kind === "skill") out.push(Object.assign({ traitCategory: "Race Traits", featureName: f.name }, f.choice)); });
+  classFeatures.forEach(f => { if (f.choice && f.choice.kind === "skill") out.push(Object.assign({ traitCategory: "Class Features", featureName: f.name }, f.choice)); });
   return out;
 }
 
@@ -172,7 +215,7 @@ function creatorStepKeys() {
   const keys = ["race", "class"];
   if (cls && subclassesForClass(cls.name).length) keys.push("subclass");
   keys.push("background", "ability", "skills");
-  if (creatorPendingChoices().length) keys.push("choices");
+  if (creatorSkillChoices().length) keys.push("choices");
   if (STARTING_KIT[creatorState.charClass]) keys.push("equipment");
   keys.push("final");
   return keys;
@@ -225,6 +268,7 @@ function raceStepHtml(stepNum, totalSteps) {
       ${race.features.map(featureRowHtml).join("")}
       ${(race.subraces && creatorState.subrace) ? race.subraces.find(sr => sr.name === creatorState.subrace).features.map(featureRowHtml).join("") : ""}
       ${race.skillChoice ? `<div class="item-effect" style="margin-top:8px;">Grants ${race.skillChoice.count} bonus skill proficiency \u2014 chosen in the Skills step.</div>` : ""}
+      ${choiceCardsHtml(creatorRaceChoices(), "Choices")}
     ` : ""}
     <button class="btn-primary" id="creator-next-button" style="margin-top:14px;">Next</button>
   `;
@@ -233,20 +277,27 @@ function raceStepHtml(stepNum, totalSteps) {
 function wireRaceStep() {
   document.querySelectorAll("[data-race-option]").forEach(btn => {
     btn.addEventListener("click", () => {
+      clearChoiceAnswers(creatorRaceChoices());
       creatorState.race = btn.dataset.raceOption;
       creatorState.subrace = null;
       creatorState.raceSkillChoices = [];
-      creatorState.choiceAnswers = {};
       redrawCreator();
     });
   });
   document.querySelectorAll("[data-subrace-option]").forEach(btn => {
-    btn.addEventListener("click", () => { creatorState.subrace = btn.dataset.subraceOption; redrawCreator(); });
+    btn.addEventListener("click", () => {
+      clearChoiceAnswers(creatorRaceChoices());
+      creatorState.subrace = btn.dataset.subraceOption;
+      redrawCreator();
+    });
   });
+  wireChoiceCards(creatorRaceChoices());
   document.getElementById("creator-next-button").addEventListener("click", () => {
     if (!creatorState.race) { showToast("Choose a race to continue"); return; }
     const race = SRD_RACES.find(r => r.name === creatorState.race);
     if (race.subraces && !creatorState.subrace) { showToast("Choose a subrace to continue"); return; }
+    const unresolved = firstUnresolvedChoice(creatorRaceChoices());
+    if (unresolved) { showToast("Resolve \u201c" + unresolved.prompt + "\u201d to continue"); return; }
     goNext();
   });
 }
@@ -271,6 +322,7 @@ function classStepHtml(stepNum, totalSteps) {
       ${cls.toolProf ? `<div class="breakdown-row"><span>Tools</span><span>${cls.toolProf}</span></div>` : ""}
       <div class="breakdown-subhead">Class Features</div>
       ${cls.features.map(featureRowHtml).join("")}
+      ${choiceCardsHtml(creatorClassChoices(), "Choices")}
     ` : ""}
     ${creatorNavHtml()}
   `;
@@ -279,17 +331,20 @@ function classStepHtml(stepNum, totalSteps) {
 function wireClassStep() {
   document.querySelectorAll("[data-class-option]").forEach(btn => {
     btn.addEventListener("click", () => {
+      clearChoiceAnswers(creatorClassChoices().concat(creatorSubclassChoices()));
       creatorState.charClass = btn.dataset.classOption;
       creatorState.subclass = null;
       creatorState.classSkillChoices = [];
       creatorState.equipment = [];        // a different class offers different kit
-      creatorState.choiceAnswers = {};
       redrawCreator();
     });
   });
+  wireChoiceCards(creatorClassChoices());
   document.getElementById("creator-back-button").addEventListener("click", goBack);
   document.getElementById("creator-next-button").addEventListener("click", () => {
     if (!creatorState.charClass) { showToast("Choose a class to continue"); return; }
+    const unresolved = firstUnresolvedChoice(creatorClassChoices());
+    if (unresolved) { showToast("Resolve “" + unresolved.prompt + "” to continue"); return; }
     goNext();
   });
 }
@@ -309,6 +364,7 @@ function subclassStepHtml(stepNum, totalSteps) {
     ${creatorState.subclass ? `
       <div class="breakdown-subhead">Subclass Features</div>
       ${subclasses.find(sc => sc.name === creatorState.subclass).features.map(featureRowEscHtml).join("")}
+      ${choiceCardsHtml(creatorSubclassChoices(), "Choices")}
     ` : ""}
     ${creatorNavHtml()}
   `;
@@ -316,11 +372,18 @@ function subclassStepHtml(stepNum, totalSteps) {
 
 function wireSubclassStep() {
   document.querySelectorAll("[data-subclass-option]").forEach(btn => {
-    btn.addEventListener("click", () => { creatorState.subclass = btn.dataset.subclassOption; redrawCreator(); });
+    btn.addEventListener("click", () => {
+      clearChoiceAnswers(creatorSubclassChoices());
+      creatorState.subclass = btn.dataset.subclassOption;
+      redrawCreator();
+    });
   });
+  wireChoiceCards(creatorSubclassChoices());
   document.getElementById("creator-back-button").addEventListener("click", goBack);
   document.getElementById("creator-next-button").addEventListener("click", () => {
     if (!creatorState.subclass) { showToast("Choose a subclass to continue"); return; }
+    const unresolved = firstUnresolvedChoice(creatorSubclassChoices());
+    if (unresolved) { showToast("Resolve “" + unresolved.prompt + "” to continue"); return; }
     goNext();
   });
 }
@@ -558,13 +621,15 @@ function wireSkillsStep() {
 }
 
 
-/* ---------- step: choices ----------
+/* ---------- choice cards, shared across every step that can grant one ----------
 
-   Only reached when creatorPendingChoices() found something to ask -- not
-   every race/class combination owes one. Answering here means the finished
-   character comes out of the wizard with nothing left on its pendingChoices
-   banner, instead of handing that back to the player as a chore. Skipping a
-   card is still allowed, same as everywhere else a choice can be resolved:
+   A choice card can now show up on the Race, Class, Subclass or trailing
+   Choices step -- whichever step's pick is what granted it (see the
+   creatorRaceChoices()/creatorClassChoices()/creatorSubclassChoices()/
+   creatorSkillChoices() split above). choiceCardHtml itself doesn't care
+   which step it's rendered on; wireChoiceCards() and firstUnresolvedChoice()
+   are the shared wiring/validation every one of those steps calls with its
+   own slice of pendings. Skipping a card is still allowed, same as before:
    Next only requires each one has EITHER a picked option or manual text. */
 
 function choiceCardHtml(pending) {
@@ -591,19 +656,15 @@ function choiceCardHtml(pending) {
   `;
 }
 
-function choicesStepHtml(stepNum, totalSteps) {
-  const pendings = creatorPendingChoices();
+function choiceCardsHtml(pendings, heading) {
+  if (!pendings.length) return "";
   return `
-    <div class="modal-heading">Choices</div>
-    <div class="breakdown-source" style="margin-bottom:10px;">Step ${stepNum} of ${totalSteps} · What your features grant</div>
+    <div class="breakdown-subhead" style="margin-top:14px;">${esc(heading)}</div>
     ${pendings.map(choiceCardHtml).join("")}
-    ${creatorNavHtml()}
   `;
 }
 
-function wireChoicesStep() {
-  const pendings = creatorPendingChoices();
-
+function wireChoiceCards(pendings) {
   pendings.forEach(pending => {
     const input = document.getElementById("choice-manual-" + pending.featureName);
     if (input) input.addEventListener("input", () => {
@@ -615,6 +676,7 @@ function wireChoicesStep() {
     btn.addEventListener("click", () => {
       const [key, opt] = btn.dataset.choicePick.split("|||");
       const pending = pendings.find(p => p.featureName === key);
+      if (!pending) return;
       const chosen = (creatorState.choiceAnswers[key] && creatorState.choiceAnswers[key].chosen || []).slice();
       const idx = chosen.indexOf(opt);
       if (idx >= 0) chosen.splice(idx, 1);
@@ -626,15 +688,47 @@ function wireChoicesStep() {
       redrawCreator();
     });
   });
+}
 
+function firstUnresolvedChoice(pendings) {
+  return pendings.find(p => {
+    const a = creatorState.choiceAnswers[p.featureName];
+    if (!a) return true;
+    if (a.manual && a.manual.trim()) return false;
+    return !(a.chosen && a.chosen.length === p.count);
+  }) || null;
+}
+
+// clears just the answers a source's own choices own, so switching race
+// mid-build doesn't also wipe class/subclass answers the player already made
+function clearChoiceAnswers(pendings) {
+  pendings.forEach(p => { delete creatorState.choiceAnswers[p.featureName]; });
+}
+
+
+/* ---------- step: choices (skill-kind leftovers only) ----------
+
+   Everything else now answers on the step that granted it. What's left here
+   is "skill" kind alone -- Expertise-style "pick skills you're already
+   proficient in" -- since its option list depends on Skills having run.
+   Only reached when creatorSkillChoices() actually found one. */
+
+function choicesStepHtml(stepNum, totalSteps) {
+  const pendings = creatorSkillChoices();
+  return `
+    <div class="modal-heading">Choices</div>
+    <div class="breakdown-source" style="margin-bottom:10px;">Step ${stepNum} of ${totalSteps} · What your features grant</div>
+    ${pendings.map(choiceCardHtml).join("")}
+    ${creatorNavHtml()}
+  `;
+}
+
+function wireChoicesStep() {
+  const pendings = creatorSkillChoices();
+  wireChoiceCards(pendings);
   document.getElementById("creator-back-button").addEventListener("click", goBack);
   document.getElementById("creator-next-button").addEventListener("click", () => {
-    const unresolved = pendings.find(p => {
-      const a = creatorState.choiceAnswers[p.featureName];
-      if (!a) return true;
-      if (a.manual && a.manual.trim()) return false;
-      return !(a.chosen && a.chosen.length === p.count);
-    });
+    const unresolved = firstUnresolvedChoice(pendings);
     if (unresolved) { showToast("Resolve “" + unresolved.prompt + "” to continue"); return; }
     goNext();
   });

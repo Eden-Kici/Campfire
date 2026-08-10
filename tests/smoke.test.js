@@ -287,7 +287,7 @@ module.exports = function (suite) {
     if (!html.includes("Custom Battle Master")) throw new Error("expected the custom subclass listed as an option");
   });
 
-  suite.section("choices resolved during the builder");
+  suite.section("choices resolved right after the step that granted them");
   app.creatorState = {
     step: 0, started: true, name: "Test", appearance: "", backstory: "",
     race: "Human", subrace: null, charClass: "Fighter", subclass: "Champion", background: "Soldier",
@@ -295,12 +295,18 @@ module.exports = function (suite) {
     raceSkillChoices: ["Perception"], classSkillChoices: ["Athletics", "History"], equipment: [],
     choiceAnswers: {}, customBuild: false
   };
-  suite.runs("the creator inserts a choices step for Human Fighter", () => {
-    if (!app.creatorStepKeys().includes("choices")) throw new Error("expected a choices step");
+  suite.runs("Human's own choice (Extra Language) shows up on the Race step", () => {
+    const names = app.creatorRaceChoices().map(p => p.featureName);
+    if (!names.includes("Extra Language")) throw new Error("expected Extra Language on creatorRaceChoices()");
+    if (!app.raceStepHtml(1, 5).includes("Extra Language")) throw new Error("expected the race step to render the card");
   });
-  suite.runs("choices step renders and wires", () => {
-    app.creatorState.step = app.creatorStepKeys().indexOf("choices");
-    app.redrawCreator();
+  suite.runs("Fighter's own choice (Fighting Style) shows up on the Class step", () => {
+    const names = app.creatorClassChoices().map(p => p.featureName);
+    if (!names.includes("Fighting Style")) throw new Error("expected Fighting Style on creatorClassChoices()");
+    if (!app.classStepHtml(1, 5).includes("Fighting Style")) throw new Error("expected the class step to render the card");
+  });
+  suite.runs("neither choice is a 'skill' kind, so Human Fighter gets no trailing Choices step", () => {
+    if (app.creatorStepKeys().includes("choices")) throw new Error("expected no choices step");
   });
   suite.runs("building with answered choices leaves nothing pending", () => {
     app.creatorState.choiceAnswers = {
@@ -310,6 +316,39 @@ module.exports = function (suite) {
     const built = app.buildCharacterFromCreator();
     if (built.pendingChoices.length) throw new Error("expected the builder to have resolved every choice");
     if (!built.languages.includes("Draconic")) throw new Error("expected the language pick to land");
+  });
+
+  suite.section("'skill' kind choices still wait for the trailing Choices step");
+  app.creatorState = {
+    step: 0, started: true, name: "Test2", appearance: "", backstory: "",
+    race: "Human", subrace: null, charClass: "Rogue", subclass: "Thief", background: "Soldier",
+    scores: {}, asiBonus: { plus2: "Dexterity", plus1: "Constitution" },
+    raceSkillChoices: ["Perception"], classSkillChoices: ["Athletics", "History", "Stealth", "Acrobatics"], equipment: [],
+    choiceAnswers: {}, customBuild: false
+  };
+  suite.runs("Rogue's Expertise is a 'skill' kind choice, so it does NOT show on the Class step", () => {
+    const names = app.creatorClassChoices().map(p => p.featureName);
+    if (names.includes("Expertise")) throw new Error("Expertise should be deferred, not answered on the class step");
+  });
+  suite.runs("Rogue's Expertise does show up in creatorSkillChoices() and the trailing step exists", () => {
+    const names = app.creatorSkillChoices().map(p => p.featureName);
+    if (!names.includes("Expertise")) throw new Error("expected Expertise in creatorSkillChoices()");
+    if (!app.creatorStepKeys().includes("choices")) throw new Error("expected a trailing choices step");
+  });
+  suite.runs("choices step renders and wires", () => {
+    app.creatorState.step = app.creatorStepKeys().indexOf("choices");
+    app.redrawCreator();
+  });
+  suite.runs("clearChoiceAnswers only clears the source it's given, not everything", () => {
+    app.creatorState.charClass = "Fighter";
+    app.creatorState.subclass = "Champion";
+    app.creatorState.choiceAnswers = {
+      "Extra Language": { chosen: ["Draconic"] },     // a race-sourced answer
+      "Fighting Style": { chosen: ["Defense"] }        // this class's own choice
+    };
+    app.clearChoiceAnswers(app.creatorClassChoices());  // simulates switching class away from Fighter
+    if (!app.creatorState.choiceAnswers["Extra Language"]) throw new Error("race answer shouldn't be touched by a class-scoped clear");
+    if (app.creatorState.choiceAnswers["Fighting Style"]) throw new Error("expected Fighting Style's answer to be cleared");
   });
 
   suite.section("off-hand weapons");
