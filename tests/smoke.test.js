@@ -318,13 +318,78 @@ module.exports = function (suite) {
     }
   });
 
+  suite.section("choice options are a single-open accordion, not always-visible");
+  suite.runs("creator: a collapsed option's card body isn't open, and picking one doesn't expand it", () => {
+    app.openCharacterCreator();
+    app.creatorState.race = "Dragonborn";
+    const pending = app.creatorRaceChoices().find(p => p.featureName === "Draconic Ancestry");
+    const collapsed = app.choiceCardHtml(pending);
+    if (!collapsed.includes(`data-choice-expand="Draconic Ancestry|||Gold -- Fire, 15 ft. cone (Dex save)"`)) {
+      throw new Error("expected an expand header for the Gold option");
+    }
+    // exactly one "collapse-body open" with nothing expanded -- the pending
+    // card's own outer wrapper, which is always open; every nested option
+    // card should be collapsed
+    const openCount = (collapsed.match(/collapse-body open/g) || []).length;
+    if (openCount !== 1) throw new Error("expected only the outer wrapper open, got " + openCount + " open bodies");
+
+    app.creatorState.expandedChoiceOption["Draconic Ancestry"] = "Gold -- Fire, 15 ft. cone (Dex save)";
+    const oneOpen = app.choiceCardHtml(pending);
+    if (!oneOpen.includes("Breath Weapon: exhale fire in a 15-foot cone")) {
+      throw new Error("expected Gold's body to render once expanded");
+    }
+    if ((oneOpen.match(/collapse-body open/g) || []).length !== 2) {
+      throw new Error("expected exactly two open bodies (outer wrapper + Gold) once Gold is expanded");
+    }
+
+    app.creatorState.expandedChoiceOption["Draconic Ancestry"] = "Black -- Acid, 5x30 ft. line (Dex save)";
+    const switched = app.choiceCardHtml(pending);
+    // description text stays in the HTML either way (only the "open" class
+    // toggles) so the real assertion is on which option's collapse-body
+    // carries "open", not on text presence. Gold's collapse-body class
+    // attribute follows its label directly (head, then body), so a short
+    // window after the label text is enough to isolate it
+    const goldIdx = switched.indexOf("Gold -- Fire");
+    const goldBody = switched.slice(goldIdx, goldIdx + 200);
+    if (/collapse-body open/.test(goldBody)) throw new Error("expected opening Black to close Gold, accordion-style");
+    if ((switched.match(/collapse-body open/g) || []).length !== 2) {
+      throw new Error("expected exactly two open bodies (outer wrapper + Black) once switched");
+    }
+  });
+  suite.runs("level-up resolver: same single-open accordion behavior via module state", () => {
+    let character = { classes: [{ name: "Ranger", level: 1, subclass: "Hunter", hitDie: "d10" }],
+      traits: { "Class Features": [], "Race Traits": [], "Background": [], "Other": [] },
+      pendingChoices: [] };
+    app.grantFeatures(character, app.featuresAtLevel("Ranger", "Hunter", 3));
+    const pending = character.pendingChoices.find(p => p.featureName === "Hunter's Prey");
+    // choiceExpanded/choiceSelected are module-level in choices.js, bridged
+    // onto app the same way character is -- set them directly rather than
+    // going through openResolveChoiceModal, which keys off app.character
+    // (the app's singleton) and would silently no-op against this throwaway
+    // local character
+    app.choiceExpanded = null;
+    app.choiceSelected = [];
+    const collapsed = app.resolveChoiceHtml(pending);
+    if ((collapsed.match(/collapse-body open/g) || []).length !== 0) {
+      throw new Error("expected nothing open by default");
+    }
+    app.choiceExpanded = "Colossus Slayer";
+    const opened = app.resolveChoiceHtml(pending);
+    if (!/Colossus Slayer[\s\S]{0,150}collapse-body open/.test(opened)) {
+      throw new Error("expected Colossus Slayer's body to carry the open class once expanded");
+    }
+    if (!opened.includes("Your tenacity can wear down the most potent foes")) {
+      throw new Error("expected Colossus Slayer's own desc to render once expanded");
+    }
+  });
+
   suite.section("choices resolved right after the step that granted them");
   app.creatorState = {
     step: 0, started: true, name: "Test", appearance: "", backstory: "",
     race: "Human", subrace: null, charClass: "Fighter", subclass: "Champion", background: "Soldier",
     scores: {}, asiBonus: { plus2: "Strength", plus1: "Constitution" },
     raceSkillChoices: ["Perception"], classSkillChoices: ["Athletics", "History"], equipment: [],
-    choiceAnswers: {}, customBuild: false
+    choiceAnswers: {}, expandedChoiceOption: {}, customBuild: false
   };
   suite.runs("Human's own choice (Extra Language) shows up on the Race step", () => {
     const names = app.creatorRaceChoices().map(p => p.featureName);
@@ -355,7 +420,7 @@ module.exports = function (suite) {
     race: "Human", subrace: null, charClass: "Rogue", subclass: "Thief", background: "Soldier",
     scores: {}, asiBonus: { plus2: "Dexterity", plus1: "Constitution" },
     raceSkillChoices: ["Perception"], classSkillChoices: ["Athletics", "History", "Stealth", "Acrobatics"], equipment: [],
-    choiceAnswers: {}, customBuild: false
+    choiceAnswers: {}, expandedChoiceOption: {}, customBuild: false
   };
   suite.runs("Rogue's Expertise is a 'skill' kind choice, so it does NOT show on the Class step", () => {
     const names = app.creatorClassChoices().map(p => p.featureName);

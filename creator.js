@@ -12,6 +12,7 @@ function openCharacterCreator() {
     scores: {}, asiBonus: { plus2: null, plus1: null },
     raceSkillChoices: [], classSkillChoices: [], equipment: [],
     choiceAnswers: {},        // featureName -> { chosen: [...] } or { manual: "..." }
+    expandedChoiceOption: {}, // featureName -> the one option card currently open, accordion-style
     customBuild: false
   };
   openModal("full", "");
@@ -632,24 +633,49 @@ function wireSkillsStep() {
    own slice of pendings. Skipping a card is still allowed, same as before:
    Next only requires each one has EITHER a picked option or manual text. */
 
+/* Each option is its own nested collapse-card (same collapse-head/
+   collapse-body classes and CSS-driven open/close as a Features & Traits
+   category or a trait row) instead of a button with its description always
+   printed underneath -- ten dragon types' full Breath Weapon text stacked
+   at once was a wall of text nobody was going to read. Clicking a header
+   opens that option's card and closes whichever one was open, accordion-
+   style; picking happens from the explicit button inside the open card, kept
+   separate from "just looking" so browsing every ancestry before deciding
+   doesn't change your answer as a side effect. creatorState.expandedChoiceOption
+   is keyed by featureName so two different pending choices on the same step
+   (rare, but possible) don't fight over which option is open. */
 function choiceCardHtml(pending) {
   const key = pending.featureName;
   const answer = creatorState.choiceAnswers[key] || {};
   const options = creatorChoiceOptionsFor(pending);
   const selected = answer.chosen || [];
+  const expanded = creatorState.expandedChoiceOption[key];
 
   return `
     <div class="collapse-card" style="margin-bottom:12px;">
       <div class="collapse-head" style="cursor:default;"><span>${esc(pending.prompt)}</span></div>
       <div class="collapse-body open" style="padding:2px 14px 14px;">
         <div class="breakdown-source" style="margin-bottom:8px;">From ${esc(pending.featureName)} — pick ${pending.count}</div>
-        ${options && options.length ? options.map(opt => `
-          <button type="button" class="toggle-btn creator-option ${selected.includes(opt) ? "active" : ""}"
-            data-choice-pick="${esc(key)}|||${esc(opt)}" style="display:block;width:100%;text-align:left;margin-bottom:6px;padding:10px 12px;">
-            <div>${esc(opt)}</div>
-            ${choiceOptionDescFor(pending, opt) ? `<div class="field-hint" style="margin-top:2px;">${esc(choiceOptionDescFor(pending, opt))}</div>` : ""}
-          </button>
-        `).join("") : `<div class="empty-hint" style="margin-bottom:8px;">Nothing to pick from — use the field below.</div>`}
+        ${options && options.length ? options.map(opt => {
+          const isSelected = selected.includes(opt);
+          const isOpen = expanded === opt;
+          const desc = choiceOptionDescFor(pending, opt);
+          return `
+            <div class="collapse-card" style="margin-bottom:8px;background:var(--control-raised);">
+              <div class="collapse-head" data-choice-expand="${esc(key)}|||${esc(opt)}" style="padding:10px 12px;">
+                <span>${esc(opt)}${isSelected ? " ✓" : ""}</span>
+                <span>${isOpen ? "−" : "+"}</span>
+              </div>
+              <div class="collapse-body ${isOpen ? "open" : ""}" style="padding:0 12px 12px;">
+                ${desc ? `<div class="trait-desc" style="margin-bottom:8px;">${esc(desc)}</div>` : ""}
+                <button type="button" class="toggle-btn creator-option ${isSelected ? "active" : ""}"
+                  data-choice-pick="${esc(key)}|||${esc(opt)}" style="display:block;width:100%;text-align:left;padding:8px 10px;">
+                  ${isSelected ? "Selected" : "Choose this"}
+                </button>
+              </div>
+            </div>
+          `;
+        }).join("") : `<div class="empty-hint" style="margin-bottom:8px;">Nothing to pick from — use the field below.</div>`}
         ${textFieldHtml("choice-manual-" + key, "Or track it yourself", answer.manual || "", { placeholder: "What did you pick?" })}
       </div>
     </div>
@@ -672,8 +698,17 @@ function wireChoiceCards(pendings) {
     });
   });
 
+  document.querySelectorAll("[data-choice-expand]").forEach(head => {
+    head.addEventListener("click", () => {
+      const [key, opt] = head.dataset.choiceExpand.split("|||");
+      creatorState.expandedChoiceOption[key] = (creatorState.expandedChoiceOption[key] === opt) ? null : opt;
+      redrawCreator();
+    });
+  });
+
   document.querySelectorAll("[data-choice-pick]").forEach(btn => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
       const [key, opt] = btn.dataset.choicePick.split("|||");
       const pending = pendings.find(p => p.featureName === key);
       if (!pending) return;
@@ -702,7 +737,10 @@ function firstUnresolvedChoice(pendings) {
 // clears just the answers a source's own choices own, so switching race
 // mid-build doesn't also wipe class/subclass answers the player already made
 function clearChoiceAnswers(pendings) {
-  pendings.forEach(p => { delete creatorState.choiceAnswers[p.featureName]; });
+  pendings.forEach(p => {
+    delete creatorState.choiceAnswers[p.featureName];
+    delete creatorState.expandedChoiceOption[p.featureName];
+  });
 }
 
 

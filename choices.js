@@ -24,6 +24,11 @@
    "save as written" path with nothing pretending otherwise. */
 
 let choiceSelected = [];
+// which option's collapse-card is open right now, single-open accordion --
+// mirrors creator.js's creatorState.expandedChoiceOption but this modal has
+// no persistent state object to hang it on, so it's module-level like
+// choiceSelected already was
+let choiceExpanded = null;
 
 /* `onResolved`, when given, is called instead of the usual close-and-render
    once the choice is answered -- that's how the creator and level-up chain
@@ -34,6 +39,7 @@ function openResolveChoiceModal(id, onResolved) {
   const pending = character.pendingChoices.find(p => p.id === id);
   if (!pending) { if (onResolved) onResolved(); return; }
   choiceSelected = [];
+  choiceExpanded = null;
   openModal("full", resolveChoiceHtml(pending));
   wireResolveChoiceModal(pending, onResolved);
 }
@@ -103,18 +109,37 @@ function choiceOptionDescFor(pending, label) {
   return "";
 }
 
+// each option renders as its own collapse-card -- collapsed shows just the
+// label, clicking it opens a body with the full description and a Choose
+// button, and opening one closes whichever was open before. Same accordion
+// as Features & Traits' Race Traits cards, and the same pattern
+// creator.js's choiceCardHtml uses for this exact modal's build-time cousin.
 function resolveChoiceHtml(pending) {
   const options = choiceOptionsFor(pending);
   return `
     <div class="modal-heading">${esc(pending.prompt)}</div>
     <div class="breakdown-source" style="margin-bottom:12px;">From ${esc(pending.source)} — pick ${pending.count}</div>
     ${options && options.length ? `
-      ${options.map(opt => `
-        <button type="button" class="toggle-btn creator-option" data-choice-option="${esc(opt)}" style="display:block;width:100%;text-align:left;margin-bottom:8px;padding:12px 14px;">
-          <div>${esc(opt)}</div>
-          ${choiceOptionDescFor(pending, opt) ? `<div class="field-hint" style="margin-top:2px;">${esc(choiceOptionDescFor(pending, opt))}</div>` : ""}
-        </button>
-      `).join("")}
+      ${options.map(opt => {
+        const isSelected = choiceSelected.includes(opt);
+        const isOpen = choiceExpanded === opt;
+        const desc = choiceOptionDescFor(pending, opt);
+        return `
+          <div class="collapse-card" style="margin-bottom:8px;">
+            <div class="collapse-head" data-choice-expand="${esc(opt)}" style="padding:10px 12px;">
+              <span>${esc(opt)}${isSelected ? " ✓" : ""}</span>
+              <span>${isOpen ? "−" : "+"}</span>
+            </div>
+            <div class="collapse-body ${isOpen ? "open" : ""}" style="padding:0 12px 12px;">
+              ${desc ? `<div class="field-hint" style="margin-bottom:8px;">${esc(desc)}</div>` : ""}
+              <button type="button" class="toggle-btn creator-option ${isSelected ? "active" : ""}"
+                data-choice-option="${esc(opt)}" style="display:block;width:100%;text-align:left;padding:8px 10px;">
+                ${isSelected ? "Selected" : "Choose this"}
+              </button>
+            </div>
+          </div>
+        `;
+      }).join("")}
       <button class="btn-primary" id="choice-confirm-button">Confirm</button>
     ` : `<div class="empty-hint">Nothing to pick from yet — use the field below.</div>`}
 
@@ -126,18 +151,37 @@ function resolveChoiceHtml(pending) {
 }
 
 function wireResolveChoiceModal(pending, onResolved) {
+  // expanding/collapsing and picking both need the option list re-rendered
+  // (the +/- indicator, which body has .open, the ✓ and Selected label all
+  // depend on module state) -- redraw the modal content in place rather than
+  // closing and reopening, same as redrawCreator() does for the builder
+  function redraw() {
+    const container = document.querySelector("#modal-overlay .modal-content");
+    if (!container) return;
+    container.innerHTML = resolveChoiceHtml(pending);
+    wireResolveChoiceModal(pending, onResolved);
+  }
+
+  document.querySelectorAll("[data-choice-expand]").forEach(head => {
+    head.addEventListener("click", () => {
+      const opt = head.dataset.choiceExpand;
+      choiceExpanded = (choiceExpanded === opt) ? null : opt;
+      redraw();
+    });
+  });
+
   document.querySelectorAll("[data-choice-option]").forEach(btn => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
       const value = btn.dataset.choiceOption;
       const idx = choiceSelected.indexOf(value);
       if (idx >= 0) {
         choiceSelected.splice(idx, 1);
-        btn.classList.remove("active");
       } else {
         if (choiceSelected.length >= pending.count) { showToast("You can only pick " + pending.count); return; }
         choiceSelected.push(value);
-        btn.classList.add("active");
       }
+      redraw();
     });
   });
 
