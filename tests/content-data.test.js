@@ -154,6 +154,40 @@ module.exports = function (suite) {
     suite.is("every magic item is well-formed", failures, []);
   }
 
+  suite.section("SRD_SPELLS");
+  {
+    const failures = [];
+    checkNoDuplicates("SRD_SPELLS", app.SRD_SPELLS.map(s => s.name), failures);
+    // 319 is the actual count of spells in the free SRD 5.1 content (24
+    // cantrips + 49/54/42 at 1st-3rd + 31/37/31 at 4th-6th + 20/16/15 at
+    // 7th-9th) -- pinned here so a future edit that accidentally drops a
+    // chunk of the table fails loudly instead of just quietly shrinking
+    suite.is("has every SRD 5.1 spell", app.SRD_SPELLS.length, 319);
+    const classNames = app.SRD_CLASSES.map(c => c.name);
+    app.SRD_SPELLS.forEach(s => {
+      const label = "SRD_SPELLS." + (s.name || "?");
+      if (!s.name) failures.push("an SRD_SPELLS entry has no name");
+      if (typeof s.level !== "number" || s.level < 0 || s.level > 9) failures.push(label + " has an out-of-range level: " + s.level);
+      if (!app.SPELL_SCHOOLS.includes(s.school)) failures.push(label + " has an unknown school: " + s.school);
+      if (!s.castingTime) failures.push(label + " has no castingTime");
+      if (!s.range) failures.push(label + " has no range");
+      if (!s.components) failures.push(label + " has no components");
+      if (!s.duration) failures.push(label + " has no duration");
+      if (typeof s.ritual !== "boolean") failures.push(label + " has a non-boolean ritual flag");
+      if (typeof s.concentration !== "boolean") failures.push(label + " has a non-boolean concentration flag");
+      // duration text and the concentration flag are two independent fields
+      // the source data could disagree on -- this is the same check that
+      // caught nothing when the table was first built, kept here so it
+      // stays that way
+      if (/concentration/i.test(s.duration || "") !== s.concentration) failures.push(label + "'s duration text and concentration flag disagree");
+      if (!Array.isArray(s.classes) || !s.classes.length) failures.push(label + " has no classes");
+      else s.classes.forEach(c => { if (!classNames.includes(c)) failures.push(label + " lists an unknown class: " + c); });
+      if (!s.desc || s.desc.length < 20) failures.push(label + " has no real description");
+      if (s.official !== true) failures.push(label + " isn't tagged official:true");
+    });
+    suite.is("every spell is well-formed", failures, []);
+  }
+
   suite.section("KIT_ITEMS");
   {
     const failures = [];

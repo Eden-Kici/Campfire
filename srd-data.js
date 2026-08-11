@@ -230,16 +230,6 @@ const CHOICE_KINDS = [
   { value: "custom", label: "Custom (author your own options)" }
 ];
 
-// a small slice of the wizard cantrip list, enough for High Elf's Cantrip
-// choice to offer something real rather than free text only
-const SRD_CANTRIPS = [
-  { name: "Fire Bolt", desc: "Ranged spell attack, 1d10 fire damage." },
-  { name: "Mage Hand", desc: "A spectral hand that can carry up to 10 pounds." },
-  { name: "Minor Illusion", desc: "Create a sound or an image, no larger than a 5-foot cube." },
-  { name: "Prestidigitation", desc: "A handful of harmless minor magical effects." },
-  { name: "Ray of Frost", desc: "Ranged spell attack, 1d8 cold damage and the target's speed is reduced by 10 feet." }
-];
-
 const SRD_BACKGROUNDS = [
   { name: "Soldier", desc: "You had a military career, trained in combat and discipline.", skills: ["Athletics", "Intimidation"], feature: { name: "Military Rank", desc: "You have a military rank and command the respect of soldiers loyal to your former organization." } },
   { name: "Sage", desc: "You spent years learning the lore of the multiverse.", skills: ["Arcana", "History"], feature: { name: "Researcher", desc: "You know how or where to find information, even if you don't know it yourself." } },
@@ -376,6 +366,11 @@ const ARMOUR_KINDS = [
 ];
 
 const ITEM_RARITIES = ["Common", "Uncommon", "Rare", "Very Rare", "Legendary", "Artifact"];
+
+// the 8 schools of magic every SRD_SPELLS entry's `school` is drawn from --
+// used by content-data.test.js to catch a typo the same way ITEM_RARITIES
+// already does for magic items
+const SPELL_SCHOOLS = ["Abjuration", "Conjuration", "Divination", "Enchantment", "Evocation", "Illusion", "Necromancy", "Transmutation"];
 
 /* Standalone features -- feats, not tied to a race, class, subclass or
    background. Same shape as any other feature (name/desc, optional

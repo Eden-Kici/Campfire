@@ -124,6 +124,11 @@ const CONTENT_CATEGORIES = [
   // this isn't a 4th item type, just SRD_MAGIC_ITEMS entries (and any Custom
   // item with a rarity set) called out as their own browsing category
   { key: "magicitems", label: "Magic Items", kind: "item", srdList: () => SRD_MAGIC_ITEMS, customList: () => customContent.items.filter(i => i.rarity) },
+  // read-only, same as Conditions below -- there's no Custom spell editor
+  // yet, so this is reference content the Add Spell modal (tab-spells.js)
+  // can search, not something you fork and edit here. A homebrew spell is
+  // still just typed straight into the existing manual Add Spell form.
+  { key: "spells", label: "Spells", kind: "spell", srdList: () => SRD_SPELLS, customList: () => [] },
   // read-only: rules text, not editable content. No Custom side and no
   // Duplicate button (see srdDetailHtml / wireSrdDetail) -- a homebrew
   // condition is just a name typed into the Add Effect combo box, which
@@ -535,7 +540,27 @@ function srdDetailHtml() {
   if (cat.kind === "background") return backgroundDetailHtml(contentSrdEntry);
   if (cat.kind === "condition") return conditionDetailHtml(contentSrdEntry);
   if (cat.kind === "feature") return featureDetailHtml(contentSrdEntry);
+  if (cat.kind === "spell") return spellDetailHtml(contentSrdEntry);
   return srdItemDetailHtml(contentSrdEntry);
+}
+
+// no Duplicate button -- same reasoning as conditionDetailHtml, there's no
+// Custom spell editor yet (see the "spells" category comment above).
+// levelLabel() is tab-spells.js's own ("Cantrips" / "1st Level" / etc.);
+// load order doesn't matter here since this only runs at render time, well
+// after every script has loaded
+function spellDetailHtml(spell) {
+  return `
+    <div class="modal-heading">${esc(spell.name)}</div>
+    <div class="breakdown-source" style="margin-bottom:6px;">${esc(levelLabel(spell.level))} ${esc(spell.school)}${spell.ritual ? " (ritual)" : ""}</div>
+    <div class="breakdown-row"><span>Casting Time</span><span>${esc(spell.castingTime)}</span></div>
+    <div class="breakdown-row"><span>Range</span><span>${esc(spell.range)}</span></div>
+    <div class="breakdown-row"><span>Components</span><span>${esc(spell.components)}</span></div>
+    <div class="breakdown-row"><span>Duration</span><span>${esc(spell.duration)}</span></div>
+    <div class="breakdown-row"><span>Classes</span><span>${esc(spell.classes.join(", "))}</span></div>
+    <div class="trait-desc" style="margin:10px 0;white-space:pre-wrap;">${esc(spell.desc)}</div>
+    <button class="btn-secondary" id="content-back-button">Back</button>
+  `;
 }
 
 // no Duplicate button -- conditions have no Custom Content editor of their

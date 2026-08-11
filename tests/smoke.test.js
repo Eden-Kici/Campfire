@@ -54,6 +54,62 @@ module.exports = function (suite) {
   suite.runs("spell detail", () => app.openSpellDetailModal(c.spells[0].id));
   suite.runs("slot editor", () => app.openEditSlotsModal(1));
   suite.runs("cast a spell", () => app.castSpell(c.spells.find(s => s.level > 0).id));
+  suite.runs("the Add Spell form searches the real SRD list, not just free text", () => {
+    const fields = app.spellFormFieldsHtml(null, true);
+    if (!fields.includes('class="field combo"')) throw new Error("expected the Add flow to use the SRD-searching combo field");
+    if (!fields.includes('id="spell-form-name"')) throw new Error("expected a name field");
+  });
+  suite.runs("editing an existing spell still uses a plain name field, not the picker", () => {
+    const fields = app.spellFormFieldsHtml(c.spells[0]);
+    if (fields.includes('class="field combo"')) throw new Error("expected Edit to keep the plain text field, not the SRD picker");
+  });
+  suite.runs("spellCastingTimeCode maps SRD casting-time text onto the sheet's three buckets", () => {
+    if (app.spellCastingTimeCode("1 action") !== "A") throw new Error("expected Action");
+    if (app.spellCastingTimeCode("1 bonus action") !== "B") throw new Error("expected Bonus Action");
+    if (app.spellCastingTimeCode("1 reaction, which you take when you are hit") !== "R") throw new Error("expected Reaction");
+    if (app.spellCastingTimeCode("1 minute") !== "A") throw new Error("expected the no-bucket fallback to be Action");
+  });
+  suite.runs("spellLikelyAttackRoll reads the spell's own text", () => {
+    const fireBolt = app.SRD_SPELLS.find(s => s.name === "Fire Bolt");
+    if (!app.spellLikelyAttackRoll(fireBolt.desc)) throw new Error("expected Fire Bolt to read as an attack-roll spell");
+    const magicMissile = app.SRD_SPELLS.find(s => s.name === "Magic Missile");
+    if (app.spellLikelyAttackRoll(magicMissile.desc)) throw new Error("expected Magic Missile (auto-hit, no attack roll) to read false");
+  });
+  suite.runs("Manage Content browses the real SRD spell list", () => {
+    app.contentSrdCategory = "spells";
+    app.contentScreen = "category";
+    const cat = app.CONTENT_CATEGORIES.find(cat => cat.key === "spells");
+    if (cat.srdList().length !== 319) throw new Error("expected the spells category to expose all 319 SRD spells");
+    app.redrawContentManager();  // exercises contentCategoryHtml() end to end without throwing
+  });
+  suite.runs("an SRD spell has a read-only detail view -- no Duplicate button, no Custom spell editor yet", () => {
+    const cat = app.CONTENT_CATEGORIES.find(cat => cat.key === "spells");
+    app.contentSrdEntry = cat.srdList().find(s => s.name === "Fireball");
+    app.contentSrdCategory = "spells";
+    app.contentScreen = "srd-detail";
+    const html = app.contentManagerHtml();
+    if (!html.includes("Fireball")) throw new Error("expected Fireball's own detail view");
+    if (!html.includes("8d6 fire damage")) throw new Error("expected the real SRD description, not a placeholder");
+    if (html.includes("Duplicate to Custom")) throw new Error("expected no Duplicate button -- spells have no Custom editor yet");
+  });
+  suite.runs("High Elf's Cantrip choice now offers the real SRD cantrip list", () => {
+    const options = app.creatorChoiceOptionsFor({ kind: "cantrip" });
+    if (options.length !== 24) throw new Error("expected all 24 SRD cantrips, got " + options.length);
+    if (!options.includes("Fire Bolt")) throw new Error("expected Fire Bolt in the list");
+  });
+  suite.runs("resolving a cantrip choice pulls castingTime/attackRoll from the real spell, not hardcoded defaults", () => {
+    let character = { classes: [{ name: "Wizard", level: 1, hitDie: "d6" }],
+      traits: { "Race Traits": [{ name: "Cantrip", desc: "You know one cantrip." }], "Class Features": [], "Background": [], "Other": [] },
+      pendingChoices: [{ id: 9001, source: "High Elf", traitCategory: "Race Traits", featureName: "Cantrip", kind: "cantrip", prompt: "Choose a wizard cantrip", count: 1 }],
+      spells: [] };
+    const pending = character.pendingChoices[0];
+    app.applyChoiceResolution(character, pending, ["Fire Bolt"]);
+    const learned = character.spells.find(s => s.name === "Fire Bolt");
+    if (!learned) throw new Error("expected Fire Bolt to land on character.spells");
+    if (learned.castingTime !== "A") throw new Error("expected Fire Bolt's real casting time (1 action) to map to A");
+    if (!learned.attackRoll) throw new Error("expected Fire Bolt to be flagged as an attack-roll spell, not hardcoded false");
+    if (!learned.desc.includes("ranged spell attack")) throw new Error("expected the real SRD description, not a stub");
+  });
 
   suite.section("notes");
   suite.runs("note editor", () => app.openNoteEditorModal(c.notes[0].id));

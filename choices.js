@@ -66,7 +66,13 @@ function choiceOptionsFor(pending) {
   // Expertise: already proficient (1), not already Expertise (2)
   if (pending.kind === "skill") return Object.keys(character.skillProficiency).filter(name => character.skillProficiency[name] === 1);
   if (pending.kind === "fightingStyle") return FIGHTING_STYLES.map(f => f.label);
-  if (pending.kind === "cantrip") return SRD_CANTRIPS.map(c => c.name);
+  // every SRD cantrip, not just one class's list -- the generic choice
+  // system has no per-choice class filter (see the "skill" branch above,
+  // which doesn't filter by class either), so this is the same imprecision
+  // High Elf's own "from the wizard spell list" flavor text already had
+  // before SRD_SPELLS existed, just with a real 24-cantrip list now instead
+  // of a 5-entry stub
+  if (pending.kind === "cantrip") return SRD_SPELLS.filter(s => s.level === 0).map(s => s.name);
   // custom content's own author-written options (content.js) -- carried
   // straight through from the granting feature's .choice.options, the same
   // way pendingChoiceFor() carries kind/count/prompt
@@ -88,7 +94,7 @@ function choiceOptionDescFor(pending, label) {
     return style.desc + " Not modeled yet — picking this saves it as written, same as the manual field below.";
   }
   if (pending.kind === "cantrip") {
-    const c = SRD_CANTRIPS.find(x => x.name === label);
+    const c = SRD_SPELLS.find(x => x.level === 0 && x.name === label);
     return c ? c.desc : "";
   }
   if (pending.kind === "custom") {
@@ -222,11 +228,13 @@ function applyChoiceResolution(character, pending, chosen) {
     annotateTraitWithChoice(character, pending, chosen.join(", "));
   } else if (pending.kind === "cantrip") {
     chosen.forEach(name => {
-      const known = SRD_CANTRIPS.find(x => x.name === name);
+      const known = SRD_SPELLS.find(x => x.level === 0 && x.name === name);
       const nextId = Math.max(0, ...character.spells.map(s => s.id), 0) + 1;
       character.spells.push({
         id: nextId, name: known ? known.name : name, level: 0, classSource: "Racial",
-        castingTime: "A", attackRoll: false, desc: known ? known.desc : ""
+        castingTime: known ? spellCastingTimeCode(known.castingTime) : "A",
+        attackRoll: known ? spellLikelyAttackRoll(known.desc) : false,
+        desc: known ? known.desc : ""
       });
     });
     annotateTraitWithChoice(character, pending, chosen.join(", "));

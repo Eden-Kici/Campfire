@@ -202,6 +202,23 @@ function wireSelectsIn(root) {
   (root || document).querySelectorAll("[data-select]").forEach(wrap => wireSelect(wrap.dataset.select));
 }
 
+// Sets a selectFieldHtml control's value from code rather than a click --
+// for auto-fill flows (picking a known spell prefills several fields at
+// once; see tab-spells.js's SRD picker) where nothing was actually clicked.
+// Mirrors wireSelect's own option-click handler so the hidden input, the
+// visible label and the "active" option all stay in sync the way a real
+// click would leave them.
+function setSelectValue(id, value) {
+  const wrap = document.querySelector(`[data-select="${id}"]`);
+  if (!wrap) return;
+  const input = document.getElementById(id);
+  const option = Array.from(wrap.querySelectorAll(".select-option")).find(o => o.dataset.value === String(value));
+  if (!option) return;
+  input.value = value;
+  wrap.querySelector(".select-value").textContent = option.textContent.trim();
+  wrap.querySelectorAll(".select-option").forEach(o => o.classList.toggle("active", o === option));
+}
+
 /* A text field with its own suggestion list. Replaces <datalist>, which renders
    as an OS-native dropdown -- fine on desktop, wrong for something that ships
    as a mobile app. Free text still wins, so non-SRD names work. The list sits

@@ -206,7 +206,7 @@ function creatorChoiceOptionsFor(pending) {
     return known.filter((name, i) => known.indexOf(name) === i);
   }
   if (pending.kind === "fightingStyle") return FIGHTING_STYLES.map(f => f.label);
-  if (pending.kind === "cantrip") return SRD_CANTRIPS.map(c => c.name);
+  if (pending.kind === "cantrip") return SRD_SPELLS.filter(s => s.level === 0).map(s => s.name);
   if (pending.kind === "custom") return (pending.options || []).map(o => o.label);
   return null;
 }

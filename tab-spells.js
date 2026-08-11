@@ -13,6 +13,29 @@ function levelLabel(lvl) {
   return lvl + "th Level";
 }
 
+// SRD_SPELLS' castingTime is free text straight from the SRD ("1 action",
+// "1 bonus action", "1 reaction, which you take when..."); a character's
+// own spells only track three buckets (the Casting Time select below).
+// Longer casting times (1 minute, 10 minutes, 1 hour, and up) have no
+// bucket of their own yet, so they fall back to Action -- the same
+// simplification the rest of this app's spell model already makes rather
+// than growing a fourth option nothing else here knows how to use.
+function spellCastingTimeCode(text) {
+  if (/bonus action/i.test(text)) return "B";
+  if (/reaction/i.test(text)) return "R";
+  return "A";
+}
+
+// heuristic, not data -- SRD_SPELLS is description-only (see its own header
+// comment) and carries no structured attack-roll flag, so this reads the
+// spell's own text the same way a player would, to decide whether "Requires
+// spell attack roll" should start checked when a known spell is picked or
+// granted. Good enough for the common "ranged spell attack"/"melee spell
+// attack" phrasing every attack cantrip and spell in the SRD actually uses.
+function spellLikelyAttackRoll(desc) {
+  return /spell attack/i.test(desc);
+}
+
 function renderSpellRow(spell) {
   const showClassTag = character.spellcasting.classes.length > 1;
   return `
@@ -184,10 +207,18 @@ function openEditSlotsModal(level) {
   });
 }
 
-function spellFormFieldsHtml(spell) {
+// pickFromSrd swaps the Name field for a comboFieldHtml searching every
+// SRD_SPELLS name -- only on the Add flow (openAddSpellModal), not Edit,
+// since editing is about a spell already on the sheet, not picking a new
+// one from the reference list. Typing something not in the list is still a
+// complete, valid spell either way, same "pick or type your own" rule Add
+// Language already uses.
+function spellFormFieldsHtml(spell, pickFromSrd) {
   const classOptions = character.spellcasting.classes.map(c => c.name);
   return `
-    ${textFieldHtml("spell-form-name", "Name", spell ? spell.name : "", { placeholder: "e.g. Fireball" })}
+    ${pickFromSrd
+      ? comboFieldHtml("spell-form-name", "Name", "Search the SRD or type your own", "")
+      : textFieldHtml("spell-form-name", "Name", spell ? spell.name : "", { placeholder: "e.g. Fireball" })}
     <div class="field-row">
       ${selectFieldHtml("spell-form-level", "Level",
         [{ value: "0", label: "Cantrip" }].concat([1, 2, 3, 4, 5, 6, 7, 8, 9].map(l => ({ value: String(l), label: levelLabel(l) }))),
@@ -198,7 +229,7 @@ function spellFormFieldsHtml(spell) {
       { value: "A", label: "Action" }, { value: "B", label: "Bonus Action" }, { value: "R", label: "Reaction" }
     ], spell ? spell.castingTime : "A")}
     ${toggleLineHtml("spell-form-attack-switch", "Requires spell attack roll", spell && spell.attackRoll)}
-    ${textFieldHtml("spell-form-desc", "Description", spell ? spell.desc : "", { placeholder: "Optional" })}
+    ${textAreaFieldHtml("spell-form-desc", "Description", spell ? spell.desc : "", { placeholder: "Optional", large: true })}
   `;
 }
 
@@ -216,11 +247,31 @@ function openAddSpellModal() {
   let attackOn = false;
   openModal("full", `
     <div class="modal-heading">Add Spell</div>
-    ${spellFormFieldsHtml(null)}
+    ${spellFormFieldsHtml(null, true)}
     <button class="btn-primary" id="save-spell-button" style="margin-top:6px;">Add Spell</button>
   `);
   wireSelect("spell-form-level"); wireSelect("spell-form-class"); wireSelect("spell-form-time");
   document.getElementById("spell-form-attack-switch").addEventListener("click", (e) => { attackOn = !attackOn; e.currentTarget.classList.toggle("on", attackOn); });
+
+  // picking a real SRD spell prefills everything else on the form: level,
+  // casting time (best-effort -- see spellCastingTimeCode's own comment),
+  // class (only when the character actually has that class as a caster;
+  // otherwise left for the player to pick, since offering a class they
+  // don't have would be worse than offering none), the attack-roll toggle
+  // (see spellLikelyAttackRoll), and the full description.
+  wireCombo("spell-form-name", SRD_SPELLS.map(s => s.name), (value) => {
+    const known = SRD_SPELLS.find(s => s.name === value);
+    if (!known) return;
+    setSelectValue("spell-form-level", String(known.level));
+    setSelectValue("spell-form-time", spellCastingTimeCode(known.castingTime));
+    const classOptions = character.spellcasting.classes.map(c => c.name);
+    const matchedClass = known.classes.find(c => classOptions.includes(c));
+    if (matchedClass) setSelectValue("spell-form-class", matchedClass);
+    attackOn = spellLikelyAttackRoll(known.desc);
+    document.getElementById("spell-form-attack-switch").classList.toggle("on", attackOn);
+    document.getElementById("spell-form-desc").value = known.desc;
+  });
+
   document.getElementById("save-spell-button").addEventListener("click", () => {
     const formData = readSpellForm();
     const newId = Math.max(0, ...character.spells.map(s => s.id)) + 1;
