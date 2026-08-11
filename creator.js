@@ -26,8 +26,13 @@ function redrawCreator() {
     wireCreatorStart();
     return;
   }
-  box.innerHTML = creatorStepHtml();
+  // the tutorial's "creation" phase renders inline here rather than as a
+  // floating overlay -- this modal is modal-full (94% of the phone), so a
+  // floating banner would fight it for space. See tutorial.js's own header
+  // comment for the rest of the reasoning.
+  box.innerHTML = tutorialInlineHtml() + creatorStepHtml();
   wireCreatorStep();
+  wireTutorialInline();
 }
 
 /* ---------- step: start (build from scratch, or import) ----------

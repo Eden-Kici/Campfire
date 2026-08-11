@@ -601,6 +601,7 @@ function openAppMenu() {
     <button class="drawer-item" id="menu-content">Manage Content<span class="drawer-hint">${contentCount ? contentCount + " custom" : ""}</span></button>
     <button class="drawer-item" id="menu-theme">Theme<span class="drawer-hint">${esc((THEMES.find(t => t.value === theme.base) || {}).label || "")}</span></button>
     <button class="drawer-item" id="menu-options">Options</button>
+    <button class="drawer-item" id="menu-tutorial">Replay Tutorial<span class="drawer-hint">${tutorialState.active ? "in progress" : ""}</span></button>
 
     <div class="drawer-section">Character</div>
     <button class="drawer-item" id="menu-level-up">Level Up<span class="drawer-hint">level ${totalLevel(character)}</span></button>
@@ -619,6 +620,7 @@ function openAppMenu() {
   document.getElementById("menu-level-up").addEventListener("click", openLevelUpModal);
   document.getElementById("menu-theme").addEventListener("click", openThemeModal);
   document.getElementById("menu-options").addEventListener("click", openSettingsModal);
+  document.getElementById("menu-tutorial").addEventListener("click", startTutorial);
 }
 
 // development aid: persistence means the demo character keeps whatever state

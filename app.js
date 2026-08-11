@@ -31,6 +31,7 @@ function renderContent() {
   // every mutation in the app ends in a re-render, so saving here catches all
   // of them without hunting individual call sites
   persistCharacters();
+  renderTutorialOverlay();   // keeps the tabs/actions phases in sync with whichever tab is now active
 }
 
 
@@ -42,6 +43,7 @@ function renderContent() {
 loadTheme();
 loadSettings();
 loadCustomContent();
+loadTutorialState();
 const restored = loadCharacters();
 showScreen("selector");
 if (restored && restored.stale) {

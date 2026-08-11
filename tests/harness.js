@@ -34,7 +34,22 @@ function domStub() {
     set() { return true; }
   });
 
-  const store = {};
+  // Every other key starts genuinely empty (a fresh install), and that's
+  // the right default for tutorial.js's own tests. For every OTHER suite
+  // it's just noise -- an unrelated test calling renderContent()/showScreen()
+  // would otherwise also trip the onboarding tutorial's welcome modal on a
+  // totally fresh boot, the same as a real first-ever launch would. Seeding
+  // "already finished" here keeps every suite that isn't about the tutorial
+  // decoupled from it, the same way __modals/__toasts get reset after boot
+  // so an app-menu toast at load time doesn't leak into some other test's
+  // "before/after" comparison.
+  const store = {
+    "campfire.tutorial": JSON.stringify({
+      active: false, phase: "done",
+      seenTabs: ["combat", "character", "spells", "inventory", "notes"],
+      seenActions: ["roll", "hp", "spell"]
+    })
+  };
   return {
     getComputedStyle: () => ({ getPropertyValue: () => "" }),
     document: {

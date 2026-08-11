@@ -78,6 +78,16 @@ function showScreen(screen) {
   refreshMyPartyIdentity();          // no-op unless you're actually in a party
   if (screen === "selector") renderSelectorScreen();
   else { renderSheetHeader(); renderContent(); }
+  // landing on the sheet mid-tutorial means a character just got built (or
+  // imported) -- the creation phase's job is done, hand off to the tab tour.
+  // renderContent() already calls renderTutorialOverlay() for the sheet
+  // case; this call is what covers the selector screen (the welcome modal)
+  // and this same phase flip.
+  if (screen === "sheet" && tutorialState.active && tutorialState.phase === "creation") {
+    tutorialState.phase = "tabs";
+    persistTutorialState();
+  }
+  renderTutorialOverlay();
 }
 
 function renderSheetHeader() {

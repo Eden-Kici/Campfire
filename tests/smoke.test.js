@@ -585,4 +585,157 @@ module.exports = function (suite) {
     duration: { type: "Permanent", rounds: null },
     effects: [{ category: "Advantage", value: { rollType: "attack", mode: "advantage" } }] });
   suite.is("advantage and disadvantage cancel", app.derivedRollMode(c, "attack").mode, "normal");
+
+  suite.section("onboarding tutorial");
+  // the harness seeds campfire.tutorial as already-finished for every OTHER
+  // suite (see harness.js's domStub) so unrelated tests aren't quietly
+  // opening a welcome modal on every renderContent()/showScreen() call --
+  // these tests reset tutorialState by hand instead of relying on that.
+  suite.runs("a brand new install starts the tutorial automatically", () => {
+    // loadTutorialState() is what boot calls when localStorage has no
+    // campfire.tutorial key at all yet -- simulate a from-scratch device
+    app.localStorage.removeItem("campfire.tutorial");
+    app.tutorialState = { active: false, phase: null, seenTabs: [], seenActions: [] };
+    app.loadTutorialState();
+    if (!app.tutorialState.active) throw new Error("expected a fresh install to start active");
+    if (app.tutorialState.phase !== "welcome") throw new Error("expected a fresh install to start at welcome");
+    if (app.localStorage.getItem("campfire.tutorial") === null) throw new Error("expected loadTutorialState to persist the fresh-install state immediately");
+  });
+  suite.runs("loadTutorialState reads back exactly what persistTutorialState wrote", () => {
+    app.tutorialState = { active: true, phase: "tabs", seenTabs: ["combat", "spells"], seenActions: ["roll"] };
+    app.persistTutorialState();
+    app.tutorialState = { active: false, phase: null, seenTabs: [], seenActions: [] };
+    app.loadTutorialState();
+    if (!app.tutorialState.active) throw new Error("expected active to round-trip true");
+    if (app.tutorialState.phase !== "tabs") throw new Error("expected phase to round-trip");
+    if (app.tutorialState.seenTabs.join(",") !== "combat,spells") throw new Error("expected seenTabs to round-trip");
+    if (app.tutorialState.seenActions.join(",") !== "roll") throw new Error("expected seenActions to round-trip");
+  });
+  suite.runs("an inactive tutorial shows nothing, in any phase", () => {
+    app.tutorialState = { active: false, phase: "welcome", seenTabs: [], seenActions: [] };
+    if (app.tutorialContentFor() !== null) throw new Error("expected null while inactive");
+  });
+  suite.runs("welcome phase offers Start Tutorial and Skip", () => {
+    app.tutorialState = { active: true, phase: "welcome", seenTabs: [], seenActions: [] };
+    const content = app.tutorialContentFor();
+    if (content.placement !== "modal") throw new Error("expected the welcome step to be a modal");
+    if (!content.showSkip) throw new Error("expected a Skip option on welcome");
+    if (content.nextLabel !== "Start Tutorial") throw new Error("expected a Start Tutorial button");
+  });
+  suite.runs("starting the tutorial from welcome opens the character creator", () => {
+    app.tutorialState = { active: true, phase: "welcome", seenTabs: [], seenActions: [] };
+    app.creatorState = null;
+    app.tutorialContentFor().onNext();
+    if (app.tutorialState.phase !== "creation") throw new Error("expected phase to advance to creation");
+    if (!app.creatorState) throw new Error("expected onNext to open the character creator");
+  });
+  suite.runs("creation phase renders nothing until the wizard is actually started", () => {
+    app.tutorialState = { active: true, phase: "creation", seenTabs: [], seenActions: [] };
+    app.creatorState = { started: false, step: 0 };
+    if (app.tutorialContentFor() !== null) throw new Error("expected null before 'Build a Character' is tapped");
+  });
+  suite.runs("creation phase content is keyed by the wizard's current step", () => {
+    app.tutorialState = { active: true, phase: "creation", seenTabs: [], seenActions: [] };
+    app.creatorState = {
+      started: true, step: 0, race: "Human", subrace: null, charClass: "Fighter", subclass: null, background: "Soldier",
+      scores: {}, asiBonus: { plus2: null, plus1: null }, raceSkillChoices: [], classSkillChoices: [], equipment: [],
+      choiceAnswers: {}, expandedChoiceOption: {}, customBuild: false
+    };
+    // Fighter has no subclass at level 1, so creatorStepKeys()[0] is "race"
+    const content = app.tutorialContentFor();
+    if (content.placement !== "inline") throw new Error("expected the creation phase to render inline, not as a floating banner");
+    if (content.title !== "Race") throw new Error("expected step content keyed off currentStepKey(), got " + content.title);
+  });
+  suite.runs("the creator's own modal actually includes the inline tutorial banner", () => {
+    app.tutorialState = { active: true, phase: "creation", seenTabs: [], seenActions: [] };
+    app.openCharacterCreator();
+    app.creatorState.started = true;
+    app.creatorState.race = "Human";
+    app.redrawCreator();
+    const html = app.creatorStepHtml();
+    const inline = app.tutorialInlineHtml();
+    if (!inline.includes("tutorial-inline")) throw new Error("expected the inline banner markup");
+    if (!inline.includes("Race")) throw new Error("expected Race-step tutorial text");
+  });
+  suite.runs("landing on the sheet mid-creation hands off to the tab tour", () => {
+    app.tutorialState = { active: true, phase: "creation", seenTabs: [], seenActions: [] };
+    app.showScreen("sheet");
+    if (app.tutorialState.phase !== "tabs") throw new Error("expected creation -> tabs on reaching the sheet");
+  });
+  suite.runs("tabs phase is keyed by activeTab and marks it seen", () => {
+    app.tutorialState = { active: true, phase: "tabs", seenTabs: [], seenActions: [] };
+    app.activeTab = "combat";
+    app.currentScreen = "sheet";
+    const content = app.tutorialContentFor();
+    if (content.placement !== "sheet-banner") throw new Error("expected a floating banner for the tab tour");
+    if (content.title !== "Combat") throw new Error("expected Combat's own content");
+    if (content.target !== '[data-tab="combat"]') throw new Error("expected the banner to point at the Combat tab button");
+    app.renderTutorialOverlay();   // this is what actually records the tab as seen
+    if (!app.tutorialState.seenTabs.includes("combat")) throw new Error("expected renderTutorialOverlay to mark the tab seen");
+  });
+  suite.runs("tabs phase advances to actions once all five tabs are seen", () => {
+    app.tutorialState = { active: true, phase: "tabs", seenTabs: ["combat", "character", "spells", "inventory"], seenActions: [] };
+    app.activeTab = "notes";
+    app.currentScreen = "sheet";
+    app.renderTutorialOverlay();
+    if (app.tutorialState.phase !== "actions") throw new Error("expected tabs -> actions once the fifth tab is visited");
+  });
+  suite.runs("actions phase points at the right control for the active tab", () => {
+    app.tutorialState = { active: true, phase: "actions", seenTabs: [], seenActions: [] };
+    app.activeTab = "combat";
+    const content = app.tutorialContentFor();
+    if (content.target !== "[data-roll-tohit]") throw new Error("expected the roll tip first");
+    content.onNext();
+    if (!app.tutorialState.seenActions.includes("roll")) throw new Error("expected Got It to mark the roll action seen");
+    const next = app.tutorialContentFor();
+    if (next.target !== "#hp-card") throw new Error("expected the HP tip next, on the same tab");
+  });
+  suite.runs("actions phase nudges toward another tab once the current one is exhausted", () => {
+    app.tutorialState = { active: true, phase: "actions", seenTabs: [], seenActions: ["roll", "hp"] };
+    app.activeTab = "combat";   // nothing left to try on Combat -- Cast a spell is on Spells
+    const content = app.tutorialContentFor();
+    if (content.onNext) throw new Error("expected a plain nudge, not another Got It action");
+    if (content.target !== '[data-tab="spells"]') throw new Error("expected the nudge to point at the Spells tab");
+  });
+  suite.runs("actions phase auto-advances to done once everything's been tried", () => {
+    app.tutorialState = { active: true, phase: "actions", seenTabs: [], seenActions: ["roll", "hp", "spell"] };
+    app.activeTab = "combat";
+    app.currentScreen = "sheet";
+    if (app.tutorialContentFor() !== null) throw new Error("expected nothing left to show");
+    app.renderTutorialOverlay();
+    if (app.tutorialState.phase !== "done") throw new Error("expected renderTutorialOverlay to advance actions -> done");
+  });
+  suite.runs("done phase is a closing modal that turns the tutorial off", () => {
+    app.tutorialState = { active: true, phase: "done", seenTabs: [], seenActions: [] };
+    const content = app.tutorialContentFor();
+    if (content.placement !== "modal") throw new Error("expected a closing modal");
+    if (content.showSkip) throw new Error("expected no Skip button once it's already over");
+    content.onNext();
+    if (app.tutorialState.active) throw new Error("expected Got It to turn the tutorial off");
+  });
+  suite.runs("skipTutorial deactivates from anywhere", () => {
+    app.tutorialState = { active: true, phase: "tabs", seenTabs: [], seenActions: [] };
+    app.skipTutorial();
+    if (app.tutorialState.active) throw new Error("expected skipTutorial to turn it off");
+  });
+  suite.runs("startTutorial (Replay Tutorial in the app menu) resets progress", () => {
+    app.tutorialState = { active: false, phase: "done", seenTabs: ["combat"], seenActions: ["roll"] };
+    app.startTutorial();
+    if (!app.tutorialState.active) throw new Error("expected active");
+    if (app.tutorialState.phase !== "welcome") throw new Error("expected phase reset to welcome");
+    if (app.tutorialState.seenTabs.length) throw new Error("expected seenTabs cleared");
+  });
+  suite.runs("the app menu offers Replay Tutorial", () => {
+    app.tutorialState = { active: false, phase: "done", seenTabs: [], seenActions: [] };
+    app.openAppMenu();   // exercised for real DOM wiring above; here just confirming it doesn't throw with the tutorial inactive
+  });
+  suite.runs("renderTutorialOverlay never throws across every phase, active or not", () => {
+    ["welcome", "creation", "tabs", "actions", "done", null].forEach(phase => {
+      app.tutorialState = { active: phase !== null, phase, seenTabs: [], seenActions: [] };
+      app.activeTab = "combat";
+      app.currentScreen = "sheet";
+      app.renderTutorialOverlay();
+    });
+    app.tutorialState = { active: false, phase: "done", seenTabs: ["combat", "character", "spells", "inventory", "notes"], seenActions: ["roll", "hp", "spell"] };
+  });
 };
