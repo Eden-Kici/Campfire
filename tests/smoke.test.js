@@ -586,6 +586,122 @@ module.exports = function (suite) {
     effects: [{ category: "Advantage", value: { rollType: "attack", mode: "advantage" } }] });
   suite.is("advantage and disadvantage cancel", app.derivedRollMode(c, "attack").mode, "normal");
 
+  suite.section("dice history");
+  suite.runs("rolling records an entry with its breakdown", () => {
+    app.clearRollHistory();
+    const weapon = c.inventory.find(i => i.isWeapon);
+    const attack = app.calculateAttack(c, weapon);
+    app.showRoll({ label: "Test Swing", notation: "1d20+5", sources: attack.toHitSources, kind: "attack" });
+    if (app.rollHistory.length !== 1) throw new Error("expected the roll to be logged, got " + app.rollHistory.length);
+    const entry = app.rollHistory[0];
+    if (entry.label !== "Test Swing") throw new Error("expected the label to be logged");
+    if (typeof entry.total !== "number") throw new Error("expected a numeric total");
+    if (!entry.detail) throw new Error("expected a dice breakdown");
+    if (entry.character !== c.name) throw new Error("expected the open character's name on the entry");
+  });
+  suite.runs("a reroll logs a second entry rather than replacing the first", () => {
+    app.clearRollHistory();
+    app.showRoll({ label: "Rerolled", notation: "1d20", kind: "check" });
+    app.rerollCurrent();
+    if (app.rollHistory.length !== 2) throw new Error("expected both rolls kept, got " + app.rollHistory.length);
+  });
+  suite.runs("a DC roll doesn't log until it's actually rolled", () => {
+    app.clearRollHistory();
+    app.showRoll({ label: "Waiting", notation: "1d20", kind: "save", dc: 15 });
+    if (app.rollHistory.length !== 0) throw new Error("expected nothing logged while the window waits for a tap");
+    app.rerollCurrent();   // what the Roll button calls
+    if (app.rollHistory.length !== 1) throw new Error("expected the roll to log once actually rolled");
+  });
+  suite.runs("the lightweight HP/hit-dice toasts log too", () => {
+    app.clearRollHistory();
+    app.showRollToast("Damage", "2d6+3");
+    if (app.rollHistory.length !== 1) throw new Error("expected showRollToast rolls to be logged as well");
+  });
+  suite.runs("newest first, and capped", () => {
+    app.clearRollHistory();
+    for (let i = 0; i < 60; i++) app.recordRoll({ label: "Roll " + i, notation: "1d6", total: i });
+    if (app.rollHistory.length !== 50) throw new Error("expected the log capped at 50, got " + app.rollHistory.length);
+    if (app.rollHistory[0].label !== "Roll 59") throw new Error("expected newest first");
+  });
+  suite.runs("history survives a reload", () => {
+    app.clearRollHistory();
+    app.recordRoll({ label: "Persisted", notation: "1d20", total: 12 });
+    app.rollHistory = [];
+    app.loadRollHistory();
+    if (app.rollHistory.length !== 1 || app.rollHistory[0].label !== "Persisted") throw new Error("expected the log to round-trip through localStorage");
+  });
+  suite.runs("the character name only shows on a mixed list", () => {
+    app.clearRollHistory();
+    app.recordRoll({ label: "A", notation: "1d6", total: 1, character: "Sigrid" });
+    app.recordRoll({ label: "B", notation: "1d6", total: 2, character: "Sigrid" });
+    if (app.historyShowsCharacters()) throw new Error("expected one character's own log not to repeat their name");
+    app.recordRoll({ label: "C", notation: "1d6", total: 3, character: "Someone Else" });
+    if (!app.historyShowsCharacters()) throw new Error("expected a mixed log to name who rolled what");
+  });
+  suite.runs("the empty state explains itself", () => {
+    app.clearRollHistory();
+    const html = app.diceHistoryHtml();
+    if (!html.includes("Nothing rolled yet")) throw new Error("expected an empty-state hint");
+    if (html.includes("Clear History")) throw new Error("expected no Clear button with nothing to clear");
+  });
+  suite.runs("dice history modal opens", () => {
+    app.recordRoll({ label: "Something", notation: "1d20", total: 15 });
+    app.openDiceHistoryModal();
+  });
+
+  suite.section("help & rules");
+  suite.runs("help modal opens on the app topics", () => {
+    app.openHelpModal();
+    if (app.helpTab !== "app") throw new Error("expected it to open on Using the App");
+    const html = app.helpHtml();
+    if (!html.includes("Every number explains itself")) throw new Error("expected the app topics listed");
+  });
+  suite.runs("topics start collapsed and open one at a time", () => {
+    app.helpTab = "app";
+    app.helpOpenTopic = null;
+    if (/collapse-body open/.test(app.helpHtml())) throw new Error("expected everything collapsed by default");
+    app.helpOpenTopic = "numbers";
+    const one = app.helpHtml();
+    if ((one.match(/collapse-body open/g) || []).length !== 1) throw new Error("expected exactly one card open");
+    if (!one.includes("Tap any number on the sheet")) throw new Error("expected the open topic's body to render");
+  });
+  suite.runs("the conditions reference reads off SRD_CONDITIONS, not a second list", () => {
+    app.helpTab = "conditions";
+    app.helpConditionSearch = "";
+    const html = app.helpHtml();
+    if (!html.includes(app.SRD_CONDITIONS.length + " conditions")) throw new Error("expected every SRD condition counted");
+    if (!html.includes("Blinded")) throw new Error("expected a real condition listed");
+  });
+  suite.runs("searching conditions narrows the list", () => {
+    app.helpTab = "conditions";
+    app.helpConditionSearch = "restrain";
+    const html = app.helpConditionResultsHtml();
+    if (!html.includes("Restrained")) throw new Error("expected the match");
+    if (html.includes("Blinded")) throw new Error("expected non-matches filtered out");
+    app.helpConditionSearch = "zzzznope";
+    if (!app.helpConditionResultsHtml().includes("Nothing matches")) throw new Error("expected an empty state");
+    app.helpConditionSearch = "";
+  });
+  suite.runs("third-party conditions stay tagged in the help reference too", () => {
+    app.helpTab = "conditions";
+    app.helpConditionSearch = "bloodied";   // official: false in SRD_CONDITIONS
+    if (!app.helpConditionResultsHtml().includes(">3PP<")) throw new Error("expected a 3PP tag on non-core conditions");
+    app.helpConditionSearch = "";
+  });
+
+  suite.section("app menu stubs are gone");
+  suite.runs("nothing in the drawer is a placeholder any more", () => {
+    if (app.MENU_STUBS.length) throw new Error("expected MENU_STUBS emptied, still has: " + app.MENU_STUBS.map(s => s.label).join(", "));
+  });
+  suite.runs("the drawer offers the three that used to be stubs", () => {
+    app.openAppMenu();
+    const drawer = app.__modals[app.__modals.length - 1].html;
+    if (!drawer.includes('id="menu-dice-history"')) throw new Error("expected a Dice History entry");
+    if (!drawer.includes('id="menu-help"')) throw new Error("expected a Help & Rules entry");
+    if (!drawer.includes('id="menu-export"')) throw new Error("expected an Export Character entry");
+    if (drawer.includes("data-stub")) throw new Error("expected no stub buttons left in the drawer");
+  });
+
   suite.section("onboarding tutorial");
   // the harness seeds campfire.tutorial as already-finished for every OTHER
   // suite (see harness.js's domStub) so unrelated tests aren't quietly

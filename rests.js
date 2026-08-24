@@ -130,14 +130,16 @@ function applyRest(kind, diceSpend) {
   showToast((isLong ? "Long rest" : "Short rest") + " · " + (summary.join(" · ") || "nothing to restore"));
 }
 
-// Items marked data-stub are deliberate placeholders -- the drawer is the home
-// for app-level actions, and these mark out the shape of it before the features
-// behind them exist.
-const MENU_STUBS = [
-  { label: "Export Character", hint: "" },
-  { label: "Dice History", hint: "" },
-  { label: "Help & Rules", hint: "" }
-];
+/* Items marked data-stub are deliberate placeholders -- the drawer is the
+   home for app-level actions, and these marked out its shape before the
+   features behind them existed.
+
+   Empty now: Export Character, Dice History and Help & Rules were the last
+   three and all do something real (characters.js, dice-history.js, help.js).
+   The list and its rendering stay because the drawer is still where the next
+   app-level thing will land, and a stub that says so is better than one
+   that pretends. */
+const MENU_STUBS = [];
 
 function openShortRestModal() {
   const pools = calculateHitDice(character);
@@ -598,13 +600,16 @@ function openAppMenu() {
     ${MENU_STUBS.map(item => `
       <button class="drawer-item" data-stub="${esc(item.label)}">${esc(item.label)}<span class="drawer-hint">${item.hint}</span></button>
     `).join("")}
+    <button class="drawer-item" id="menu-dice-history">Dice History<span class="drawer-hint">${rollHistory.length ? rollHistory.length + " rolls" : ""}</span></button>
     <button class="drawer-item" id="menu-content">Manage Content<span class="drawer-hint">${contentCount ? contentCount + " custom" : ""}</span></button>
     <button class="drawer-item" id="menu-theme">Theme<span class="drawer-hint">${esc((THEMES.find(t => t.value === theme.base) || {}).label || "")}</span></button>
     <button class="drawer-item" id="menu-options">Options</button>
+    <button class="drawer-item" id="menu-help">Help &amp; Rules</button>
     <button class="drawer-item" id="menu-tutorial">Replay Tutorial<span class="drawer-hint">${tutorialState.active ? "in progress" : ""}</span></button>
 
     <div class="drawer-section">Character</div>
     <button class="drawer-item" id="menu-level-up">Level Up<span class="drawer-hint">level ${totalLevel(character)}</span></button>
+    <button class="drawer-item" id="menu-export">Export Character<span class="drawer-hint">.json</span></button>
 
     <div class="drawer-section">Development</div>
     <button class="drawer-item" id="menu-reset-demo">Reset to Demo Character<span class="drawer-hint">clears saved data</span></button>
@@ -621,6 +626,12 @@ function openAppMenu() {
   document.getElementById("menu-theme").addEventListener("click", openThemeModal);
   document.getElementById("menu-options").addEventListener("click", openSettingsModal);
   document.getElementById("menu-tutorial").addEventListener("click", startTutorial);
+  document.getElementById("menu-dice-history").addEventListener("click", openDiceHistoryModal);
+  document.getElementById("menu-help").addEventListener("click", openHelpModal);
+  // the character list's own menu exports whichever card you tapped; this one
+  // is scoped to the sheet that's actually open, which is the only character
+  // the drawer knows about
+  document.getElementById("menu-export").addEventListener("click", () => { closeModal(); exportCharacter(character); });
 }
 
 // development aid: persistence means the demo character keeps whatever state

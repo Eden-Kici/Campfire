@@ -141,6 +141,7 @@ let activeToasts = [];
 
 function showRollToast(label, notation) {
   const result = rollNotation(notation);
+  recordRoll({ label, notation, total: result.total, detail: result.breakdown });
   const toast = document.createElement("div");
   toast.className = "roll-toast";
   toast.innerHTML = `
@@ -200,15 +201,30 @@ function showRoll(config) {
   if (config.dc === undefined) {
     Object.assign(rollState, rollWithMode(config, rollState.mode));
     rollState.rolled = true;
+    recordCurrentRoll();
   }
 
   openModal("center", rollWindowHtml());
   wireRollWindow();
 }
 
+/* Called at each of the two moments a roll actually resolves -- showRoll()
+   for a plain roll (the tap already asked for it) and rerollCurrent() for a
+   DC roll's first Roll press and every reroll after. A reroll logs a second
+   entry rather than replacing the first; see dice-history.js on why. */
+function recordCurrentRoll() {
+  const { config, outcome, dropped, mode } = rollState;
+  recordRoll({
+    label: config.label, notation: config.notation, total: outcome.total, kind: config.kind, mode,
+    detail: outcome.parts.map(part => part.result.breakdown.replace(/\d+d\d+\(/g, "(")).join(" + "),
+    dropped: dropped ? dropped.total : null
+  });
+}
+
 function rerollCurrent() {
   Object.assign(rollState, { dropped: null }, rollWithMode(rollState.config, rollState.mode));
   rollState.rolled = true;
+  recordCurrentRoll();
   redrawRollWindow();
 }
 

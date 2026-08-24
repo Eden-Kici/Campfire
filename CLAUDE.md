@@ -35,9 +35,11 @@ Plain `<script>` tags, no modules. The list in `index.html` **is** the dependenc
 `tests/harness.js` reads it from there rather than keeping its own copy — so the tests always load
 exactly what the page loads. Adding a file means adding it to `index.html`.
 
-Order: reference data → character data → shared machinery (`roll`, `ui`, `theme`, `characters`,
-`creator`, `party`, `rests`) → one file per tab → `app.js`, which is 48 lines of tab switching and
-boot.
+Order: reference data (`srd-*.js`, now several files — races, classes, equipment, magic items and
+two halves of the spell list, split to stay under the `structure` suite's 1,500-line cap) →
+character data → shared machinery (`dice-history`, `roll`, `ui`, `theme`, `characters`, `tutorial`,
+`creator`, `party`, `content`, `rests`, `choices`, `help`) → one file per tab → `app.js`, which is
+~50 lines of tab switching and boot.
 
 All top-level `function` and `const` declarations share one global scope. Two files declaring the
 same name is a real hazard (`let`/`const` throws at load; `function` silently shadows) — the
@@ -130,17 +132,31 @@ permissive proxy, so **no listener in the app is ever invoked by the tests**. Th
 calculations; wiring is untested. Bear that in mind before any change to how handlers are attached
 — the suite will stay green whether it works or not.
 
-Modals are captured rather than rendered (`app.__modals`), as are toasts (`app.__toasts`).
+Modals are captured rather than rendered (`app.__modals`), as are toasts (`app.__toasts`) and
+`showRollToast` calls (`app.__rollToasts`). `showRollToast` is a real roll, not just a notification,
+so the harness still runs the roll and its dice-history recording — only the floating element is
+skipped.
+
+The harness seeds `campfire.tutorial` as already-finished. Without it every suite's first
+`renderContent()`/`showScreen()` would trip the onboarding welcome modal, exactly as a real
+first-ever launch does. Tutorial tests set `tutorialState` by hand instead.
 
 ## Real vs faked
 
 - **Real:** all calculations, effects, rests, levelling, death saves, concentration, exhaustion,
-  the inventory/resource model, themes, and `localStorage` persistence.
-- **Faked:** the party finder (`FAKE_PARTIES`, no networking at all), note sharing built on top of
-  it, and the app-menu items in `MENU_STUBS`. The SRD races/classes/features/kits are a plausible
-  approximation written by hand, not authoritative SRD content.
+  the inventory/resource model, themes, `localStorage` persistence, the onboarding tutorial, dice
+  history, and Help & Rules.
+- **Real content:** races, classes, subclasses, backgrounds, feats, equipment, magic items (281),
+  spells (319) and conditions are imported SRD 5.1 text, sourced from the CC-BY mirrors 5esrd.com
+  and 5thsrd.org. Third-party entries carry `official: false` and render a 3PP tag. `KIT_ITEMS` is
+  still a small hand-written table serving `STARTING_KIT` only.
+- **Faked:** the party finder (`FAKE_PARTIES`, no networking at all) and the note sharing built on
+  top of it. That's the whole list — `MENU_STUBS` is empty, and Help & Rules says outright that the
+  party screen is a mockup rather than describing an intention.
 - Persistence carries `SCHEMA_VERSION` and **refuses** older saves rather than half-loading them. A
-  real build needs migrations; a POC only needs to notice.
+  real build needs migrations; a POC only needs to notice. Tutorial progress, dice history, theme,
+  settings and custom content each keep their own key, so refusing a stale character save doesn't
+  take any of them with it.
 
 ## Known gaps
 

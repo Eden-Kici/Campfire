@@ -109,11 +109,22 @@ function loadApp() {
 
   vm.runInContext(source + "\n" + bridge, context, { filename: "campfire.js" });
 
-  // toasts and dice rolls are noise in tests; capture rather than render
+  /* Toasts are noise in tests; capture rather than render.
+
+     showRollToast is a real roll, not just a notification -- it's how the HP
+     calculator and hit-dice spending roll -- so it still runs for real, and
+     its dice-history recording along with it. Only the visual half is
+     skipped, by capturing the label/notation instead of building a floating
+     element and a timer nothing will ever fire. */
   context.__toasts = [];
+  context.__rollToasts = [];
   vm.runInContext(`
     showToast = message => { __toasts.push(message); };
-    showRollToast = () => {};
+    showRollToast = (label, notation) => {
+      __rollToasts.push({ label, notation });
+      const result = rollNotation(notation);
+      recordRoll({ label, notation, total: result.total, detail: result.breakdown });
+    };
   `, context);
 
   // capture the markup any modal would have rendered

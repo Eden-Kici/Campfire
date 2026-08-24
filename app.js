@@ -44,6 +44,7 @@ loadTheme();
 loadSettings();
 loadCustomContent();
 loadTutorialState();
+loadRollHistory();
 const restored = loadCharacters();
 showScreen("selector");
 if (restored && restored.stale) {

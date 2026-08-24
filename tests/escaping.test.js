@@ -193,6 +193,27 @@ module.exports = function (suite) {
     suite.ok("roll window", false, err.message);
   }
 
+  /* Dice history logs a roll's label, and a roll's label is a weapon or spell
+     name -- user-authored text that outlives the window it was rolled in.
+     The showRoll above has already put a poisoned entry in the log; this
+     just renders it. The character name on each entry is poisoned too (c.name
+     was set to HOSTILE at the top), and only shows on a mixed-character list,
+     so a second entry under a different name is added to force that path. */
+  suite.section("dice history");
+  app.recordRoll({ label: HOSTILE, notation: HOSTILE, total: 7, detail: HOSTILE, character: HOSTILE, mode: "advantage", dropped: 3 });
+  app.recordRoll({ label: HOSTILE, notation: HOSTILE, total: 9, detail: HOSTILE, character: "Someone Else" });
+  suite.ok("dice history list", !survived(app.diceHistoryHtml()), "raw markup survived");
+
+  // Help & Rules renders SRD_CONDITIONS rather than anything the player typed,
+  // but the conditions search box echoes user-typed text back into its own value
+  suite.section("help & rules");
+  app.helpTab = "app";
+  suite.ok("help topics", !survived(app.helpHtml()), "raw markup survived");
+  app.helpTab = "conditions";
+  app.helpConditionSearch = HOSTILE;
+  suite.ok("help conditions search box", !survived(app.helpHtml()), "raw markup survived");
+  app.helpConditionSearch = "";
+
   suite.section("ordinary text still reads normally");
   const clean = require("./harness").loadApp();
   const combat = clean.renderCombatTab();
