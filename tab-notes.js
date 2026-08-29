@@ -35,12 +35,11 @@ function renderNoteSectionBlock(sec) {
   const isOpen = openNoteSections[sec.id] !== false;
   const notes = sortNotesForDisplay(character.notes.filter(n => n.sectionId === sec.id));
   return `
-    <div class="section-head-row" data-note-sec-card="${sec.id}" data-note-sec-toggle="${sec.id}" style="cursor:pointer;touch-action:none;">
+    <div class="section-head-row" data-note-sec-card="${sec.id}" data-note-sec-toggle="${sec.id}" style="cursor:pointer;touch-action:pan-y;">
       <div class="section-head">${esc(sec.name)}${sec.receiveFrom ? `<span class="receive-dot" title="Receiving shared notes here"></span>` : ""}</div>
       <div style="display:flex;align-items:center;gap:10px;">
         <button class="add-link" data-add-note="${sec.id}">+ Add</button>
         <button class="mini-edit" data-edit-section="${sec.id}">\u270E</button>
-        <span style="color:var(--text-dim);font-size:12px;">${isOpen ? "\u2212" : "+"}</span>
       </div>
     </div>
     <div data-note-sec-body="${sec.id}" style="${isOpen ? "" : "display:none;"}">
@@ -58,7 +57,7 @@ function renderNoteRow(n) {
       : `<span class="share-tag share-tag-in">\u2193 ${esc(n.sharing.sharedByName)}</span>`;
   }
   return `
-    <div class="item-row note-row" data-note-view="${n.id}" data-note-id="${n.id}" style="touch-action:none;">
+    <div class="item-row note-row" data-note-view="${n.id}" data-note-id="${n.id}" style="touch-action:pan-y;">
       <div style="flex:1;">
         <!-- the title is text and gets escaped; the tag is markup this
              function built, with its own escaping already applied inside -->
@@ -213,16 +212,25 @@ function maybeSyncNoteSharingToSection(note, targetSection) {
   const currentlyShared = !!note.sharing;
 
   if (targetSection.autoShare && !currentlyShared) {
-    if (confirm(`"${targetSection.name}" auto-shares notes with the whole party. Share this note the same way?`)) {
-      note.sharing = {
-        sharedByMe: true, continuous: true,
-        sharedWith: character.partyMembers.map(m => ({ name: m, permission: "edit" }))
-      };
-    }
+    confirmModal({
+      title: "Share this note?",
+      body: `"${targetSection.name}" auto-shares notes with the whole party.`,
+      confirmLabel: "Share",
+      onConfirm: () => {
+        note.sharing = {
+          sharedByMe: true, continuous: true,
+          sharedWith: character.partyMembers.map(m => ({ name: m, permission: "edit" }))
+        };
+        renderContent();
+      }
+    });
   } else if (!targetSection.autoShare && currentlyShared) {
-    if (confirm(`"${targetSection.name}" doesn't auto-share notes. Stop sharing this note?`)) {
-      note.sharing = null;
-    }
+    confirmModal({
+      title: "Stop sharing this note?",
+      body: `"${targetSection.name}" doesn't auto-share notes.`,
+      confirmLabel: "Stop sharing", danger: true,
+      onConfirm: () => { note.sharing = null; renderContent(); }
+    });
   }
 }
 
@@ -234,6 +242,7 @@ function openAddSectionModal() {
     ${toggleLineHtml("sw-receive", "Receive shared notes here", false)}
     <button class="btn-primary" id="save-sec-button">Create Section</button>
   `);
+  guardModalEdits();
   let autoShare = false, receiveFrom = false;
   document.getElementById("sw-autoshare").addEventListener("click", (e) => { autoShare = !autoShare; e.currentTarget.classList.toggle("on", autoShare); });
   document.getElementById("sw-receive").addEventListener("click", (e) => { receiveFrom = !receiveFrom; e.currentTarget.classList.toggle("on", receiveFrom); });
@@ -261,9 +270,10 @@ function openEditSectionModal(sectionId) {
     ${toggleLineHtml("sw-edit-receive", "Receive shared notes here", receiveFrom)}
     <div class="btn-row-2">
       <button class="btn-primary" id="save-sec-edit-button">Save Changes</button>
-      <button class="btn-primary" id="remove-sec-button" style="background:var(--danger-surface);color:var(--danger-text);">Remove</button>
+      <button class="btn-primary btn-danger" id="remove-sec-button">Remove</button>
     </div>
   `);
+  guardModalEdits();
 
   document.getElementById("sw-edit-autoshare").addEventListener("click", (e) => { autoShare = !autoShare; e.currentTarget.classList.toggle("on", autoShare); });
   document.getElementById("sw-edit-receive").addEventListener("click", (e) => {
@@ -272,9 +282,16 @@ function openEditSectionModal(sectionId) {
       e.currentTarget.classList.add("on");
     } else {
       const othersOn = character.noteSections.some(s => s.id !== sectionId && s.receiveFrom);
-      if (!othersOn && !confirm("Turning this off means you won't receive any shared notes until you turn it on for another section. Continue?")) return;
-      receiveFrom = false;
-      e.currentTarget.classList.remove("on");
+      const turnOff = (el) => { receiveFrom = false; el.classList.remove("on"); };
+      if (othersOn) { turnOff(e.currentTarget); return; }
+      const toggleEl = e.currentTarget;
+      confirmModal({
+        title: "Stop receiving shared notes?",
+        body: "No other section is set to receive them, so you won't get any until you turn it on somewhere.",
+        confirmLabel: "Turn off", danger: true,
+        onConfirm: () => turnOff(toggleEl)
+      });
+      return;
     }
   });
 
@@ -290,15 +307,20 @@ function openEditSectionModal(sectionId) {
   });
   document.getElementById("remove-sec-button").addEventListener("click", () => {
     const count = character.notes.filter(n => n.sectionId === sectionId).length;
-    const warning = count > 0
-      ? `This section contains ${count} note${count === 1 ? "" : "s"} that will also be deleted. Remove "${esc(section.name)}"?`
-      : `Remove empty section "${esc(section.name)}"?`;
-    if (!confirm(warning)) return;
-    character.noteSections = character.noteSections.filter(s => s.id !== sectionId);
-    character.notes = character.notes.filter(n => n.sectionId !== sectionId);
-    delete openNoteSections[sectionId];
-    closeModal();
-    renderContent();
+    confirmModal({
+      title: `Remove "${section.name}"?`,
+      body: count > 0
+        ? `This section contains ${count} note${count === 1 ? "" : "s"}. They will be deleted too.`
+        : "This section is empty.",
+      confirmLabel: "Remove", danger: true,
+      onConfirm: () => {
+        character.noteSections = character.noteSections.filter(s => s.id !== sectionId);
+        character.notes = character.notes.filter(n => n.sectionId !== sectionId);
+        delete openNoteSections[sectionId];
+        closeModal();
+        renderContent();
+      }
+    });
   });
 }
 
@@ -329,6 +351,7 @@ function openNoteEditorModal(noteId) {
     <textarea id="note-body-input" class="note-body-field" placeholder="Note" ${isReadOnly ? "readonly" : ""}>${esc(note.body)}</textarea>
     <button class="btn-primary" id="save-note-button" style="margin-top:10px;">Save</button>
   `);
+  guardModalEdits();
 
   function commit() {
     if (isReadOnly) return;
@@ -361,7 +384,7 @@ function openNoteActionsMenu(noteId) {
     <div class="modal-heading">Note Options</div>
     ${canManageSharing ? `<button class="btn-primary" id="menu-share-button" style="margin-bottom:8px;">${note.sharing && note.sharing.sharedByMe ? "Manage Sharing" : "Share"}</button>` : ""}
     <button class="btn-primary" id="menu-dup-button" style="margin-bottom:8px;">Duplicate</button>
-    <button class="btn-primary" id="menu-delete-button" style="background:var(--danger-surface);color:var(--danger-text);">Delete</button>
+    <button class="btn-primary btn-danger" id="menu-delete-button">Delete</button>
   `);
 
   const shareBtn = document.getElementById("menu-share-button");
@@ -390,9 +413,14 @@ function duplicateNote(noteId) {
 function deleteNoteWithConfirm(noteId) {
   const note = character.notes.find(n => n.id === noteId);
   if (!note) return;
-  if (!confirm(`Delete "${note.title || "Untitled"}"?`)) return;
-  character.notes = character.notes.filter(n => n.id !== noteId);
-  renderContent();
+  confirmModal({
+    title: `Delete "${note.title || "Untitled"}"?`,
+    confirmLabel: "Delete", danger: true,
+    onConfirm: () => {
+      character.notes = character.notes.filter(n => n.id !== noteId);
+      renderContent();
+    }
+  });
 }
 
 function openShareModal(noteId) {
@@ -420,7 +448,7 @@ function openShareModal(noteId) {
       }).join("")}
     </div>
     <button class="btn-primary" id="save-share-button" style="margin-top:14px;">Save Sharing</button>
-    ${note.sharing && note.sharing.sharedByMe ? `<button class="btn-primary" id="stop-share-button" style="background:var(--danger-surface);color:var(--danger-text);margin-top:8px;">Stop Sharing</button>` : ""}
+    ${note.sharing && note.sharing.sharedByMe ? `<button class="btn-primary btn-danger" id="stop-share-button" style="margin-top:8px;">Stop Sharing</button>` : ""}
   `);
 
   document.getElementById("sw-continuous").addEventListener("click", (e) => { continuous = !continuous; e.currentTarget.classList.toggle("on", continuous); });

@@ -115,7 +115,10 @@ module.exports = function (suite) {
   const manual = app.rollWindowHtml();
   suite.ok("no difficulty class", !/Difficulty Class/.test(manual));
   suite.ok("and so no verdict to give", !/roll-verdict/.test(manual));
-  suite.ok("rolled straight away, since the tap was the ask", app.rollState.rolled);
+  // rolls wait for the player now, unless Fast Rolls is on -- so opening the
+  // window is a look at the roll, not the roll itself
+  suite.ok("waiting to be thrown", !app.rollState.rolled);
+  suite.ok("with a Roll button to throw it", /id="roll-now"/.test(manual));
   suite.ok("still offering both outcomes", /data-roll-decision="0"/.test(manual));
   suite.ok("the row itself is the control", /id="concentration-check"/.test(app.renderCombatTab()));
 

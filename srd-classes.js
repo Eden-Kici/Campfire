@@ -18,11 +18,13 @@
    subclasses for Fighter, Wizard, Rogue and Cleric -- only one of each
    pair was ever real SRD content.
 
-   No spell-slot tables and no spell lists, same boundary as every step
-   before this one -- a caster gets one "Spellcasting" feature describing
-   the mechanic (what ability governs it, ritual casting, prepared vs.
-   known, Pact Magic's short-rest recharge for Warlock) with no numeric
-   slot progression attached.
+   Spell lists are still out of scope, but the slot progression is not any
+   more: SPELL_SLOTS_FULL_CASTER / SPELL_SLOTS_HALF_CASTER / PACT_MAGIC_SLOTS
+   below, plus a `spellcasting` descriptor on each casting class, are what
+   let the character builder hand a Wizard actual 1st-level slots instead of
+   an empty `spellSlots: {}` (see spellSlotsAtLevel() in character-data.js).
+   Each caster still gets one "Spellcasting" feature describing the mechanic
+   in prose; the descriptor is the machine-readable half of the same thing.
 
    `effects`/`resource` only appear where the rule is a clean, unconditional
    match for this app's categories (Ability Score Improvement, Fighting
@@ -52,6 +54,37 @@
    repeats at every subclass-feature level are dropped entirely, since the
    real content already lives in that subclass's own `features` list at
    the same level. */
+
+/* Slot tables, indexed by class level (index 0 is unused so the level reads
+   straight off the array). Each row is slots per spell level, 1st upward, so
+   [4, 3, 2] is four 1st-level, three 2nd, two 3rd. The three progressions the
+   SRD actually has: full casters (Bard/Cleric/Druid/Sorcerer/Wizard), half
+   casters who don't cast at all until 2nd level (Paladin/Ranger), and
+   Warlock's Pact Magic, which is a separate pool of same-level slots that
+   comes back on a short rest -- so it stores a count and the level those
+   slots are, rather than a row. */
+const SPELL_SLOTS_FULL_CASTER = [
+  [], [2], [3], [4, 2], [4, 3], [4, 3, 2], [4, 3, 3], [4, 3, 3, 1], [4, 3, 3, 2],
+  [4, 3, 3, 3, 1], [4, 3, 3, 3, 2], [4, 3, 3, 3, 2, 1], [4, 3, 3, 3, 2, 1],
+  [4, 3, 3, 3, 2, 1, 1], [4, 3, 3, 3, 2, 1, 1], [4, 3, 3, 3, 2, 1, 1, 1],
+  [4, 3, 3, 3, 2, 1, 1, 1], [4, 3, 3, 3, 2, 1, 1, 1, 1], [4, 3, 3, 3, 3, 1, 1, 1, 1],
+  [4, 3, 3, 3, 3, 2, 1, 1, 1], [4, 3, 3, 3, 3, 2, 2, 1, 1]
+];
+const SPELL_SLOTS_HALF_CASTER = [
+  [], [], [2], [3], [3], [4, 2], [4, 2], [4, 3], [4, 3], [4, 3, 2], [4, 3, 2],
+  [4, 3, 3], [4, 3, 3], [4, 3, 3, 1], [4, 3, 3, 1], [4, 3, 3, 2], [4, 3, 3, 2],
+  [4, 3, 3, 3, 1], [4, 3, 3, 3, 1], [4, 3, 3, 3, 2], [4, 3, 3, 3, 2]
+];
+const PACT_MAGIC_SLOTS = [
+  null, { count: 1, level: 1 }, { count: 2, level: 1 }, { count: 2, level: 2 },
+  { count: 2, level: 2 }, { count: 2, level: 3 }, { count: 2, level: 3 },
+  { count: 2, level: 4 }, { count: 2, level: 4 }, { count: 2, level: 5 },
+  { count: 2, level: 5 }, { count: 3, level: 5 }, { count: 3, level: 5 },
+  { count: 3, level: 5 }, { count: 3, level: 5 }, { count: 3, level: 5 },
+  { count: 3, level: 5 }, { count: 4, level: 5 }, { count: 4, level: 5 },
+  { count: 4, level: 5 }, { count: 4, level: 5 }
+];
+
 const SRD_CLASSES = [
   {
     name: "Barbarian", mainAbility: "Strength", hitDie: "d12",
@@ -139,6 +172,10 @@ const SRD_CLASSES = [
     armorProf: "Light armor", weaponProf: "Simple weapons, hand crossbows, longswords, rapiers, shortswords",
     toolProf: "Three musical instruments of your choice",
     description: "An inspiring magician whose power echoes the music of creation.",
+    /* Slots come from SPELL_SLOTS_FULL_CASTER; a bard knows a fixed list
+       rather than preparing one, so `prepared` is null and `known` is what
+       the sheet counts against. */
+    spellcasting: { ability: "CHA", startLevel: 1, progression: "full", prepared: null, known: 4 },
     features: [
       { level: 1, name: "Spellcasting", desc: "Charisma is your spellcasting ability for bard spells, and you can use a musical instrument as a spellcasting focus. You can cast any bard spell you know as a ritual if it has the ritual tag." },
       { level: 1, name: "Bardic Inspiration", desc: "As a bonus action, give one creature within 60 feet a Bardic Inspiration die it can add to one ability check, attack roll, or saving throw within the next 10 minutes. Usable a number of times equal to your Charisma modifier (minimum 1), regaining uses on a long rest (or any rest at 5th level and up). The die is a d6, rising to d8 at 5th level, d10 at 10th, and d12 at 15th.",
@@ -220,6 +257,7 @@ const SRD_CLASSES = [
     saves: ["Wisdom", "Charisma"],
     armorProf: "Light armor, medium armor, shields", weaponProf: "Simple weapons",
     description: "A priestly champion who wields divine magic in service of a higher power.",
+    spellcasting: { ability: "WIS", startLevel: 1, progression: "full", prepared: "ability+level", known: null },
     features: [
       { level: 1, name: "Spellcasting", desc: "Wisdom is your spellcasting ability for cleric spells, and you use a holy symbol as your spellcasting focus. You prepare a number of spells each day equal to your Wisdom modifier plus your cleric level (minimum one) and can cast any prepared cleric spell as a ritual if it has the ritual tag." },
       { level: 2, name: "Channel Divinity", desc: "Channel divine energy to fuel magical effects, starting with Turn Undead and an effect from your domain. Requires a short or long rest to use again. Usable twice between rests at 6th level and three times at 18th level.",
@@ -296,6 +334,7 @@ const SRD_CLASSES = [
     weaponProf: "Clubs, daggers, darts, javelins, maces, quarterstaffs, scimitars, sickles, slings, spears",
     toolProf: "Herbalism kit",
     description: "A priest of the Old Faith, wielding the power of nature and able to take on animal forms.",
+    spellcasting: { ability: "WIS", startLevel: 1, progression: "full", prepared: "ability+level", known: null },
     features: [
       { level: 1, name: "Druidic", desc: "You know Druidic, the secret language of druids, and can speak it and use it to leave hidden messages that other Druidic speakers automatically spot; others need a DC 15 Wisdom (Perception) check and still can't decipher it without magic." },
       { level: 1, name: "Spellcasting", desc: "Wisdom is your spellcasting ability for druid spells. You prepare a list of druid spells drawn from the druid spell list, and you can cast a prepared spell with the ritual tag as a ritual." },
@@ -560,6 +599,10 @@ const SRD_CLASSES = [
     saves: ["Wisdom", "Charisma"],
     armorProf: "All armor, shields", weaponProf: "Simple weapons, martial weapons",
     description: "A holy warrior bound by a sacred oath to fight evil and protect the innocent, blending martial prowess with divine magic.",
+    /* Half caster: nothing at all at 1st level, which is why a level-1
+       Paladin built in the creator correctly gets no slots and no spell
+       stats -- SPELL_SLOTS_HALF_CASTER's first row is empty. */
+    spellcasting: { ability: "CHA", startLevel: 2, progression: "half", prepared: "ability+halfLevel", known: null },
     features: [
       { level: 1, name: "Divine Sense", desc: "As an action, open your awareness to detect celestials, fiends, and undead within 60 feet (not behind total cover) and sense consecrated or desecrated ground. Usable 1 + Charisma modifier times (minimum 1); all uses return on a long rest.",
         resource: { max: 1, recharge: { on: "LR", amount: "all" } } },
@@ -644,6 +687,7 @@ const SRD_CLASSES = [
     saves: ["Strength", "Dexterity"],
     armorProf: "Light armor, medium armor, shields", weaponProf: "Simple weapons, martial weapons",
     description: "A warrior of the wilds who combines martial prowess with primal magic, skilled at tracking, surviving, and hunting down enemies.",
+    spellcasting: { ability: "WIS", startLevel: 2, progression: "half", prepared: null, known: 2 },
     features: [
       { level: 1, name: "Favored Enemy", desc: "Choose a type of favored enemy (or two humanoid races). You have advantage on Wisdom (Survival) checks to track them and Intelligence checks to recall information about them, and you learn one language they speak. You choose an additional favored enemy and language at 6th and 14th level." },
       { level: 1, name: "Natural Explorer", desc: "Choose a favored terrain type. Your proficiency bonus is doubled for related Intelligence or Wisdom checks, and while traveling for an hour or more there you ignore difficult terrain, can't get lost except by magic, stay alert while multitasking, move stealthily at normal pace when alone, forage double food, and learn extra tracking detail. You choose additional favored terrain at 6th and 10th level." },
@@ -843,6 +887,7 @@ const SRD_CLASSES = [
     saves: ["Constitution", "Charisma"],
     armorProf: "None", weaponProf: "Daggers, darts, slings, quarterstaffs, light crossbows",
     description: "Scions of innately magical bloodlines, sorcerers draw arcane power from within rather than from study or pact.",
+    spellcasting: { ability: "CHA", startLevel: 1, progression: "full", prepared: null, known: 2 },
     features: [
       { level: 1, name: "Spellcasting", desc: "Charisma is your spellcasting ability. You know a small number of sorcerer spells and cantrips, chosen from the sorcerer spell list, without a spellbook." },
       { level: 2, name: "Font of Magic", desc: "You gain sorcery points, which you can convert into spell slots (as a bonus action, up to 5th level) or convert spell slots into sorcery points.",
@@ -917,6 +962,9 @@ const SRD_CLASSES = [
     saves: ["Wisdom", "Charisma"],
     armorProf: "Light armor", weaponProf: "Simple weapons",
     description: "A wielder of magic derived from a bargain with an extraplanar entity, the warlock's power comes from pact rather than study or bloodline.",
+    /* Pact Magic: its own pool, every slot the same level, back on a short
+       rest -- PACT_MAGIC_SLOTS rather than a full-caster row. */
+    spellcasting: { ability: "CHA", startLevel: 1, progression: "pact", prepared: null, known: 2 },
     features: [
       { level: 1, name: "Spellcasting", desc: "Charisma is your spellcasting ability for Pact Magic. Unlike other casters, your spell slots are few, are all the same level, and recharge on a short rest rather than a long rest, and you always cast at that fixed slot level." },
       { level: 2, name: "Eldritch Invocations", desc: "You gain eldritch invocations, fragments of forbidden knowledge granting magical abilities, choosing from a growing list as you level. You gain two at 2nd level and more at higher levels; you can swap one out whenever you gain a warlock level." },
@@ -995,6 +1043,7 @@ const SRD_CLASSES = [
     saves: ["Intelligence", "Wisdom"],
     armorProf: "None", weaponProf: "Daggers, darts, slings, quarterstaffs, light crossbows",
     description: "A scholarly magic-user capable of manipulating the structures of reality, wizards learn their spells through rigorous study recorded in a spellbook.",
+    spellcasting: { ability: "INT", startLevel: 1, progression: "full", prepared: "ability+level", known: null },
     features: [
       { level: 1, name: "Spellcasting", desc: "Intelligence is your spellcasting ability. You keep spells in a spellbook and prepare a number of them each day; several wizard spells can be cast as rituals straight from the spellbook without expending a slot." },
       { level: 1, name: "Arcane Recovery", desc: "Once per day when you finish a short rest, you can recover expended spell slots with a combined level up to half your wizard level (rounded up), none 6th level or higher.",

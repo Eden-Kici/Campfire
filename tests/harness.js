@@ -134,6 +134,18 @@ function loadApp() {
     openModal = (mode, html) => { __modals.push({ mode, html }); return __realOpenModal(mode, html); };
   `, context);
 
+  /* Confirmations and info windows are captured rather than rendered, the same
+     way modals are -- but unlike a modal they carry a callback, so the captured
+     entry keeps it. A test can then assert both that the app *asked* and what
+     happens when the player says yes, which is the half that matters for
+     anything destructive. */
+  context.__confirms = [];
+  context.__infos = [];
+  vm.runInContext(`
+    confirmModal = options => { __confirms.push(options); };
+    infoModal = (title, body) => { __infos.push({ title, body }); };
+  `, context);
+
   return context;
 }
 

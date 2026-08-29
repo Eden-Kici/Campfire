@@ -52,11 +52,37 @@ function loadCharacters() {
     return { stale: true, reason: "unreadable" };
   }
   if (!saved || !Array.isArray(saved.characters) || !saved.characters.length) return null;
-  if (saved.version !== SCHEMA_VERSION) return { stale: true, reason: "version " + saved.version };
+  if (saved.version !== SCHEMA_VERSION) {
+    /* Set aside, not discarded.
+
+       This used to just refuse the blob -- and then the very next thing the app
+       did was render the selector, which calls persistCharacters(), which wrote
+       the default demo character straight over it. The toast said the saves
+       "weren't loaded", which read as "they're still there". They weren't: a
+       schema bump silently destroyed every character the player had.
+
+       Moving it to a versioned key means the data survives the bump, and a
+       migration written later has something to migrate. */
+    stashStaleSave(raw, saved.version);
+    return { stale: true, reason: "version " + saved.version };
+  }
 
   savedCharacters = saved.characters;
   character = savedCharacters.find(c => c.id === saved.openId) || savedCharacters[0];
   return { stale: false };
+}
+
+/* Keeps the old blob under its own key rather than letting the next write
+   clobber it. Never overwrites an existing stash -- the first refusal is the
+   one holding the real data; a second boot would otherwise stash the demo
+   character over it. */
+function stashStaleSave(raw, version) {
+  try {
+    const key = STORAGE_KEY + ".v" + version;
+    if (localStorage.getItem(key) === null) localStorage.setItem(key, raw);
+  } catch (err) {
+    console.warn("Couldn't set aside the older save:", err);
+  }
 }
 
 function selectCharacter(id) {
@@ -95,8 +121,38 @@ function renderSheetHeader() {
   document.getElementById("char-class-display").textContent = classLineFor(character);
   const avatar = document.getElementById("char-avatar");
   avatar.innerHTML = character.profilePic
-    ? `<img src="${character.profilePic}" alt="">`
+    ? `<img src="${esc(character.profilePic)}" alt="">`
     : character.name.trim().charAt(0).toUpperCase();
+}
+
+/* A photo straight off a phone camera is 3-4MB, and as a data URL inside the
+   character JSON that is the entire localStorage quota for one avatar --
+   after which persistCharacters() starts failing, swallows the error, and the
+   player keeps playing against state that is no longer being saved.
+
+   256px is plenty for a 40px circle at 3x, and it turns a 4MB blob into about
+   20KB. The canvas also strips EXIF, which is a small privacy win: phone photos
+   carry GPS coordinates. */
+const AVATAR_MAX_PX = 256;
+
+function downscaleImage(file, maxPx, done) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      done(canvas.toDataURL("image/jpeg", 0.82));
+    };
+    // a file the browser can't decode shouldn't take the form down; keep the
+    // original rather than losing the upload
+    img.onerror = () => done(reader.result);
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
 }
 
 function openCharacterEditorModal() {
@@ -107,7 +163,7 @@ function openCharacterEditorModal() {
 
     <div class="avatar-edit-row">
       <div class="char-avatar char-avatar-lg" id="editor-avatar">
-        ${character.profilePic ? `<img src="${character.profilePic}" alt="">` : character.name.trim().charAt(0).toUpperCase()}
+        ${character.profilePic ? `<img src="${esc(character.profilePic)}" alt="">` : esc(character.name.trim().charAt(0).toUpperCase())}
       </div>
       <div class="avatar-edit-actions">
         <button class="add-link" id="editor-pic-upload-btn">Upload Photo</button>
@@ -127,6 +183,7 @@ function openCharacterEditorModal() {
 
     <button class="btn-primary" id="editor-save-button">Save</button>
   `);
+  guardModalEdits();
 
   wireSelect("editor-alignment-input");
 
@@ -138,12 +195,10 @@ function openCharacterEditorModal() {
     const file = picInput.files[0];
     picInput.value = "";
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      pendingPic = reader.result;
-      avatarPreview.innerHTML = `<img src="${pendingPic}" alt="">`;
-    };
-    reader.readAsDataURL(file);
+    downscaleImage(file, AVATAR_MAX_PX, (dataUrl) => {
+      pendingPic = dataUrl;
+      avatarPreview.innerHTML = `<img src="${esc(pendingPic)}" alt="">`;
+    });
   });
 
   const removeBtn = document.getElementById("editor-pic-remove-btn");
@@ -175,7 +230,7 @@ function renderSelectorScreen() {
     ? savedCharacters.map(c => `
         <div class="char-card" data-open-char="${c.id}">
           <div class="recipient-left">
-            <div class="char-avatar">${c.profilePic ? `<img src="${c.profilePic}" alt="">` : c.name.trim().charAt(0).toUpperCase()}</div>
+            <div class="char-avatar">${c.profilePic ? `<img src="${esc(c.profilePic)}" alt="">` : esc(c.name.trim().charAt(0).toUpperCase())}</div>
             <div>
               <div class="char-card-name">${esc(c.name)}${c.customBuild ? ` <span class="res-tag" style="background:var(--danger-surface);color:var(--danger-text);">CUSTOM</span>` : ""}</div>
               <div class="char-card-class">${esc(classLineFor(c))}</div>
@@ -190,17 +245,26 @@ function renderSelectorScreen() {
     <div class="app-header">
       <div class="brand-row">
         <span class="brand-name">Campfire</span>
-        <button class="add-link" id="party-finder-button" style="margin-left:auto;">${party.status === "none" ? "Party" : party.status === "hosting" ? "Hosting" : "Connected"}</button>
+        <button class="menu-button" id="selector-menu-button" style="margin-left:auto;">&#9776;</button>
       </div>
       <div class="char-name" style="margin-top:14px;">Your Characters</div>
     </div>
     <div class="content">${listHtml}</div>
-    <div class="selector-actions">
+    <div id="tutorial-overlay-selector"></div>
+    <div class="selector-actions btn-row-2">
+      <button class="btn-secondary" id="party-finder-button">${party.status === "none" ? "Party" : party.status === "hosting" ? "Hosting" : "Connected"}</button>
       <button class="btn-primary" id="new-char-button">+ New Character</button>
     </div>
   `;
 
+  // this screen has no app menu, so without a banner slot here a tour that
+  // ends up back on the selector has no Skip anywhere on screen
+  renderTutorialOverlay();
+
   document.getElementById("party-finder-button").addEventListener("click", openPartyFinder);
+  // openAppMenu() drops the entries that need an open character; without a
+  // button here that whole branch was unreachable
+  document.getElementById("selector-menu-button").addEventListener("click", openAppMenu);
 
   document.querySelectorAll("[data-open-char]").forEach(card => {
     card.addEventListener("click", () => {
@@ -226,7 +290,7 @@ function openCharacterMenu(id) {
   openModal("center", `
     <div class="modal-heading">${esc(c.name)}</div>
     <button class="btn-primary" id="export-char-button" style="margin-bottom:8px;">Export</button>
-    <button class="btn-primary" id="delete-char-button" style="background:var(--danger-surface);color:var(--danger-text);">Delete</button>
+    <button class="btn-primary btn-danger" id="delete-char-button">Delete</button>
   `);
   document.getElementById("export-char-button").addEventListener("click", () => {
     closeModal();
@@ -257,7 +321,7 @@ function confirmDeleteCharacter(id) {
   openModal("center", `
     <div class="modal-heading">Delete ${esc(c.name)}?</div>
     <div class="breakdown-source" style="margin-bottom:14px;">This can't be undone.</div>
-    <button class="btn-primary" id="confirm-delete-char-button" style="background:var(--danger-surface);color:var(--danger-text);margin-bottom:8px;">Delete</button>
+    <button class="btn-primary btn-danger" id="confirm-delete-char-button" style="margin-bottom:8px;">Delete</button>
     <button class="btn-secondary" id="cancel-delete-char-button">Cancel</button>
   `);
   document.getElementById("confirm-delete-char-button").addEventListener("click", () => {

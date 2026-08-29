@@ -63,25 +63,45 @@ function deathSaveControlHtml() {
       <span class="death-label">Failures</span>
       <span class="death-pips">${deathSaveTrackHtml(state.failures, 3, "failure")}</span>
     </div>
-    ${state.dying ? `<button class="btn-primary" id="roll-death-save" style="margin-top:12px;">Roll Death Save</button>` : ""}
-    ${state.successes || state.failures ? `<button class="btn-secondary" id="clear-death-saves">Clear</button>` : ""}`;
+    ${state.dying ? `<button class="btn-primary" data-death-roll style="margin-top:12px;">Roll Death Save</button>` : ""}
+    ${state.successes || state.failures ? `<button class="btn-secondary" data-death-clear>Clear</button>` : ""}`;
 }
 
-function wireDeathSaveControls(afterChange) {
-  document.querySelectorAll("[data-death-pip]").forEach(pip => {
+/* This block renders in two places at once, so it can't carry ids and nothing
+   here may query the document: every control is found inside the container
+   being wired, the same way wireHitDiceCalcRows does it. A document-wide query
+   here reached into the open calculator (and back out of it), which left the
+   sheet's pips double-wired and the calculator's own controls dead. */
+function wireDeathSaveControls(container) {
+  if (!container) return;
+
+  container.querySelectorAll("[data-death-pip]").forEach(pip => {
     pip.addEventListener("click", () => {
       setDeathSaveTrack(pip.dataset.deathPip, parseInt(pip.dataset.deathCount));
-      if (afterChange) afterChange(); else renderContent();
+      afterDeathSaveChange();
     });
   });
 
-  const roll = document.getElementById("roll-death-save");
-  if (roll) roll.addEventListener("click", () => { rollDeathSave(); if (afterChange) afterChange(); });
-  const clear = document.getElementById("clear-death-saves");
-  if (clear) clear.addEventListener("click", () => {
-    resetDeathSaves(character);
-    if (afterChange) afterChange(); else renderContent();
-  });
+  const roll = container.querySelector("[data-death-roll]");
+  if (roll) roll.addEventListener("click", () => { rollDeathSave(); afterDeathSaveChange(); });
+  const clear = container.querySelector("[data-death-clear]");
+  if (clear) clear.addEventListener("click", () => { resetDeathSaves(character); afterDeathSaveChange(); });
+}
+
+/* One route out of every death save change, wherever it was made. */
+function afterDeathSaveChange() {
+  breakConcentrationIfDown();
+  renderContent();
+}
+
+/* A re-render rebuilds the sheet but never touches an open modal, so the
+   calculator's copy of the track is redrawn from the same state here --
+   otherwise the card can read two failures while the panel reads none. */
+function refreshCalcDeathPanel() {
+  const panel = document.getElementById("calc-death-saves");
+  if (!panel) return;
+  panel.innerHTML = deathSaveControlHtml();
+  wireDeathSaveControls(panel);
 }
 
 // hidden above 0 hit points unless the setting says otherwise
@@ -128,7 +148,7 @@ function renderCombatTab() {
 
     ${deathSaveCardHtml()}
 
-    <div class="stat-grid" style="margin-top:16px;">
+    <div class="stat-grid" style="margin-top:8px;">
       <div class="stat-box" id="ac-box"><div class="stat-label">AC</div><div class="stat-value">${ac.total}</div></div>
       <div class="stat-box" id="initiative-box"><div class="stat-label">Initiative</div><div class="stat-value">${formatModifier(initiative.total)}</div></div>
       <div class="stat-box" id="speed-box"><div class="stat-label">Speed</div><div class="stat-value">${speed.total} ft</div></div>
@@ -175,15 +195,17 @@ function renderCombatTab() {
       </div>
     `;
     }).join("")}
+    ${!spellSlotLevels().length && !resourceRows(character).length
+      ? `<div class="empty-hint">No resources yet. Class features that recharge — Second Wind, Rage, spell slots — live here.</div>` : ""}
     ${resourceRows(character).map(row => `
       <div class="res-row">
         <div class="res-name-wrap" data-resource-view="${esc(row.key)}">
           <span class="res-name">${esc(row.name)}</span>
           ${rechargeLabel(row.recharge) === "\u2014" ? "" : `<span class="res-tag">${esc(rechargeLabel(row.recharge))}</span>`}
-          ${row.container ? `<span class="res-tag" title="Refills from ${esc(row.refillFrom)}">HOLDS ${esc(row.refillFrom)}</span>` : ""}
+          ${row.container ? `<span class="res-tag" style="white-space:nowrap;" title="Refills from ${esc(row.refillFrom)}">HOLDS ${esc(row.refillFrom)}</span>` : ""}
         </div>
         <div class="stepper">
-          ${row.container ? `<button class="atk-pill" data-res-refill="${esc(row.key)}">Refill</button>` : ""}
+          ${row.container ? `<button class="pill-outline" data-res-refill="${esc(row.key)}">Refill</button>` : ""}
           <button data-res-minus="${esc(row.key)}">\u2212</button>
           <span class="res-count">${row.max ? row.current + "/" + row.max : row.current}</span>
           <button data-res-plus="${esc(row.key)}">+</button>
@@ -195,6 +217,8 @@ function renderCombatTab() {
       <div class="section-head">Attacks</div>
       <button class="add-link" id="add-attack-button">+ Add</button>
     </div>
+    ${!weaponList(character).length
+      ? `<div class="empty-hint">No attacks yet. Anything in a category that grants attacks shows up here — add a weapon from your Inventory.</div>` : ""}
     ${weaponList(character).map(weapon => {
       const atk = calculateAttack(character, weapon);
       const icon = weapon.weaponType === "ranged" ? "\uD83C\uDFF9" : "\u2694\uFE0F";
@@ -215,13 +239,27 @@ function renderCombatTab() {
         </div>
       `;
     }).join("")}
+
+    ${pinnedSpells(character).length ? `
+      <div class="section-head-row">
+        <div class="section-head">Spells</div>
+      </div>
+      ${pinnedSpells(character).map(spell => renderSpellRow(spell)).join("")}
+    ` : ""}
   `;
 }
 
+/* Everything here is looked up inside #content. openModal appends its overlay
+   to .phone alongside #content, so a document-wide query in a wire function
+   reaches into whatever modal happens to be open and wires its controls a
+   second time -- the exhaustion stepper moved by 2, 3, 4 for exactly that
+   reason, because the effect detail modal draws the same stepper. */
 function wireCombatTab() {
-  document.getElementById("hp-card").addEventListener("click", openHpCalculator);
+  const root = document.getElementById("content");
 
-  document.querySelectorAll("[data-exhaustion-step]").forEach(button => {
+  root.querySelector("#hp-card").addEventListener("click", openHpCalculator);
+
+  root.querySelectorAll("[data-exhaustion-step]").forEach(button => {
     button.addEventListener("click", (e) => {
       e.stopPropagation();
       const next = exhaustionLevel(character) + parseInt(button.dataset.exhaustionStep);
@@ -229,47 +267,57 @@ function wireCombatTab() {
       renderContent();
     });
   });
-  const exhaustionDetail = document.querySelector("[data-exhaustion-detail]");
+  const exhaustionDetail = root.querySelector("[data-exhaustion-detail]");
   if (exhaustionDetail) exhaustionDetail.addEventListener("click", openExhaustionModal);
 
-  wireDeathSaveControls(renderContent);
+  wireDeathSaveControls(root.querySelector(".death-card"));
+  refreshCalcDeathPanel();
 
   const ac = calculateAC(character);
-  document.getElementById("ac-box").addEventListener("click", () => openBreakdownModal("AC", ac.total, "", ac.sources));
+  root.querySelector("#ac-box").addEventListener("click", () => openBreakdownModal("AC", ac.total, "", ac.sources));
 
   const initiative = calculateInitiative(character);
-  document.getElementById("initiative-box").addEventListener("click", () =>
+  root.querySelector("#initiative-box").addEventListener("click", () =>
     openBreakdownModal("Initiative", formatModifier(initiative.total), "", initiative.sources,
       { label: "Initiative", notation: "1d20" + formatModifier(initiative.total) }));
 
   const speed = calculateSpeed(character);
-  document.getElementById("speed-box").addEventListener("click", () => openBreakdownModal("Speed", speed.total, " ft", speed.sources));
+  root.querySelector("#speed-box").addEventListener("click", () => openBreakdownModal("Speed", speed.total, " ft", speed.sources));
 
   const passivePerception = calculatePassivePerception(character);
-  document.getElementById("passive-perception-box").addEventListener("click", () =>
+  root.querySelector("#passive-perception-box").addEventListener("click", () =>
     openBreakdownModal("Passive Perception", passivePerception.total, "", passivePerception.sources));
 
-  document.getElementById("prof-bonus-box").addEventListener("click", openEditProficiencyModal);
+  root.querySelector("#prof-bonus-box").addEventListener("click", openEditProficiencyModal);
 
-  document.getElementById("insp-minus").addEventListener("click", () => { character.inspiration.current--; renderContent(); });
-  document.getElementById("insp-plus").addEventListener("click", () => { character.inspiration.current++; renderContent(); });
+  root.querySelector("#insp-minus").addEventListener("click", () => { character.inspiration.current--; renderContent(); });
+  root.querySelector("#insp-plus").addEventListener("click", () => { character.inspiration.current++; renderContent(); });
 
-  document.getElementById("add-effect-button").addEventListener("click", openAddEffectModal);
-  document.querySelectorAll("[data-effect-remove]").forEach(button => {
+  root.querySelector("#add-effect-button").addEventListener("click", openAddEffectModal);
+  root.querySelectorAll("[data-effect-remove]").forEach(button => {
     button.addEventListener("click", (e) => {
       e.stopPropagation();
-      character.activeEffects = character.activeEffects.filter(x => x.id != button.dataset.effectRemove);
-      renderContent();
+      const group = character.activeEffects.find(x => x.id == button.dataset.effectRemove);
+      confirmModal({
+        title: "Remove " + (group ? effectGroupLabel(group) : "effect") + "?",
+        body: "This can't be undone.",
+        confirmLabel: "Remove",
+        danger: true,
+        onConfirm: () => {
+          character.activeEffects = character.activeEffects.filter(x => x.id != button.dataset.effectRemove);
+          renderContent();
+        }
+      });
     });
   });
-  document.querySelectorAll("[data-effect-view]").forEach(chip => chip.addEventListener("click", () => openEffectDetailModal(chip.dataset.effectView)));
+  root.querySelectorAll("[data-effect-view]").forEach(chip => chip.addEventListener("click", () => openEffectDetailModal(chip.dataset.effectView)));
 
   // dropping concentration removes whatever it was holding up, which is the
   // whole point of hanging effects off a named group
-  const concCheck = document.getElementById("concentration-check");
+  const concCheck = root.querySelector("#concentration-check");
   if (concCheck) concCheck.addEventListener("click", () => openConcentrationCheckModal());
 
-  const concDrop = document.getElementById("concentration-drop");
+  const concDrop = root.querySelector("#concentration-drop");
   if (concDrop) concDrop.addEventListener("click", () => {
     const dropped = concentrationGroups(character).map(g => effectGroupLabel(g));
     character.activeEffects = character.activeEffects.filter(g => !g.concentration);
@@ -277,13 +325,13 @@ function wireCombatTab() {
     showToast("Concentration dropped · " + dropped.join(", ") + " ended");
   });
 
-  document.querySelectorAll("[data-res-minus]").forEach(button => {
+  root.querySelectorAll("[data-res-minus]").forEach(button => {
     button.addEventListener("click", () => { adjustResourceRow(findResourceRow(character, button.dataset.resMinus), -1); renderContent(); });
   });
-  document.querySelectorAll("[data-res-plus]").forEach(button => {
+  root.querySelectorAll("[data-res-plus]").forEach(button => {
     button.addEventListener("click", () => { adjustResourceRow(findResourceRow(character, button.dataset.resPlus), 1); renderContent(); });
   });
-  document.querySelectorAll("[data-res-refill]").forEach(button => {
+  root.querySelectorAll("[data-res-refill]").forEach(button => {
     button.addEventListener("click", (e) => {
       e.stopPropagation();
       const row = findResourceRow(character, button.dataset.resRefill);
@@ -296,41 +344,48 @@ function wireCombatTab() {
     });
   });
   // an item-backed row belongs to the item, so tapping it opens the item
-  document.querySelectorAll("[data-resource-view]").forEach(el => el.addEventListener("click", () => {
+  root.querySelectorAll("[data-resource-view]").forEach(el => el.addEventListener("click", () => {
     const row = findResourceRow(character, el.dataset.resourceView);
     if (!row) return;
     if (row.item) openItemDetailModal(row.item.id);
     else openResourceDetailModal(row.resource.id);
   }));
-  document.getElementById("add-resource-button").addEventListener("click", openAddResourceModal);
+  root.querySelector("#add-resource-button").addEventListener("click", openAddResourceModal);
 
-  document.querySelectorAll("[data-slot-minus]").forEach(button => {
+  root.querySelectorAll("[data-slot-minus]").forEach(button => {
     button.addEventListener("click", () => { character.spellSlots[button.dataset.slotMinus].current--; renderContent(); });
   });
-  document.querySelectorAll("[data-slot-plus]").forEach(button => {
+  root.querySelectorAll("[data-slot-plus]").forEach(button => {
     button.addEventListener("click", () => { character.spellSlots[button.dataset.slotPlus].current++; renderContent(); });
   });
-  document.querySelectorAll("[data-slot-view]").forEach(el => {
+  root.querySelectorAll("[data-slot-view]").forEach(el => {
     el.addEventListener("click", () => openEditSlotsModal(parseInt(el.dataset.slotView)));
   });
 
 
-  document.querySelectorAll("[data-roll-tohit]").forEach(button => {
+  root.querySelectorAll("[data-roll-tohit]").forEach(button => {
     button.addEventListener("click", (e) => {
       e.stopPropagation();
       const weapon = character.inventory.find(i => i.id == button.dataset.rollTohit);
       const atk = calculateAttack(character, weapon);
-      // ammunition is spent when the attack is made, not when it's rerolled
-      if (atk.ammunition) {
-        if (atk.ammunition.current <= 0) showToast("Out of " + atk.ammunition.name);
-        adjustResourceRow(atk.ammunition, -1);
-        renderContent();
-      }
-      showRoll({ label: weapon.name + " \u2013 To Hit", notation: "1d20" + formatModifier(atk.toHitTotal),
-                 sources: atk.toHitSources, kind: "attack" });
+      showRoll({
+        label: weapon.name + " \u2013 To Hit",
+        notation: "1d20" + formatModifier(atk.toHitTotal),
+        sources: atk.toHitSources,
+        kind: "attack",
+        /* Spent when the attack is actually thrown, not when the window opens
+           and not on a reroll. Opening a roll to look at it used to cost an
+           arrow, which is the whole reason rolls now wait for you. */
+        onRoll: () => {
+          if (!atk.ammunition) return;
+          if (atk.ammunition.current <= 0) showToast("Out of " + atk.ammunition.name);
+          adjustResourceRow(atk.ammunition, -1);
+          renderContent();
+        }
+      });
     });
   });
-  document.querySelectorAll("[data-roll-damage]").forEach(button => {
+  root.querySelectorAll("[data-roll-damage]").forEach(button => {
     button.addEventListener("click", (e) => {
       e.stopPropagation();
       const weapon = character.inventory.find(i => i.id == button.dataset.rollDamage);
@@ -344,7 +399,7 @@ function wireCombatTab() {
       });
     });
   });
-  document.querySelectorAll("[data-grip]").forEach(button => {
+  root.querySelectorAll("[data-grip]").forEach(button => {
     button.addEventListener("click", (e) => {
       e.stopPropagation();
       const weapon = character.inventory.find(i => i.id == button.dataset.grip);
@@ -353,8 +408,11 @@ function wireCombatTab() {
     });
   });
 
-  document.querySelectorAll("[data-atk-detail]").forEach(row => row.addEventListener("click", () => openAttackDetailModal(row.dataset.atkDetail)));
-  document.getElementById("add-attack-button").addEventListener("click", openAddAttackModal);
+  root.querySelectorAll("[data-atk-detail]").forEach(row => row.addEventListener("click", () => openAttackDetailModal(row.dataset.atkDetail)));
+  root.querySelector("#add-attack-button").addEventListener("click", openAddAttackModal);
+
+  // pinned spell rows are the Spells tab's own rows, listeners included
+  wireSpellRows(root);
 }
 
 
@@ -362,10 +420,15 @@ function wireCombatTab() {
 
 function openHpCalculator() {
   let expr = "";
-  openModal("sheet", `
+  /* "full" rather than "sheet": the keypad, the actions, the hit dice and the
+     death saves are one screen's worth, and at 65% of the phone the actions
+     sat on the bottom edge with everything below them out of sight. The six
+     dice go in one row of six for the same reason -- in the shared 4-column
+     grid they spilled onto a second row with two empty cells. */
+  openModal("full", `
     <div class="modal-heading">HP Calculator</div>
     <div class="calc-display"><div class="calc-expr" id="calc-expr">&nbsp;</div></div>
-    <div class="calc-grid dice">${[4, 6, 8, 10, 12, 20].map(d => `<button data-dice="${d}">d${d}</button>`).join("")}</div>
+    <div class="calc-grid dice" style="grid-template-columns:repeat(6, 1fr);">${[4, 6, 8, 10, 12, 20].map(d => `<button data-dice="${d}">d${d}</button>`).join("")}</div>
     <div class="calc-grid">
       <button data-num="7">7</button><button data-num="8">8</button><button data-num="9">9</button><button data-back>\u232B</button>
       <button data-num="4">4</button><button data-num="5">5</button><button data-num="6">6</button><button data-op="/">\u00F7</button>
@@ -388,14 +451,10 @@ function openHpCalculator() {
 
   wireHitDiceCalcRows();
 
-  // the panel redraws itself in place so the calculator stays open
-  function redrawDeathPanel() {
-    const panel = document.getElementById("calc-death-saves");
-    if (panel) panel.innerHTML = deathSaveControlHtml();
-    wireDeathSaveControls(redrawDeathPanel);
-    renderContent();
-  }
-  wireDeathSaveControls(redrawDeathPanel);
+  /* The panel is wired to its own container only. Every change redraws the
+     sheet behind the calculator, and wireCombatTab redraws this panel from the
+     same state on its way through, so neither copy can go stale. */
+  wireDeathSaveControls(document.getElementById("calc-death-saves"));
 
   const exprLine = document.getElementById("calc-expr");
   function refresh() { exprLine.textContent = expr || "\u00A0"; }
@@ -456,9 +515,10 @@ function applyHp(type, amount) {
     if (!alreadyDown && overkill >= maxHP.total) {
       recordDeathSave("failure", 3);
       showToast("Killed outright — " + overkill + " past zero, against a maximum of " + maxHP.total);
-      return;
+    } else if (alreadyDown && remaining > 0) {
+      recordDeathSave("failure", 1);
     }
-    if (alreadyDown && remaining > 0) recordDeathSave("failure", 1);
+    breakConcentrationIfDown();
   }
 }
 
@@ -475,6 +535,15 @@ function dropConcentration() {
   const dropped = concentrationGroups(character).map(group => effectGroupLabel(group));
   character.activeEffects = character.activeEffects.filter(group => !group.concentration);
   return dropped;
+}
+
+/* Being at nothing is being unconscious, and three failures is worse than
+   that; either way concentration ends. Both rests already break it the same
+   way, so this is the same rule reached from the other direction. */
+function breakConcentrationIfDown() {
+  if (character.hp.current > 0 && !deathSaveState(character).dead) return;
+  const dropped = dropConcentration();
+  if (dropped.length) showToast("Concentration broken · " + dropped.join(", ") + " ended");
 }
 
 /* Uses the ordinary roll window rather than a bespoke one, so concentration
@@ -691,6 +760,7 @@ function openAddEffectModal() {
     <div class="menu-note">Leave the list empty for a label-only reminder with no mechanical effect.</div>
     <button class="btn-primary" id="save-effect-button" style="margin-top:14px;">Add Effect</button>
   `);
+  guardModalEdits();
 
   wireCombo("effect-name", ALL_CONDITIONS);
   wireSelect("effect-duration-type");
@@ -717,12 +787,35 @@ function openAddEffectModal() {
     renderFeatureEffectsList(listEl, formEffects, EFFECT_CATEGORIES_GENERAL);
   });
 
+  /* Only one concentration holds at a time. Ask before the new one ends the
+     old one -- silently keeping both would let an effect outlive its cause,
+     which is the one thing the effect groups exist to prevent. The ask is
+     the app's own dialog now, so it can't block: the save continues in its
+     callback instead of after a return value. */
   document.getElementById("save-effect-button").addEventListener("click", () => {
+    if (concentration && concentrationGroups(character).length) {
+      const holding = concentrationGroups(character).map(g => effectGroupLabel(g));
+      const named = document.getElementById("effect-name").value.trim();
+      confirmModal({
+        title: "End your current concentration?",
+        body: "You're concentrating on " + holding.join(", ") + ". Starting "
+          + (named || "this effect") + " ends it.",
+        confirmLabel: "Start anyway",
+        onConfirm: () => saveEffect(dropConcentration())
+      });
+      return;
+    }
+    saveEffect([]);
+  });
+
+  function saveEffect(replaced) {
     const durationType = durationTypeSelect.value;
+    const name = document.getElementById("effect-name").value.trim();
+
     const newId = Math.max(0, ...character.activeEffects.map(e => e.id)) + 1;
     character.activeEffects.push({
       id: newId,
-      name: document.getElementById("effect-name").value.trim(),
+      name,
       note: document.getElementById("effect-note").value.trim(),
       concentration,
       duration: {
@@ -733,7 +826,8 @@ function openAddEffectModal() {
     });
     closeModal();
     renderContent();
-  });
+    if (replaced.length) showToast("Concentration dropped · " + replaced.join(", ") + " ended");
+  }
 }
 
 /* Shown inside an exhaustion effect's detail: what the current level actually
@@ -776,15 +870,30 @@ function openEffectDetailModal(effectId) {
       <div class="breakdown-subhead">Modifiers</div>
       ${modifiers.map(e => `<div class="breakdown-row"><span>${esc(e.category)}</span><span>${esc(effectSummaryLabel(e, totalLevel(character)))}</span></div>`).join("")}
     ` : `<div class="empty-hint">No mechanical effect — this is a reminder only.</div>`}
-    <button class="btn-primary" id="remove-effect-button" style="background:var(--danger-surface);color:var(--danger-text);">Remove Effect</button>
+    <button class="btn-primary btn-danger" id="remove-effect-button">Remove Effect</button>
   `);
-  document.getElementById("remove-effect-button").addEventListener("click", () => {
-    character.activeEffects = character.activeEffects.filter(e => e.id != effectId);
-    closeModal();
-    renderContent();
+  /* The Combat tab draws an exhaustion stepper of its own, so these lookups
+     stay inside the modal -- a document-wide one wired the tab's stepper a
+     second time on every chip you opened, and closeModal doesn't re-render, so
+     the extra listeners piled up. */
+  const modal = document.getElementById("modal-overlay");
+
+  modal.querySelector("#remove-effect-button").addEventListener("click", () => {
+    const group = character.activeEffects.find(e => e.id == effectId);
+    confirmModal({
+      title: "Remove " + (group ? effectGroupLabel(group) : "effect") + "?",
+      body: "This can't be undone.",
+      confirmLabel: "Remove",
+      danger: true,
+      onConfirm: () => {
+        character.activeEffects = character.activeEffects.filter(e => e.id != effectId);
+        closeModal();
+        renderContent();
+      }
+    });
   });
 
-  document.querySelectorAll("[data-exhaustion-step]").forEach(button => {
+  modal.querySelectorAll("[data-exhaustion-step]").forEach(button => {
     button.addEventListener("click", () => {
       const next = exhaustionLevel(character) + parseInt(button.dataset.exhaustionStep);
       setExhaustionLevel(character, next);
@@ -807,6 +916,7 @@ function openAddResourceModal() {
     ${rechargeFieldHtml("new-res")}
     <button class="btn-primary" id="save-res-button">Add Resource</button>
   `);
+  guardModalEdits();
   wireRechargeField("new-res");
   document.getElementById("save-res-button").addEventListener("click", () => {
     const name = document.getElementById("new-res-name").value.trim() || "New Resource";
@@ -840,9 +950,10 @@ function openResourceDetailModal(resourceId) {
     ${rechargeFieldHtml("edit-res", r.recharge)}
     <div class="btn-row-2">
       <button class="btn-primary" id="save-edit-res-button">Save Changes</button>
-      <button class="btn-primary" id="remove-res-button" style="background:var(--danger-surface);color:var(--danger-text);">Remove</button>
+      <button class="btn-primary btn-danger" id="remove-res-button">Remove</button>
     </div>
   `);
+  guardModalEdits();
   wireRechargeField("edit-res");
 
   if (scaling) {
@@ -868,9 +979,18 @@ function openResourceDetailModal(resourceId) {
     renderContent();
   });
   document.getElementById("remove-res-button").addEventListener("click", () => {
-    character.resources = character.resources.filter(x => x.id != resourceId);
-    closeModal();
-    renderContent();
+    const res = character.resources.find(x => x.id == resourceId);
+    confirmModal({
+      title: "Remove " + (res ? res.name : "resource") + "?",
+      body: "This can't be undone.",
+      confirmLabel: "Remove",
+      danger: true,
+      onConfirm: () => {
+        character.resources = character.resources.filter(x => x.id != resourceId);
+        closeModal();
+        renderContent();
+      }
+    });
   });
 }
 
@@ -893,35 +1013,97 @@ function openAddAttackModal() {
 // propertyBaseName lives in character-data.js, next to the code that reads
 // properties to work out damage
 
-function renderPropertyPicker(container, selected) {
-  const taken = selected.map(propertyBaseName);
-  const available = SRD_WEAPON_PROPERTIES.filter(name => !taken.includes(propertyBaseName(name)));
+function propertySummaryText(selected) {
+  return selected.length ? selected.join(", ") : "None";
+}
+
+/* Collapsed by default.
+
+   Eleven rows is 406px in a form that is already more than twice the height of
+   the viewport, and the median SRD weapon has two properties. So the block is
+   a summary line that says what's chosen, and opens the list in place when you
+   want to change it -- the answer stays visible without the question costing a
+   quarter of the form.
+
+   Inside the list, the two halves of a row do different things: the checkbox
+   ticks the property, the name explains it. That's why the row is a <div> with
+   two controls rather than one big <button> -- and why the checkbox is a span.
+   It used to be a <button> nested inside the row's <button>, which is invalid
+   HTML: Chromium tolerated it, every spec-compliant parser auto-closed the
+   outer button, and the row collapsed into three stacked siblings with the
+   label outside the tap target. */
+function renderPropertyPicker(container, selected, expanded) {
+  // propertyBaseName() lowercases and SRD_WEAPON_PROPERTIES is capitalised, so
+  // compare like with like -- straight includes() never matched, and every
+  // ticked property was listed a second time under "Your own"
+  const srdBaseNames = SRD_WEAPON_PROPERTIES.map(propertyBaseName);
+  const custom = selected.filter(p => !srdBaseNames.includes(propertyBaseName(p)));
+  const redraw = (open) => renderPropertyPicker(container, selected, open);
+
+  if (!expanded) {
+    container.innerHTML = `
+      <button type="button" class="summary-line" id="prop-summary">
+        <span class="summary-line-value">${esc(propertySummaryText(selected))}</span>
+        <span class="summary-line-chevron">\u203A</span>
+      </button>`;
+    container.querySelector("#prop-summary").addEventListener("click", () => redraw(true));
+    return;
+  }
 
   container.innerHTML = `
-    <div class="chip-row" style="margin-bottom:8px;">
-      ${selected.map((property, idx) => `
-        <div class="chip">${esc(property)}<button class="chip-remove" data-prop-remove="${idx}">✕</button></div>
-      `).join("") || `<div class="empty-hint" style="padding:2px 0;">No properties</div>`}
+    <div class="prop-list">
+      ${SRD_WEAPON_PROPERTIES.map(name => {
+        const chosen = selected.find(p => propertyBaseName(p) === propertyBaseName(name));
+        return `<div class="prop-row ${chosen ? "on" : ""}">
+          ${miniCheckboxHtml("prop-toggle", name, !!chosen)}
+          <button type="button" class="prop-row-name" data-prop-info="${esc(name)}">${esc(chosen || name)}</button>
+        </div>`;
+      }).join("")}
     </div>
-    ${available.length ? `<div class="prop-palette">
-      ${available.map(name => `<button type="button" class="prop-add" data-prop-add="${esc(name)}">+ ${esc(name)}</button>`).join("")}
-    </div>` : ""}
+    ${custom.length ? `
+      <div class="breakdown-source" style="margin:10px 0 4px;">Your own</div>
+      ${custom.map(property => `
+        <div class="prop-row prop-row-custom">
+          <span class="prop-row-name">${esc(property)}</span>
+          <button type="button" class="chip-remove" data-prop-remove="${selected.indexOf(property)}">\u2715</button>
+        </div>
+      `).join("")}
+    ` : ""}
     <div class="field-row" style="margin-top:10px;">
       ${textFieldHtml("prop-custom-input", "", "", { placeholder: "Anything else, e.g. Versatile (1d10)", style: "margin-bottom:0;" })}
       <button type="button" class="btn-secondary prop-custom-add" id="prop-custom-add">Add</button>
     </div>
+    <button type="button" class="add-link" id="prop-collapse" style="margin-top:6px;">Done</button>
   `;
+
+  container.querySelector("#prop-collapse").addEventListener("click", () => redraw(false));
 
   container.querySelectorAll("[data-prop-remove]").forEach(button => {
     button.addEventListener("click", () => {
       selected.splice(parseInt(button.dataset.propRemove), 1);
-      renderPropertyPicker(container, selected);
+      redraw(true);
     });
   });
-  container.querySelectorAll("[data-prop-add]").forEach(button => {
+
+  // the checkbox ticks it...
+  container.querySelectorAll("[data-prop-toggle]").forEach(box => {
+    box.addEventListener("click", () => {
+      if (miniCheckboxBlocked(box)) return;
+      const name = box.dataset.propToggle;
+      // an SRD property the player has customised ("Versatile (1d10)") is
+      // matched by its base name, so unticking removes the customised one
+      const idx = selected.findIndex(p => propertyBaseName(p) === propertyBaseName(name));
+      if (idx >= 0) selected.splice(idx, 1);
+      else selected.push(name);
+      redraw(true);
+    });
+  });
+
+  // ...and the name explains it, rather than being a second way to tick it
+  container.querySelectorAll("[data-prop-info]").forEach(button => {
     button.addEventListener("click", () => {
-      selected.push(button.dataset.propAdd);
-      renderPropertyPicker(container, selected);
+      const name = button.dataset.propInfo;
+      infoModal(name, WEAPON_PROPERTY_INFO[name] || "No description available.");
     });
   });
 
@@ -930,7 +1112,7 @@ function renderPropertyPicker(container, selected) {
     const value = customInput.value.trim();
     if (!value) return;
     selected.push(value);
-    renderPropertyPicker(container, selected);
+    redraw(true);
   }
   container.querySelector("#prop-custom-add").addEventListener("click", addCustom);
   customInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addCustom(); } });
@@ -976,18 +1158,42 @@ function readDamageRows(parts) {
   });
 }
 
+/* The three lines at the top of an attack: what it is, whether you can use it,
+   and what it does. They were five lines of prose that restated the rules --
+   "Finesse -- using Strength, your better of Strength and Dexterity" told a
+   player who had chosen a finesse weapon what finesse is. The ability it landed
+   on is the part they can't work out by looking, so that is all the property
+   carries now: Finesse (STR). */
+function weaponTypeLabel(weapon) {
+  return (weapon.weaponType === "ranged" ? "Ranged" : "Melee") + " Weapon";
+}
+
+function attackPropertyListHtml(weapon, atk) {
+  const properties = weapon.properties || [];
+  if (!properties.length) return "";
+  return esc(properties.map(property =>
+    (propertyBaseName(property) === "finesse" && atk.finesse) ? property + " (" + atk.finesse + ")" : property
+  ).join(", "));
+}
+
+function attackProficiencyLineHtml(atk) {
+  const label = atk.proficiency.required || "Proficiency";
+  const mark = atk.proficiency.proficient
+    ? `<span class="prof-yes">\u2713</span>`
+    : `<span class="prof-no">\u2717</span>`;
+  return `${esc(label)} ${mark}${atk.proficiency.overridden ? ` <span class="prof-need">set manually</span>` : ""}`;
+}
+
 function openAttackDetailModal(weaponId) {
   const weapon = character.inventory.find(i => i.id == weaponId);
   const atk = calculateAttack(character, weapon);
+  const properties = attackPropertyListHtml(weapon, atk);
 
   openModal("full", `
     <div class="modal-heading">${esc(weapon.name)}</div>
-    <div class="breakdown-source">${esc(atk.source)}${weapon.range ? " \u00B7 " + esc(weapon.range) : ""}</div>
-    ${weapon.properties && weapon.properties.length ? `<div class="breakdown-source">${esc(weapon.properties.join(", "))}</div>` : ""}
-    <div class="breakdown-source">
-      ${atk.proficiency.required ? "Requires " + esc(atk.proficiency.required) + " \u2014 " : ""}${atk.proficiency.proficient ? "proficient" : "not proficient"}${atk.proficiency.overridden ? " (set manually)" : ""}
-    </div>
-    ${atk.finesse ? `<div class="breakdown-source">Finesse \u2014 using ${ABILITY_FULL_NAMES[atk.finesse]}, your better of Strength and Dexterity</div>` : ""}
+    <div class="breakdown-source">${esc(weaponTypeLabel(weapon))}${weapon.range ? " \u00B7 " + esc(weapon.range) : ""}</div>
+    <div class="breakdown-source">${attackProficiencyLineHtml(atk)}</div>
+    ${properties ? `<div class="breakdown-source">${properties}</div>` : ""}
     ${atk.versatile ? `
       ${toggleLineHtml("atk-grip-switch", "Wielding two-handed", atk.twoHanded,
         { note: "(" + atk.versatile + ")", style: "margin-top:10px;" })}` : ""}
@@ -1014,11 +1220,17 @@ function openAttackDetailModal(weaponId) {
     </div>
   `);
 
+  /* Reopened, not just toggled. Switching grip changes the damage dice -- a
+     Longsword is 1d8 in one hand and 1d10 in two -- and the breakdown those
+     dice are printed in is right here in this modal. Flipping the switch and
+     calling renderContent() updated the row behind the modal and left every
+     number on screen showing the other grip. */
   const gripSwitch = document.getElementById("atk-grip-switch");
   if (gripSwitch) gripSwitch.addEventListener("click", () => {
     weapon.twoHanded = !weapon.twoHanded;
-    gripSwitch.classList.toggle("on", weapon.twoHanded);
+    closeModal();
     renderContent();
+    openAttackDetailModal(weaponId);
   });
 
   document.getElementById("atk-offhand-switch").addEventListener("click", () => {

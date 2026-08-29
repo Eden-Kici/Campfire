@@ -48,5 +48,20 @@ loadRollHistory();
 const restored = loadCharacters();
 showScreen("selector");
 if (restored && restored.stale) {
-  showToast("Saved characters were from an older version (" + restored.reason + ") and weren't loaded");
+  showToast("Older save (" + restored.reason + ") kept aside, not loaded");
+}
+
+/* Registered, not scripted into the page -- a service worker runs outside the
+   document, which is how the app opens with no signal.
+
+   Wrapped and swallowed on purpose: a worker needs HTTPS (or localhost), so
+   opening index.html straight off the filesystem throws here. That has to stay
+   a no-op rather than taking the boot sequence down, because opening the file
+   directly is how this app is developed. */
+if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch(err => {
+      console.warn("Service worker not registered (expected over file://):", err.message);
+    });
+  });
 }

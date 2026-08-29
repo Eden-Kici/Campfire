@@ -162,11 +162,21 @@ function showRollToast(label, notation) {
   }, 3000);
 }
 
+/* Stack from each toast's real height rather than a fixed stride -- a long
+   label wraps to three or four lines and a fixed 78px step let the next one
+   land on top of it. */
 function repositionToasts() {
+  // Toasts sit above the modal layer, so anchored to the top they landed on
+  // an open modal's own heading -- a rest toast hid the sheet it came from.
+  // With a modal up they stack from the bottom instead.
+  const overModal = !!document.getElementById("modal-overlay");
+  let offset = overModal ? 24 : 60;
   activeToasts.forEach((toast, index) => {
-    toast.style.top = (60 + index * 78) + "px";
+    toast.style.top = overModal ? "auto" : offset + "px";
+    toast.style.bottom = overModal ? offset + "px" : "auto";
     toast.style.zIndex = 200 - index;
     toast.style.opacity = index === 0 ? "1" : (1 - index * 0.25);
+    offset += (toast.offsetHeight || 70) + 8;
   });
 }
 
@@ -194,11 +204,23 @@ function showRoll(config) {
   const derived = derivedRollMode(character, config.kind, config.ability);
   rollState = { config, derived, mode: derived.mode, manual: false, rolled: false };
 
-  /* A roll against a difficulty class waits for the player. Rolling it for
-     them the moment the window opens takes away the part they came for. A
-     plain roll -- tapping an attack, a skill -- has already been asked for by
-     the tap itself, so that one resolves immediately. */
-  if (config.dc === undefined) {
+  /* Two tempos, and the player picks which.
+
+     By default every roll opens unrolled: you see what you are about to throw
+     -- the notation, the modifiers that built it, whether advantage applies --
+     and then you throw it. Tapping a skill used to log a die whether you
+     wanted one or not, so there was no way to look at a number without rolling
+     for it.
+
+     Fast Rolls puts it back to resolving on the first tap, for tables that
+     want the speed. A roll against a difficulty class always waits either way:
+     rolling it for you is precisely the part you came to do.
+
+     Anything with a cost -- ammunition, a spell slot -- is spent by
+     `onRoll`, not by opening the window, so backing out of a roll costs
+     nothing. */
+  if (config.dc === undefined && typeof settings !== "undefined" && settings.fastRolls) {
+    if (config.onRoll) config.onRoll();
     Object.assign(rollState, rollWithMode(config, rollState.mode));
     rollState.rolled = true;
     recordCurrentRoll();
@@ -206,6 +228,16 @@ function showRoll(config) {
 
   openModal("center", rollWindowHtml());
   wireRollWindow();
+}
+
+/* The first actual throw, from the Roll button. Separate from rerollCurrent
+   because only the first one spends anything. */
+function rollNow() {
+  if (rollState.config.onRoll) rollState.config.onRoll();
+  Object.assign(rollState, { dropped: null }, rollWithMode(rollState.config, rollState.mode));
+  rollState.rolled = true;
+  recordCurrentRoll();
+  redrawRollWindow();
 }
 
 /* Called at each of the two moments a roll actually resolves -- showRoll()
@@ -333,8 +365,10 @@ function wireRollWindow() {
   });
   const reroll = document.getElementById("roll-reroll");
   if (reroll) reroll.addEventListener("click", rerollCurrent);
-  const rollNow = document.getElementById("roll-now");
-  if (rollNow) rollNow.addEventListener("click", rerollCurrent);
+  // the first throw goes through rollNow(), which is also what spends the
+  // ammunition or the slot -- a reroll must not spend it a second time
+  const rollNowButton = document.getElementById("roll-now");
+  if (rollNowButton) rollNowButton.addEventListener("click", rollNow);
 
   document.querySelectorAll("[data-roll-decision]").forEach(button => {
     button.addEventListener("click", () => {

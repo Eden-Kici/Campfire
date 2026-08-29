@@ -12,17 +12,19 @@ const FAKE_PARTIES = [
     members: [
       { name: "Borin Ashfall", classNames: "Fighter", level: 5, hp: 32, maxHp: 40 },
       { name: "Kira Dawnstrike", classNames: "Cleric", level: 5, hp: 38, maxHp: 38 },
-      { name: "Thistle Nix", classNames: "Rogue", level: 4, hp: 12, maxHp: 30 }
+      // one custom build in the pool, so the visibility toggle has something to
+      // hide -- this party leaves it off, Ashenvale turns it on
+      { name: "Thistle Nix", classNames: "Rogue", level: 4, hp: 12, maxHp: 30, customBuild: true }
     ]
   },
   {
     name: "Ashenvale Company", gm: "Tom\u00e1s", cap: 8,
-    settings: { showClasses: true, showLevels: false, hpDisplay: "estimate" },
+    settings: { showClasses: true, showLevels: false, hpDisplay: "estimate", showCustom: true },
     members: [
       { name: "Corvin Blackwood", classNames: "Paladin", level: 6, hp: 5, maxHp: 44 },
       { name: "Wren Ashby", classNames: "Ranger", level: 6, hp: 40, maxHp: 40 },
       { name: "Petra Voss", classNames: "Wizard", level: 5, hp: 18, maxHp: 18 },
-      { name: "Odalys Marrow", classNames: "Barbarian", level: 6, hp: 0, maxHp: 50, deathSaves: { successes: 1, failures: 1 } },
+      { name: "Odalys Marrow", classNames: "Barbarian", level: 6, hp: 0, maxHp: 50, customBuild: true, deathSaves: { successes: 1, failures: 1 } },
       { name: "Finch Talbot", classNames: "Bard", level: 5, hp: 22, maxHp: 22 }
     ]
   },
@@ -40,7 +42,18 @@ const FAKE_PARTIES = [
 ];
 
 function defaultPartySettings() {
-  return { showClasses: true, showLevels: true, hpDisplay: "stats" };
+  return { showClasses: true, showLevels: true, hpDisplay: "stats", showCustom: false };
+}
+
+/* Whether you can see that someone's character is a custom build.
+
+   The host always can -- they are the one who has to decide whether a
+   36-point-buy Barbarian is coming to their table -- and the toggle decides
+   whether everyone else does too. Off by default, because "this player broke
+   the rules" is the host's information to share, not the app's to broadcast. */
+function canSeeCustomBuilds() {
+  if (party.status === "hosting") return true;
+  return !!(party.settings && party.settings.showCustom);
 }
 
 let party = { status: "none", name: null, gm: null, code: null, cap: null, settings: null, members: [] };
@@ -52,6 +65,7 @@ let partyConnectingTo = null;
 // there's no native checkbox to read a value back from.
 let hostFormShowClasses = true;
 let hostFormShowLevels = true;
+let hostFormShowCustom = false;
 
 /* Which identity you show up as depends on where Party was opened from. The
    app has no login screen, so the character selector -- reached before any
@@ -73,6 +87,9 @@ function myPartyIdentity(extra) {
     base.hp = character.hp.current;
     base.maxHp = calculateMaxHP(character).total;
     base.deathSaves = character.deathSaves;
+    // carried on the roster entry rather than looked up, because a real build
+    // sends this over the wire and the other phones have no sheet to consult
+    base.customBuild = !!character.customBuild;
   }
   return Object.assign(base, extra || {});
 }
@@ -97,6 +114,7 @@ function partyMemberDetailLine(m) {
   if (!party.settings) return "";
   const parts = [];
   const bits = [];
+  if (m.customBuild && canSeeCustomBuilds()) bits.push("Custom");
   if (party.settings.showClasses && m.classNames) bits.push(m.classNames);
   if (party.settings.showLevels && m.level != null) bits.push("Level " + m.level);
   if (bits.length) parts.push(bits.join(" · "));
@@ -174,7 +192,7 @@ function partyModalHtml() {
           return `
           <div class="member-row">
             <div class="recipient-left">
-              <div class="char-avatar">${m.pic ? `<img src="${m.pic}" alt="">` : m.name.trim().charAt(0).toUpperCase()}</div>
+              <div class="char-avatar">${m.pic ? `<img src="${esc(m.pic)}" alt="">` : m.name.trim().charAt(0).toUpperCase()}</div>
               <div>
                 <div class="res-name">${esc(m.name)}</div>
                 ${m.subtext ? `<div class="atk-range">(${esc(m.subtext)})</div>` : ""}
@@ -185,7 +203,7 @@ function partyModalHtml() {
           </div>
         `;
         }).join("")}
-        <button class="btn-primary" id="leave-party-button" style="background:var(--danger-surface);color:var(--danger-text);margin-top:10px;">${party.status === "hosting" ? "Stop Hosting" : "Leave Party"}</button>
+        <button class="btn-primary btn-danger" id="leave-party-button" style="margin-top:10px;">${party.status === "hosting" ? "Stop Hosting" : "Leave Party"}</button>
         <button class="btn-secondary" id="party-done-button">Done</button>
       `;
     }
@@ -250,6 +268,8 @@ function partyModalHtml() {
     <div class="breakdown-subhead">What the party sees</div>
     ${toggleLineHtml("host-show-classes-switch", "Show Classes", hostFormShowClasses)}
     ${toggleLineHtml("host-show-levels-switch", "Show Levels", hostFormShowLevels)}
+    ${toggleLineHtml("host-show-custom-switch", "Show Custom Characters", hostFormShowCustom,
+      { hint: "Off, only you see who is a custom build" })}
     ${selectFieldHtml("host-hp-display-input", "Hit Points", [
       { value: "stats", label: "Show Stats" },
       { value: "estimate", label: "Show Estimate" },
@@ -284,6 +304,7 @@ function wirePartyModal() {
       partyModalScreen = "host-form";
       hostFormShowClasses = true;
       hostFormShowLevels = true;
+      hostFormShowCustom = false;
       redrawPartyModal();
     });
     return;
@@ -330,6 +351,10 @@ function wirePartyModal() {
       hostFormShowLevels = !hostFormShowLevels;
       e.currentTarget.classList.toggle("on", hostFormShowLevels);
     });
+    document.getElementById("host-show-custom-switch").addEventListener("click", (e) => {
+      hostFormShowCustom = !hostFormShowCustom;
+      e.currentTarget.classList.toggle("on", hostFormShowCustom);
+    });
     document.getElementById("start-hosting-button").addEventListener("click", () => {
       const name = document.getElementById("host-party-name-input").value.trim();
       if (!name) { showToast("Enter a party name"); return; }
@@ -339,7 +364,7 @@ function wirePartyModal() {
       const hpDisplay = document.getElementById("host-hp-display-input").value;
       party = {
         status: "hosting", name, gm: null, code: pin || null, cap,
-        settings: { showClasses: hostFormShowClasses, showLevels: hostFormShowLevels, hpDisplay },
+        settings: { showClasses: hostFormShowClasses, showLevels: hostFormShowLevels, hpDisplay, showCustom: hostFormShowCustom },
         members: [myPartyIdentity({ owner: true })]
       };
       partyModalScreen = "landing";

@@ -19,6 +19,15 @@ const SUITES = [
   ["persistence", "./persistence.test.js"],
   ["content-data", "./content-data.test.js"],
   ["structure", "./structure.test.js"],
+  ["creator-fixes", "./creator-fixes.test.js"],
+  ["creator-ux", "./creator-ux.test.js"],
+  ["origin-rule", "./origin-rule.test.js"],
+  ["combat-fixes", "./combat-fixes.test.js"],
+  ["ui-fixes", "./ui-fixes.test.js"],
+  ["spells-ux", "./spells-ux.test.js"],
+  ["round1", "./round1.test.js"],
+  ["round2", "./round2.test.js"],
+  ["round3", "./round3.test.js"],
   ["smoke", "./smoke.test.js"]
 ];
 

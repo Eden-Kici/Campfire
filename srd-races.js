@@ -169,25 +169,25 @@ const SRD_RACES = [
       { name: "Draconic Ancestry", desc: "Choose one type of dragon. It determines the damage type and shape of your Breath Weapon, and the damage you resist.",
         choice: { kind: "custom", count: 1, prompt: "Choose your draconic ancestry",
           options: [
-            { label: "Black -- Acid, 5x30 ft. line (Dex save)",
+            { label: "Black",
               desc: "Breath Weapon: exhale acid in a 5-by-30-foot line. Each creature in the area makes a Dexterity saving throw (DC 8 + Constitution modifier + proficiency bonus), taking 2d6 acid damage on a failure, half as much on a success (rising to 3d6 at 6th level, 4d6 at 11th, 5d6 at 16th). You also have resistance to acid damage." },
-            { label: "Blue -- Lightning, 5x30 ft. line (Dex save)",
+            { label: "Blue",
               desc: "Breath Weapon: exhale lightning in a 5-by-30-foot line. Each creature in the area makes a Dexterity saving throw (DC 8 + Constitution modifier + proficiency bonus), taking 2d6 lightning damage on a failure, half as much on a success (rising to 3d6 at 6th level, 4d6 at 11th, 5d6 at 16th). You also have resistance to lightning damage." },
-            { label: "Brass -- Fire, 5x30 ft. line (Dex save)",
+            { label: "Brass",
               desc: "Breath Weapon: exhale fire in a 5-by-30-foot line. Each creature in the area makes a Dexterity saving throw (DC 8 + Constitution modifier + proficiency bonus), taking 2d6 fire damage on a failure, half as much on a success (rising to 3d6 at 6th level, 4d6 at 11th, 5d6 at 16th). You also have resistance to fire damage." },
-            { label: "Bronze -- Lightning, 5x30 ft. line (Dex save)",
+            { label: "Bronze",
               desc: "Breath Weapon: exhale lightning in a 5-by-30-foot line. Each creature in the area makes a Dexterity saving throw (DC 8 + Constitution modifier + proficiency bonus), taking 2d6 lightning damage on a failure, half as much on a success (rising to 3d6 at 6th level, 4d6 at 11th, 5d6 at 16th). You also have resistance to lightning damage." },
-            { label: "Copper -- Acid, 5x30 ft. line (Dex save)",
+            { label: "Copper",
               desc: "Breath Weapon: exhale acid in a 5-by-30-foot line. Each creature in the area makes a Dexterity saving throw (DC 8 + Constitution modifier + proficiency bonus), taking 2d6 acid damage on a failure, half as much on a success (rising to 3d6 at 6th level, 4d6 at 11th, 5d6 at 16th). You also have resistance to acid damage." },
-            { label: "Gold -- Fire, 15 ft. cone (Dex save)",
+            { label: "Gold",
               desc: "Breath Weapon: exhale fire in a 15-foot cone. Each creature in the area makes a Dexterity saving throw (DC 8 + Constitution modifier + proficiency bonus), taking 2d6 fire damage on a failure, half as much on a success (rising to 3d6 at 6th level, 4d6 at 11th, 5d6 at 16th). You also have resistance to fire damage." },
-            { label: "Green -- Poison, 15 ft. cone (Con save)",
+            { label: "Green",
               desc: "Breath Weapon: exhale poisonous gas in a 15-foot cone. Each creature in the area makes a Constitution saving throw (DC 8 + Constitution modifier + proficiency bonus), taking 2d6 poison damage on a failure, half as much on a success (rising to 3d6 at 6th level, 4d6 at 11th, 5d6 at 16th). You also have resistance to poison damage." },
-            { label: "Red -- Fire, 15 ft. cone (Dex save)",
+            { label: "Red",
               desc: "Breath Weapon: exhale fire in a 15-foot cone. Each creature in the area makes a Dexterity saving throw (DC 8 + Constitution modifier + proficiency bonus), taking 2d6 fire damage on a failure, half as much on a success (rising to 3d6 at 6th level, 4d6 at 11th, 5d6 at 16th). You also have resistance to fire damage." },
-            { label: "Silver -- Cold, 15 ft. cone (Con save)",
+            { label: "Silver",
               desc: "Breath Weapon: exhale a blast of cold in a 15-foot cone. Each creature in the area makes a Constitution saving throw (DC 8 + Constitution modifier + proficiency bonus), taking 2d6 cold damage on a failure, half as much on a success (rising to 3d6 at 6th level, 4d6 at 11th, 5d6 at 16th). You also have resistance to cold damage." },
-            { label: "White -- Cold, 15 ft. cone (Con save)",
+            { label: "White",
               desc: "Breath Weapon: exhale a blast of cold in a 15-foot cone. Each creature in the area makes a Constitution saving throw (DC 8 + Constitution modifier + proficiency bonus), taking 2d6 cold damage on a failure, half as much on a success (rising to 3d6 at 6th level, 4d6 at 11th, 5d6 at 16th). You also have resistance to cold damage." }
           ] } },
       { name: "Breath Weapon", desc: "Action: exhale destructive energy in the shape your draconic ancestry determines. Each creature in the area makes a saving throw (DC 8 + Constitution modifier + proficiency bonus), taking 2d6 damage on a failure (half on a success). Damage rises to 3d6 at 6th level, 4d6 at 11th, 5d6 at 16th.",
@@ -210,8 +210,13 @@ const SRD_RACES = [
           ] } },
       { name: "Darkvision", desc: "You can see in dim light within 60 feet as if it were bright light, and in darkness as if it were dim light." },
       { name: "Fey Ancestry", desc: "You have advantage on saving throws against being charmed, and magic can't put you to sleep." },
+      /* grants: "proficiency" is what makes this the opposite of Rogue's
+         Expertise, which shares the "skill" kind: two skills you DON'T have
+         yet, granted at proficiency, rather than doubling the bonus on one
+         you already have. Without it the option list was restricted to
+         already-known skills and the answer wrote Expertise onto them. */
       { name: "Skill Versatility", desc: "You gain proficiency in two skills of your choice.",
-        choice: { kind: "skill", count: 2, prompt: "Choose two skills" } },
+        choice: { kind: "skill", grants: "proficiency", count: 2, prompt: "Choose two skills" } },
       { name: "Extra Language", desc: "You can speak, read, and write Common, Elvish, and one extra language of your choice.",
         choice: { kind: "language", count: 1, prompt: "Choose an extra language" } }
     ]

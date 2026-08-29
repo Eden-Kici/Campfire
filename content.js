@@ -158,6 +158,9 @@ function scopedCategoryEntries(scopeKey) {
 
 function filteredContentEntries(scopeKey) {
   let rows = scopedCategoryEntries(scopeKey);
+  // the category select only applies to the top-level screen; inside one
+  // category the scope has already done that job
+  if (!scopeKey && contentCategoryFilterCat !== "all") rows = rows.filter(row => row.catKey === contentCategoryFilterCat);
   if (contentCategoryFilter !== "all") rows = rows.filter(row => row.source === contentCategoryFilter);
   const q = contentCategorySearch.trim().toLowerCase();
   if (q) rows = rows.filter(row => row.entry.name.toLowerCase().includes(q));
@@ -190,7 +193,7 @@ function contentRowHtml(row, scopeKey) {
         <div class="res-name">Delete "${esc(row.entry.name)}"?</div>
         <div style="display:flex;gap:6px;">
           <button type="button" class="btn-secondary" data-cc-cancel-delete style="padding:4px 10px;font-size:12px;">Cancel</button>
-          <button type="button" class="btn-primary" data-cc-confirm-delete="${rowKey}" style="padding:4px 10px;font-size:12px;background:var(--danger-surface);color:var(--danger-text);">Delete</button>
+          <button type="button" class="btn-primary btn-danger" data-cc-confirm-delete="${rowKey}" style="padding:4px 10px;font-size:12px;">Delete</button>
         </div>
       </div>
     `;
@@ -264,17 +267,34 @@ function wireContentSearchAndFilter(searchInputId, redraw) {
     contentCategorySearch = e.target.value;
     redraw();
   });
-  document.querySelectorAll("[data-cc-filter]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      contentCategoryFilter = btn.dataset.ccFilter;
-      document.querySelectorAll("[data-cc-filter]").forEach(b => b.classList.toggle("active", b.dataset.ccFilter === contentCategoryFilter));
-      redraw();
-    });
-  });
+  // wireSelect dispatches `change` on its hidden input rather than taking a
+  // callback, the same contract every other select in the app uses
+  wireSelect("mc-filter-cat");
+  wireSelect("mc-filter-src");
+  const onFilter = (id, apply) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("change", () => { apply(el.value); redraw(); });
+  };
+  onFilter("mc-filter-cat", v => { contentCategoryFilterCat = v; });
+  onFilter("mc-filter-src", v => { contentCategoryFilter = v; });
 }
 
-function contentFilterChipsHtml() {
-  return CONTENT_FILTERS.map(f => `<button type="button" class="toggle-btn ${contentCategoryFilter === f.key ? "active" : ""}" data-cc-filter="${f.key}" style="margin:2px;">${esc(f.label)}</button>`).join("");
+/* Two selects rather than a chip row. Chips only ever carried the source
+   (All/SRD/Custom); with 889 entries the filter a player actually wants
+   first is "which kind of thing", and nine more chips would have wrapped to
+   three lines. selectFieldHtml is the app's own in-app picker -- a native
+   <select> opens an OS sheet on mobile, which is why it exists. */
+function contentFiltersHtml(withCategory) {
+  const categories = [{ value: "all", label: "All categories" }]
+    .concat(CONTENT_CATEGORIES.map(c => ({ value: c.key, label: c.label })));
+  const sources = CONTENT_FILTERS.map(f => ({ value: f.key, label: f.key === "all" ? "All sources" : f.label }));
+  // inside one category the scope has already filtered by kind, so only the
+  // source select is offered there
+  return `
+    <div class="field-row">
+      ${withCategory ? fieldHtml("Category", selectFieldHtml("mc-filter-cat", "", categories, contentCategoryFilterCat), { style: "flex:1;" }) : ""}
+      ${fieldHtml("Source", selectFieldHtml("mc-filter-src", "", sources, contentCategoryFilter), { style: "flex:1;" })}
+    </div>`;
 }
 
 let contentScreen = "list";        // list | add-picker | category | srd-detail | item-form | race-form | class-form | background-form | subclass-form | feature-form
@@ -282,6 +302,7 @@ let contentSrdCategory = null;     // the open category's key, e.g. "races" -- S
 let contentSrdEntry = null;        // the specific SRD race/class/background/item being viewed
 let contentSrdDetailOrigin = "category"; // "list" | "category" -- which screen's Back button to return to from srd-detail
 let contentCategoryFilter = "all"; // all | srd | custom -- shared by the top-level screen and a category screen, so a search started in one carries into the other
+let contentCategoryFilterCat = "all";  // which category the top-level list is narrowed to
 let contentCategorySearch = "";
 let contentPendingDelete = null;   // { catKey, source, ref } | null -- the one row currently showing an inline delete confirmation
 let contentItemState = null;       // { editingId, type, damage, properties } -- shape of newItemFormState()
@@ -294,6 +315,7 @@ let featureFormState = null;
 function openContentManager() {
   contentScreen = "list";
   contentCategoryFilter = "all";
+  contentCategoryFilterCat = "all";
   contentCategorySearch = "";
   contentPendingDelete = null;
   openModal("full", "");
@@ -338,7 +360,7 @@ function contentListHtml() {
   return `
     <div class="modal-heading">Manage Content</div>
     ${textFieldHtml("mc-search", "Search", contentCategorySearch, { placeholder: "Search all content..." })}
-    <div class="chip-row" style="margin-bottom:6px;">${contentFilterChipsHtml()}</div>
+    ${contentFiltersHtml(true)}
     <div id="mc-results">${contentListBodyHtml()}</div>
 
     <div class="btn-row-2" style="margin-top:14px;">
@@ -356,7 +378,8 @@ function contentListHtml() {
    first, and the filter chips ("SRD" / "Custom") are meaningless applied to
    a bare list of category names. */
 function contentListBodyHtml() {
-  const searching = contentCategorySearch.trim() !== "" || contentCategoryFilter !== "all";
+  const searching = contentCategorySearch.trim() !== ""
+    || contentCategoryFilter !== "all" || contentCategoryFilterCat !== "all";
   if (!searching) {
     return CONTENT_CATEGORIES.map(cat => `
       <div class="res-row" data-content-cat="${cat.key}" style="cursor:pointer;">
@@ -389,9 +412,11 @@ function addPickerHtml() {
     <div class="modal-heading">Add Custom Content</div>
     <div class="breakdown-source" style="margin-bottom:10px;">What are you creating?</div>
     ${ADD_PICKER_KINDS.map(k => `
-      <button type="button" class="toggle-btn creator-option" data-add-kind="${k.kind}" style="display:block;width:100%;text-align:left;margin-bottom:8px;padding:12px 14px;">
-        <div>${esc(k.label)}</div>
-        <div class="field-hint" style="margin-top:2px;">${esc(k.hint)}</div>
+      <button type="button" class="creator-option creator-option-stacked" data-add-kind="${k.kind}">
+        <span class="creator-option-label">
+          <span class="creator-option-title">${esc(k.label)}</span>
+          <span class="field-hint">${esc(k.hint)}</span>
+        </span>
       </button>
     `).join("")}
     <button class="btn-secondary" id="content-back-button">Back</button>
@@ -497,7 +522,7 @@ function contentCategoryHtml() {
   return `
     <div class="modal-heading">${esc(cat.label)}</div>
     ${textFieldHtml("cc-search", "Search", contentCategorySearch, { placeholder: "Search " + cat.label.toLowerCase() })}
-    <div class="chip-row" style="margin-bottom:6px;">${contentFilterChipsHtml()}</div>
+    ${contentFiltersHtml(false)}
     <div id="cc-results">${contentResultsHtml(cat.key)}</div>
     <button class="btn-secondary" id="content-back-button" style="margin-top:10px;">Back</button>
   `;
@@ -654,28 +679,9 @@ function backgroundDetailHtml(bg) {
 }
 
 function srdItemDetailHtml(item) {
-  const kind = itemType(item);
   return `
     <div class="modal-heading">${esc(item.name)}</div>
-    ${item.official === false ? `<div class="breakdown-source" style="margin-bottom:6px;">Third-party (not core SRD)</div>` : ""}
-    ${item.description ? `<div class="trait-desc" style="margin:6px 0 12px;">${esc(item.description)}</div>` : ""}
-    <div class="breakdown-row"><span>Weight</span><span>${item.weight} lb</span></div>
-    ${item.cost ? `<div class="breakdown-row"><span>Cost</span><span>${esc(item.cost)}</span></div>` : ""}
-    ${item.rarity ? `<div class="breakdown-row"><span>Rarity</span><span>${esc(item.rarity)}</span></div>` : ""}
-    ${item.rarity ? `<div class="breakdown-row"><span>Attunement</span><span>${item.attunement ? "Required" : "Not required"}</span></div>` : ""}
-    ${kind === "weapon" ? `
-      <div class="breakdown-row"><span>Attack Ability</span><span>${esc(item.attackAbility)}</span></div>
-      <div class="breakdown-row"><span>Attack Type</span><span>${item.weaponType === "ranged" ? "Ranged" : "Melee"}</span></div>
-      <div class="breakdown-row"><span>Range</span><span>${esc(item.range || "—")}</span></div>
-      <div class="breakdown-row"><span>Proficiency</span><span>${esc(item.proficiencyRequired || "None")}</span></div>
-      ${(item.damage || []).map(d => `<div class="breakdown-row"><span>Damage</span><span>${esc(d.dice)} ${esc(d.type)}</span></div>`).join("")}
-      ${item.properties && item.properties.length ? `<div class="item-effect" style="margin-top:6px;">${esc(item.properties.join(", "))}</div>` : ""}
-    ` : ""}
-    ${kind === "armour" ? `
-      <div class="breakdown-row"><span>Base AC</span><span>${item.armour.base}</span></div>
-      <div class="breakdown-row"><span>Armour Type</span><span>${esc((ARMOUR_KINDS.find(k => k.value === item.armour.kind) || {}).label || item.armour.kind)}</span></div>
-      <div class="breakdown-row"><span>Max Dexterity Bonus</span><span>${item.armour.dexCap == null ? "No limit" : item.armour.dexCap}</span></div>
-    ` : ""}
+    ${itemFactsHtml(item)}
     <button class="btn-primary" id="content-duplicate-button" style="margin-top:14px;">Duplicate to Custom</button>
     <button class="btn-secondary" id="content-back-button">Back</button>
   `;

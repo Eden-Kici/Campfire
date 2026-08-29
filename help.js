@@ -101,7 +101,6 @@ function helpCardHtml(key, title, body, tagHtml) {
     <div class="collapse-card" style="margin-bottom:8px;">
       <div class="collapse-head" data-help-topic="${esc(key)}" style="padding:11px 14px;">
         <span>${esc(title)}${tagHtml ? " " + tagHtml : ""}</span>
-        <span>${isOpen ? "−" : "+"}</span>
       </div>
       <div class="collapse-body ${isOpen ? "open" : ""}" style="padding:0 14px 12px;">
         <div class="trait-desc">${esc(body)}</div>

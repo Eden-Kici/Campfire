@@ -102,17 +102,36 @@ function tutorialActionSeen(action) {
 
 const TUTORIAL_TAB_ORDER = ["combat", "character", "spells", "inventory", "notes"];
 
-// which real control each action-teaching banner points at, and which tab
-// it lives on -- used both to render the banner and to know which tab to
-// nudge the player toward if they've wandered off to another one
+/* Which real control each action-teaching banner points at, and which tab it
+   lives on -- used both to render the banner and to know which tab to nudge
+   the player toward if they've wandered off to another one.
+   `available` keeps the tour from teaching something this character can't do.
+   A Fighter has no Cast button, so without it the tour sent the player to an
+   empty Spells tab and pointed at nothing. Model reads only -- no DOM -- so
+   it stays as testable as the rest of tutorialContentFor(). */
 const TUTORIAL_ACTIONS = [
   { key: "roll", tab: "combat", target: "[data-roll-tohit]", title: "Roll something",
-    body: "Tap an attack, ability score, or saving throw to roll it. Try one, then tap Got It." },
+    body: "Tap an attack, ability score, or saving throw to roll it. Try one, then tap Got It.",
+    available: () => true },        // ability checks and saves always roll
   { key: "hp", tab: "combat", target: "#hp-card", title: "Track damage and healing",
-    body: "Tap your HP card to log damage, healing, or temp HP." },
+    body: "Tap your HP card to log damage, healing, or temp HP.",
+    available: () => true },
   { key: "spell", tab: "spells", target: "[data-spell-cast]", title: "Cast a spell",
-    body: "Tap Cast on a leveled spell to roll it and spend a slot." }
+    body: "Tap Cast on a leveled spell to roll it and spend a slot.",
+    available: () => tutorialCanCastSpell() }
 ];
+
+// a Cast button exists only for a spell above cantrip level that has a slot
+// to spend -- the same two conditions renderSpellsTab() draws it from
+function tutorialCanCastSpell() {
+  if (typeof character === "undefined" || !character || !Array.isArray(character.spells)) return false;
+  const slots = character.spellSlots || {};
+  return character.spells.some(s => s.level > 0 && slots[s.level] && slots[s.level].max > 0);
+}
+
+function tutorialActionsLeft() {
+  return TUTORIAL_ACTIONS.filter(a => a.available() && !tutorialState.seenActions.includes(a.key));
+}
 
 const TUTORIAL_CREATOR_STEPS = {
   race: { title: "Race", body: "Pick a race. If it grants a choice -- a cantrip, an extra language, a Dragonborn's draconic ancestry -- you resolve it right here, not at the end." },
@@ -158,7 +177,16 @@ function tutorialContentFor() {
   }
 
   if (tutorialState.phase === "creation") {
-    if (typeof creatorState === "undefined" || !creatorState || !creatorState.started) return null;
+    if (typeof creatorState === "undefined" || !creatorState) return null;
+    // the wizard's own start screen ("Build a Character" / "Import from
+    // File") is still part of the lesson, and it is the only place a player
+    // who backed out can pick the tour up again
+    if (!creatorState.started) {
+      return {
+        placement: "inline", eyebrow: "Creating a character", title: "Start a character",
+        body: "Build one from scratch and the wizard walks you through every choice, or import a character file you already have."
+      };
+    }
     const step = TUTORIAL_CREATOR_STEPS[currentStepKey()];
     if (!step) return null;
     return { placement: "inline", eyebrow: "Creating a character", title: step.title, body: step.body };
@@ -167,21 +195,30 @@ function tutorialContentFor() {
   if (tutorialState.phase === "tabs") {
     const tab = TUTORIAL_TAB_CONTENT[activeTab];
     if (!tab) return null;
+    const allSeen = TUTORIAL_TAB_ORDER.every(t => tutorialState.seenTabs.includes(t));
     return {
-      placement: "sheet-banner", eyebrow: "Tab " + (TUTORIAL_TAB_ORDER.indexOf(activeTab) + 1) + " of 5",
-      target: `[data-tab="${activeTab}"]`, title: tab.title, body: tab.body
+      // count what's actually been seen -- the position of the current tab in
+      // a fixed order jumped around when tabs were visited out of order
+      placement: "sheet-banner", eyebrow: "Tab " + tutorialState.seenTabs.length + " of 5",
+      target: `[data-tab="${activeTab}"]`, title: tab.title, body: tab.body,
+      // the fifth tab needs its own explanation before the tour moves on, so
+      // the hand-off to "actions" is an explicit tap rather than something
+      // that happens in the same pass that marks the tab seen
+      nextLabel: allSeen ? "Got It" : null,
+      onNext: allSeen ? (() => { tutorialState.phase = "actions"; persistTutorialState(); }) : null
     };
   }
 
   if (tutorialState.phase === "actions") {
-    const here = TUTORIAL_ACTIONS.find(a => a.tab === activeTab && !tutorialState.seenActions.includes(a.key));
+    const left = tutorialActionsLeft();
+    const here = left.find(a => a.tab === activeTab);
     if (here) {
       return {
         placement: "sheet-banner", eyebrow: "Try it", target: here.target, title: here.title, body: here.body,
         nextLabel: "Got It", onNext: () => tutorialActionSeen(here.key)
       };
     }
-    const elsewhere = TUTORIAL_ACTIONS.find(a => !tutorialState.seenActions.includes(a.key));
+    const elsewhere = left[0];
     if (elsewhere) {
       return {
         placement: "sheet-banner", eyebrow: "Try it", target: `[data-tab="${elsewhere.tab}"]`,
@@ -201,6 +238,22 @@ function tutorialContentFor() {
   }
 
   return null;
+}
+
+/* closeModal() calls this whenever the modal it removed was one of ours.
+   Dismissing a tutorial modal has to move the state on, or the next
+   renderTutorialOverlay() reopens it -- and because openModal() begins with
+   closeModal(), the reopened modal evicts whatever the player opened
+   instead. renderContent() alone has 86 call sites, so "reopens" meant
+   "reopens on almost any tap". */
+function noteTutorialModalClosed() {
+  if (!tutorialState.active) return;
+  // dismissing the intro reads as "not now" -- Replay Tutorial is in the app menu
+  if (tutorialState.phase === "welcome") { skipTutorial(); return; }
+  if (tutorialState.phase === "done") {
+    tutorialState.active = false;
+    persistTutorialState();
+  }
 }
 
 function clearTutorialGlow() {
@@ -240,10 +293,9 @@ function renderTutorialOverlay() {
       tutorialState.seenTabs.push(activeTab);
       persistTutorialState();
     }
-    if (TUTORIAL_TAB_ORDER.every(t => tutorialState.seenTabs.includes(t))) {
-      tutorialState.phase = "actions";
-      persistTutorialState();
-    }
+    // NOT advancing to "actions" here: marking the tab seen and moving on in
+    // the same pass meant whichever tab was visited last never got its own
+    // banner. The fifth tab's "Got It" owns that transition instead.
   }
 
   let content = tutorialContentFor();
@@ -254,13 +306,28 @@ function renderTutorialOverlay() {
   }
 
   clearTutorialGlow();
-  const banner = document.getElementById("tutorial-overlay");
+  // the selector screen has its own slot -- it has no app menu, so a tour
+  // that lands back there needs somewhere to put a Skip
+  const onSelector = typeof currentScreen !== "undefined" && currentScreen === "selector";
+  const banner = document.getElementById(onSelector ? "tutorial-overlay-selector" : "tutorial-overlay");
+  const sheetBanner = document.getElementById("tutorial-overlay");
   if (banner) banner.innerHTML = "";
+  if (sheetBanner && sheetBanner !== banner) sheetBanner.innerHTML = "";
+
+  // a player who closed the wizard mid-creation is left on the selector with
+  // the tour still running and nothing on screen to explain or escape it
+  if (content && content.placement === "inline" && onSelector && banner) {
+    content = {
+      placement: "sheet-banner", eyebrow: "Creating a character", title: "Build your character",
+      body: "Tap + New Character to pick up where the tour left off."
+    };
+  }
 
   if (!content) return;
 
   if (content.placement === "modal") {
     openModal("center", `
+      <div data-tutorial-modal hidden></div>
       <div class="tutorial-eyebrow">${esc(content.eyebrow)}</div>
       <div class="modal-heading">${esc(content.title)}</div>
       <div class="tutorial-body">${esc(content.body)}</div>
@@ -269,6 +336,8 @@ function renderTutorialOverlay() {
         <button class="btn-primary" id="tutorial-next-button">${esc(content.nextLabel)}</button>
       </div>
     `);
+    // closeModal() is programmatic, so it leaves the tour alone -- only a
+    // dismissal (backdrop, X) counts as "not now"
     document.getElementById("tutorial-next-button").addEventListener("click", () => {
       closeModal(); content.onNext(); renderTutorialOverlay();
     });

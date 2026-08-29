@@ -34,7 +34,19 @@ const SETTINGS_KEY = "campfire.settings";
    you've opened a character, the way a real login would. */
 let settings = {
   alwaysShowDeathSaves: false,
-  username: "Adventurer"
+  username: "Adventurer",
+  // a party's own visibility rule, not a per-character one: the leader always
+  // sees who is custom, and this decides whether everyone else does too
+  showCustomToParty: false,
+  // a second purse for coin that isn't on you -- a stash, the party fund, a
+  // bank. Off by default because most tables don't track it.
+  trackStashedMoney: false,
+  // coin has weight in the rules (50 to the pound) and most tables ignore it
+  moneyCountsWeight: false,
+  /* Off means every roll opens unrolled and you tap Roll -- you can look at a
+     skill without logging a die for it. On puts it back to resolving on the
+     first tap, for tables that want the speed. */
+  fastRolls: false
 };
 
 function persistSettings() {
@@ -55,6 +67,12 @@ function openSettingsModal() {
       { hint: "Shown to other players when you join or host a party" })}
     ${toggleLineHtml("setting-death-saves", "Always show death saves", settings.alwaysShowDeathSaves,
       { hint: "Otherwise they appear only at 0 hit points" })}
+    ${toggleLineHtml("setting-fast-rolls", "Fast Rolls", settings.fastRolls,
+      { hint: "Roll on the first tap" })}
+    ${toggleLineHtml("setting-stashed-money", "Track stashed money", settings.trackStashedMoney,
+      { hint: "A second purse for coin you aren't carrying" })}
+    ${toggleLineHtml("setting-money-weight", "Coin counts toward weight", settings.moneyCountsWeight,
+      { hint: "50 coins to the pound" })}
   `);
   const usernameInput = document.getElementById("setting-username");
   usernameInput.addEventListener("blur", () => {
@@ -62,10 +80,20 @@ function openSettingsModal() {
     usernameInput.value = settings.username;
     persistSettings();
   });
-  const toggle = document.getElementById("setting-death-saves");
-  toggle.addEventListener("click", () => {
-    settings.alwaysShowDeathSaves = !settings.alwaysShowDeathSaves;
-    toggle.classList.toggle("on", settings.alwaysShowDeathSaves);
+  settingToggle("setting-death-saves", "alwaysShowDeathSaves");
+  settingToggle("setting-fast-rolls", "fastRolls");
+  settingToggle("setting-stashed-money", "trackStashedMoney");
+  settingToggle("setting-money-weight", "moneyCountsWeight");
+}
+
+/* Every options toggle does the same four things, and each one written out by
+   hand was another chance to forget the persist or the re-render. */
+function settingToggle(id, key) {
+  const el = document.getElementById(id);
+  if (!el || !el.addEventListener) return;
+  el.addEventListener("click", () => {
+    settings[key] = !settings[key];
+    el.classList.toggle("on", settings[key]);
     persistSettings();
     renderContent();
   });

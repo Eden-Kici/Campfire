@@ -10,10 +10,17 @@ module.exports = function (suite) {
   // every script, not just app.js -- a stray colour hides just as well in any of them
   const js = harness.scriptFiles().map(harness.readFile).join("\n");
 
-  // the palette block is where literals are supposed to live
+  /* The palette blocks are where literals are supposed to live, and they are
+     no longer only the ones at the top of the file -- a theme token added
+     later (the creator's cautionary yellow, which the palette had no
+     equivalent of) is declared further down. So "palette" is every
+     [data-theme=...] block anywhere in the file, not a fixed prefix of it. */
+  const THEME_BLOCK = /(?::root,\s*)?\[data-theme="[a-z]+"\]\s*\{[^}]*\}/g;
   const paletteEnd = css.indexOf("* { box-sizing: border-box; }");
-  const palette = css.slice(0, paletteEnd);
-  const rules = css.slice(paletteEnd);
+  const head = css.slice(0, paletteEnd);
+  const tail = css.slice(paletteEnd);
+  const palette = head + "\n" + (tail.match(THEME_BLOCK) || []).join("\n");
+  const rules = tail.replace(THEME_BLOCK, "");
 
   suite.section("no colour escapes the palette");
   const strayCss = (rules.match(/#[0-9A-Fa-f]{3,8}\b/g) || []);
@@ -29,9 +36,13 @@ module.exports = function (suite) {
   function variablesIn(block) {
     return new Set((block.match(/--[a-z-]+(?=\s*:)/g) || []));
   }
+  // a theme's variables can now come from more than one block (see above), so
+  // accumulate rather than overwrite
   const blocks = {};
   palette.replace(/(:root,\s*)?\[data-theme="([a-z]+)"\]\s*\{([^}]*)\}/g, (all, root, name, body) => {
-    blocks[name] = variablesIn(body);
+    const found = blocks[name] || new Set();
+    variablesIn(body).forEach(variable => found.add(variable));
+    blocks[name] = found;
     return all;
   });
 

@@ -121,6 +121,24 @@ const SRD_WEAPON_PROPERTIES = [
   "Range", "Reach", "Special", "Thrown", "Two-Handed", "Versatile"
 ];
 
+/* What each property actually does, so the picker can explain itself rather
+   than assuming the player already knows. Kept as a separate map rather than
+   folded into SRD_WEAPON_PROPERTIES because that list is consumed as plain
+   strings in half a dozen places. SRD 5.1 text, condensed. */
+const WEAPON_PROPERTY_INFO = {
+  "Ammunition": "You can use a weapon with the ammunition property to make a ranged attack only if you have ammunition to fire from it. Drawing the ammunition is part of the attack. At the end of a battle you can recover half your expended ammunition by spending a minute searching the battlefield.",
+  "Finesse": "When making an attack with a finesse weapon, you use your choice of your Strength or Dexterity modifier for the attack and damage rolls. You must use the same modifier for both.",
+  "Heavy": "Small creatures have disadvantage on attack rolls with heavy weapons, because a heavy weapon's size and bulk make it too large for them to use effectively.",
+  "Light": "A light weapon is small and easy to handle, making it ideal for use when fighting with two weapons.",
+  "Loading": "Because of the time required to load this weapon, you can fire only one piece of ammunition from it when you use an action, bonus action or reaction to fire it, regardless of how many attacks you can normally make.",
+  "Range": "A weapon that can be used to make a ranged attack has a range in parentheses \u2014 the normal range, then the long range. Attacking beyond the normal range gives you disadvantage; you can't attack past the long range.",
+  "Reach": "This weapon adds 5 feet to your reach when you attack with it, and when determining your reach for opportunity attacks.",
+  "Special": "A weapon with the special property has unusual rules governing its use, described in the weapon's own entry.",
+  "Thrown": "If a weapon has the thrown property, you can throw it to make a ranged attack. You use the same ability modifier as you would for a melee attack with it.",
+  "Two-Handed": "This weapon requires two hands when you attack with it.",
+  "Versatile": "This weapon can be used with one or two hands. The damage in parentheses is the damage when it is used with two hands to make a melee attack."
+};
+
 const MODIFIER_STATS = ["AC", "Initiative", "Speed", "Attack Rolls", "Damage Rolls", "Proficiency Bonus", "Spell Attack", "Spell DC"];
 const EFFECT_CATEGORIES_GENERAL = ["Condition", "Ability Score", "Saving Throw", "Skill", "Bonus", "Advantage", "Reroll"];
 const EFFECT_CATEGORIES_FEATURE = ["Ability Score", "Saving Throw", "Skill", "Bonus", "Advantage", "Reroll"];
@@ -230,11 +248,35 @@ const CHOICE_KINDS = [
   { value: "custom", label: "Custom (author your own options)" }
 ];
 
+/* Backgrounds.
+
+   Accuracy note: SRD 5.1 publishes exactly one background -- Acolyte. Soldier,
+   Sage and Criminal are PHB content shaped to look like the rest of this table.
+   They stay because the creator offers them and removing them would break a
+   step, but they are not Open Game Content, so anything shipped for real needs
+   them replaced or licensed. Marked `official` the same way SRD_CONDITIONS and
+   SRD_FEATS mark theirs.
+
+   `equipment` keys into KIT_ITEMS and `money` is the pouch of coin each
+   background hands over. Nothing reads either yet -- buildStartingInventory()
+   (creator.js) only walks STARTING_KIT -- so a created character still arrives
+   with the class package alone. The data is here first because deciding what a
+   background grants is the modelling question; wiring it into the wizard is the
+   easy half. Same for `money` on a class kit below: there is no currency on the
+   character object at all, which is the gap this records. */
 const SRD_BACKGROUNDS = [
-  { name: "Soldier", desc: "You had a military career, trained in combat and discipline.", skills: ["Athletics", "Intimidation"], feature: { name: "Military Rank", desc: "You have a military rank and command the respect of soldiers loyal to your former organization." } },
-  { name: "Sage", desc: "You spent years learning the lore of the multiverse.", skills: ["Arcana", "History"], feature: { name: "Researcher", desc: "You know how or where to find information, even if you don't know it yourself." } },
-  { name: "Criminal", desc: "You have a history of breaking the law and living on its edges.", skills: ["Deception", "Stealth"], feature: { name: "Criminal Contact", desc: "You have a reliable contact in the criminal underworld." } },
-  { name: "Acolyte", desc: "You've spent your life in service to a temple.", skills: ["Insight", "Religion"], feature: { name: "Shelter of the Faithful", desc: "You command the respect of those who share your faith and can perform religious ceremonies." } }
+  { name: "Soldier", official: false, desc: "You had a military career, trained in combat and discipline.", skills: ["Athletics", "Intimidation"],
+    feature: { name: "Military Rank", desc: "You have a military rank and command the respect of soldiers loyal to your former organization." },
+    equipment: ["insignia", "trophy", "diceset", "commonclothes", "pouch"], money: { gp: 10 } },
+  { name: "Sage", official: false, desc: "You spent years learning the lore of the multiverse.", skills: ["Arcana", "History"],
+    feature: { name: "Researcher", desc: "You know how or where to find information, even if you don't know it yourself." },
+    equipment: ["ink", "inkpen", "smallknife", "letter", "commonclothes", "pouch"], money: { gp: 10 } },
+  { name: "Criminal", official: false, desc: "You have a history of breaking the law and living on its edges.", skills: ["Deception", "Stealth"],
+    feature: { name: "Criminal Contact", desc: "You have a reliable contact in the criminal underworld." },
+    equipment: ["crowbar", "darkclothes", "pouch"], money: { gp: 15 } },
+  { name: "Acolyte", official: true, desc: "You've spent your life in service to a temple.", skills: ["Insight", "Religion"],
+    feature: { name: "Shelter of the Faithful", desc: "You command the respect of those who share your faith and can perform religious ceremonies." },
+    equipment: ["holysymbol", "prayerbook", "incense", "vestments", "commonclothes", "pouch"], money: { gp: 15 } }
 ];
 
 /* Starting kit, as real items rather than a list of names -- each entry is
@@ -243,23 +285,165 @@ const SRD_BACKGROUNDS = [
    ones the item editor produces.
 
    Each class offers a few either/or choices, matching how 5e hands out
-   equipment. `gear` is granted regardless. */
+   equipment. `gear` is granted regardless.
+
+   Four things the SRD says that this shape cannot say, recorded rather than
+   faked:
+
+   - "any martial weapon" / "any simple weapon" is an open pick. Every option
+     here names one representative and says so in its label: a longsword for
+     a martial weapon, a quarterstaff for a simple one, and two shortswords
+     where the SRD hands out two martial weapons -- two longswords would be
+     legal and useless, since neither is Light enough to fight with in pairs.
+     Expressing the real rule needs an option that opens the weapon catalogue
+     rather than granting a fixed key.
+   - "(if proficient)" qualifies the cleric's warhammer and chain mail. The
+     kit is built before proficiencies are known, so both are offered flat.
+   - A grant's quantity lives on the item template, not on the reference, so a
+     bundle needs its own key: `javelins4` and `javelins5` are the same javelin
+     handed out four at a time to a barbarian and five to a paladin. A real
+     build wants `["javelin", 4]` and one template.
+   - No class package includes coin -- `money` is absent from every kit below,
+     which is correct. The SRD's alternative, rolling starting wealth by class
+     (5d4 x 10 gp for a barbarian, and so on) and buying your own gear, is a
+     different path through this screen entirely and isn't modelled. */
 const STARTING_KIT = {
+  Barbarian: {
+    gear: ["explorer", "javelins4"],
+    choices: [
+      { prompt: "Weapon", options: [
+        { label: "Greataxe", items: ["greataxe"] },
+        { label: "Longsword (any martial melee weapon)", items: ["longsword"] }
+      ] },
+      { prompt: "Second weapon", options: [
+        { label: "Two handaxes", items: ["handaxe", "handaxe"] },
+        { label: "Quarterstaff (any simple weapon)", items: ["quarterstaff"] }
+      ] }
+    ]
+  },
+  Bard: {
+    gear: ["leather", "dagger"],
+    choices: [
+      { prompt: "Weapon", options: [
+        { label: "Rapier", items: ["rapier"] },
+        { label: "Longsword", items: ["longsword"] },
+        { label: "Quarterstaff (any simple weapon)", items: ["quarterstaff"] }
+      ] },
+      { prompt: "Pack", options: [
+        { label: "Diplomat's pack", items: ["diplomat"] },
+        { label: "Entertainer's pack", items: ["entertainer"] }
+      ] },
+      { prompt: "Instrument", options: [
+        { label: "Lute", items: ["lute"] },
+        { label: "Flute (any other musical instrument)", items: ["flute"] }
+      ] }
+    ]
+  },
+  Cleric: {
+    gear: ["shield", "holysymbol"],
+    choices: [
+      { prompt: "Weapon", options: [
+        { label: "Mace", items: ["mace"] },
+        { label: "Warhammer", items: ["warhammer"] }
+      ] },
+      { prompt: "Armour", options: [
+        { label: "Scale mail", items: ["scalemail"] },
+        { label: "Leather armour", items: ["leather"] },
+        { label: "Chain mail", items: ["chainmail"] }
+      ] },
+      { prompt: "Ranged", options: [
+        { label: "Light crossbow and bolts", items: ["lightcrossbow", "bolts"] },
+        { label: "Quarterstaff (any simple weapon)", items: ["quarterstaff"] }
+      ] },
+      { prompt: "Pack", options: [
+        { label: "Priest's pack", items: ["priest"] },
+        { label: "Explorer's pack", items: ["explorer"] }
+      ] }
+    ]
+  },
+  Druid: {
+    gear: ["leather", "explorer", "druidicfocus"],
+    choices: [
+      { prompt: "Shield or weapon", options: [
+        { label: "Wooden shield", items: ["shield"] },
+        { label: "Quarterstaff (any simple weapon)", items: ["quarterstaff"] }
+      ] },
+      { prompt: "Weapon", options: [
+        { label: "Scimitar", items: ["scimitar"] },
+        { label: "Quarterstaff (any simple melee weapon)", items: ["quarterstaff"] }
+      ] }
+    ]
+  },
   Fighter: {
-    gear: ["explorer", "rations"],
+    gear: [],
     choices: [
       { prompt: "Armour", options: [
         { label: "Chain mail", items: ["chainmail"] },
-        { label: "Leather armour, longbow and arrows", items: ["leather", "longbow", "arrows", "quiver"] }
+        { label: "Leather armour, longbow and arrows", items: ["leather", "longbow", "arrows"] }
       ] },
       { prompt: "Weapons", options: [
-        { label: "Longsword and shield", items: ["longsword", "shield"] },
-        { label: "Two shortswords", items: ["shortsword", "shortsword"] }
+        { label: "Longsword and shield (any martial weapon)", items: ["longsword", "shield"] },
+        { label: "Two shortswords (any two martial weapons)", items: ["shortsword", "shortsword"] }
+      ] },
+      { prompt: "Ranged", options: [
+        { label: "Light crossbow and bolts", items: ["lightcrossbow", "bolts"] },
+        { label: "Two handaxes", items: ["handaxe", "handaxe"] }
+      ] },
+      { prompt: "Pack", options: [
+        { label: "Dungeoneer's pack", items: ["dungeoneer"] },
+        { label: "Explorer's pack", items: ["explorer"] }
+      ] }
+    ]
+  },
+  Monk: {
+    gear: ["darts10"],
+    choices: [
+      { prompt: "Weapon", options: [
+        { label: "Shortsword", items: ["shortsword"] },
+        { label: "Quarterstaff (any simple weapon)", items: ["quarterstaff"] }
+      ] },
+      { prompt: "Pack", options: [
+        { label: "Dungeoneer's pack", items: ["dungeoneer"] },
+        { label: "Explorer's pack", items: ["explorer"] }
+      ] }
+    ]
+  },
+  Paladin: {
+    gear: ["chainmail", "holysymbol"],
+    choices: [
+      { prompt: "Weapons", options: [
+        { label: "Longsword and shield (any martial weapon)", items: ["longsword", "shield"] },
+        { label: "Two shortswords (any two martial weapons)", items: ["shortsword", "shortsword"] }
+      ] },
+      { prompt: "Thrown", options: [
+        { label: "Five javelins", items: ["javelins5"] },
+        { label: "Quarterstaff (any simple melee weapon)", items: ["quarterstaff"] }
+      ] },
+      { prompt: "Pack", options: [
+        { label: "Priest's pack", items: ["priest"] },
+        { label: "Explorer's pack", items: ["explorer"] }
+      ] }
+    ]
+  },
+  Ranger: {
+    gear: ["longbow", "arrows", "quiver"],
+    choices: [
+      { prompt: "Armour", options: [
+        { label: "Scale mail", items: ["scalemail"] },
+        { label: "Leather armour", items: ["leather"] }
+      ] },
+      { prompt: "Weapons", options: [
+        { label: "Two shortswords", items: ["shortsword", "shortsword"] },
+        { label: "Two handaxes (any two simple melee weapons)", items: ["handaxe", "handaxe"] }
+      ] },
+      { prompt: "Pack", options: [
+        { label: "Dungeoneer's pack", items: ["dungeoneer"] },
+        { label: "Explorer's pack", items: ["explorer"] }
       ] }
     ]
   },
   Rogue: {
-    gear: ["leather", "thievestools", "rations"],
+    gear: ["leather", "dagger", "dagger", "thievestools"],
     choices: [
       { prompt: "Main weapon", options: [
         { label: "Rapier", items: ["rapier"] },
@@ -267,84 +451,246 @@ const STARTING_KIT = {
       ] },
       { prompt: "Ranged", options: [
         { label: "Shortbow, arrows and a quiver", items: ["shortbow", "arrows", "quiver"] },
-        { label: "Two daggers", items: ["dagger", "dagger"] }
+        { label: "Shortsword", items: ["shortsword"] }
+      ] },
+      { prompt: "Pack", options: [
+        { label: "Burglar's pack", items: ["burglar"] },
+        { label: "Dungeoneer's pack", items: ["dungeoneer"] },
+        { label: "Explorer's pack", items: ["explorer"] }
+      ] }
+    ]
+  },
+  Sorcerer: {
+    gear: ["dagger", "dagger"],
+    choices: [
+      { prompt: "Weapon", options: [
+        { label: "Light crossbow and bolts", items: ["lightcrossbow", "bolts"] },
+        { label: "Quarterstaff (any simple weapon)", items: ["quarterstaff"] }
+      ] },
+      { prompt: "Spellcasting focus", options: [
+        { label: "Component pouch", items: ["componentpouch"] },
+        { label: "Arcane focus", items: ["arcanefocus"] }
+      ] },
+      { prompt: "Pack", options: [
+        { label: "Dungeoneer's pack", items: ["dungeoneer"] },
+        { label: "Explorer's pack", items: ["explorer"] }
+      ] }
+    ]
+  },
+  Warlock: {
+    // the granted "any simple weapon" is a quarterstaff, so picking one again
+    // below is a legal (if odd) SRD choice and lands as two separate rows
+    gear: ["leather", "quarterstaff", "dagger", "dagger"],
+    choices: [
+      { prompt: "Weapon", options: [
+        { label: "Light crossbow and bolts", items: ["lightcrossbow", "bolts"] },
+        { label: "Quarterstaff (any simple weapon)", items: ["quarterstaff"] }
+      ] },
+      { prompt: "Spellcasting focus", options: [
+        { label: "Component pouch", items: ["componentpouch"] },
+        { label: "Arcane focus", items: ["arcanefocus"] }
+      ] },
+      { prompt: "Pack", options: [
+        { label: "Scholar's pack", items: ["scholar"] },
+        { label: "Dungeoneer's pack", items: ["dungeoneer"] }
       ] }
     ]
   },
   Wizard: {
-    gear: ["spellbook", "rations"],
+    gear: ["spellbook"],
     choices: [
       { prompt: "Weapon", options: [
         { label: "Quarterstaff", items: ["quarterstaff"] },
         { label: "Dagger", items: ["dagger"] }
-      ] }
-    ]
-  },
-  Cleric: {
-    gear: ["shield", "rations"],
-    choices: [
-      { prompt: "Armour", options: [
-        { label: "Scale mail", items: ["scalemail"] },
-        { label: "Leather armour", items: ["leather"] }
       ] },
-      { prompt: "Weapon", options: [
-        { label: "Mace", items: ["mace"] },
-        { label: "Warhammer", items: ["warhammer"] }
+      { prompt: "Spellcasting focus", options: [
+        { label: "Component pouch", items: ["componentpouch"] },
+        { label: "Arcane focus", items: ["arcanefocus"] }
+      ] },
+      { prompt: "Pack", options: [
+        { label: "Scholar's pack", items: ["scholar"] },
+        { label: "Explorer's pack", items: ["explorer"] }
       ] }
     ]
   }
 };
 
-const KIT_ITEMS = {
-  chainmail:   { name: "Chain Mail", category: "Worn", weight: 55, armour: { base: 16, kind: "heavy", dexCap: 0 } },
-  scalemail:   { name: "Scale Mail", category: "Worn", weight: 45, armour: { base: 14, kind: "medium", dexCap: 2 } },
-  leather:     { name: "Leather Armour", category: "Worn", weight: 10, armour: { base: 11, kind: "light", dexCap: null } },
-  shield:      { name: "Shield", category: "Worn", weight: 6, armour: { base: 2, kind: "shield", dexCap: null } },
+/* The items the kits and backgrounds hand out. Names, weights, damage, AC and
+   properties are the same values as the fuller catalogue in srd-equipment.js --
+   the two tables had drifted (chain mail had lost its Strength requirement and
+   Stealth note, the bows drew from "Quiver" where the catalogue says "Arrows",
+   leather armour was "Leather Armour" here and "Leather" there), and a starting
+   longsword that isn't the catalogue's longsword is a bug waiting to be found
+   by a player.
 
-  longsword:   { name: "Longsword", category: "Equipped", weight: 3, isWeapon: true, attackAbility: "STR",
+   `desc` is the plain-language line for tapping an item open. Note that the
+   inventory detail (tab-inventory.js) reads `description`, which is what
+   srd-equipment.js and the item editor both write -- so a kit item's `desc`
+   renders nowhere yet. One of the two names has to win before either surface
+   can rely on it; duplicating the text into both would just be the same drift
+   this table was fixed for.
+
+   Two places where matching the catalogue exactly is worth knowing about:
+
+   - Packs weigh 0, as they do in SRD_GEAR, which folds each pack's contents
+     into text rather than into items. So a pack costs nothing to carry on the
+     sheet, when an explorer's pack is really 59 lb of gear. Encumbrance can't
+     be right until a pack is a container of real items; correcting it in one
+     table only would put the two back out of step.
+   - Ammunition weight is per unit here (an arrow is 0.05 lb) because `qty` is a
+     stack count, where the catalogue prices a bundle of 20 at 1 lb. Same total,
+     different unit.
+
+   Rations are no longer granted loose: every SRD pack already contains days of
+   rations, so the old flat 5 was a second helping on top of the pack's own. */
+const KIT_ITEMS = {
+  /* ---------- armour ---------- */
+  chainmail:   { srd: "Chain Mail", name: "Chain Mail", category: "Worn", weight: 55, armour: { base: 16, kind: "heavy", dexCap: 0 },
+                 description: "Heavy armour, AC 16. Requires Strength 13, or your speed drops by 10 feet. Disadvantage on Stealth checks." },
+  scalemail:   { srd: "Scale Mail", name: "Scale Mail", category: "Worn", weight: 45, armour: { base: 14, kind: "medium", dexCap: 2 },
+                 description: "Medium armour, AC 14 plus Dexterity (max +2). Disadvantage on Stealth checks." },
+  leather:     { srd: "Leather", name: "Leather", category: "Worn", weight: 10, armour: { base: 11, kind: "light", dexCap: null },
+                 description: "Light armour, AC 11 plus your full Dexterity modifier." },
+  shield:      { srd: "Shield", name: "Shield", category: "Worn", weight: 6, armour: { base: 2, kind: "shield", dexCap: null },
+                 description: "+2 AC while carried in one hand." },
+
+  /* ---------- weapons ---------- */
+  greataxe:    { srd: "Greataxe", name: "Greataxe", category: "Equipped", weight: 7, isWeapon: true, attackAbility: "STR",
                  proficiencyRequired: "Martial", magicBonus: 0, weaponType: "melee", range: "5 ft",
-                 properties: ["Versatile (1d10)"], damage: [{ dice: "1d8", type: "Slashing", ability: "STR" }] },
-  shortsword:  { name: "Shortsword", category: "Equipped", weight: 2, isWeapon: true, attackAbility: "DEX",
+                 properties: ["Heavy", "Two-Handed"], damage: [{ dice: "1d12", type: "Slashing", ability: "STR" }],
+                 description: "A two-handed axe. The hardest single hit on the martial table." },
+  longsword:   { srd: "Longsword", name: "Longsword", category: "Equipped", weight: 3, isWeapon: true, attackAbility: "STR",
                  proficiencyRequired: "Martial", magicBonus: 0, weaponType: "melee", range: "5 ft",
-                 properties: ["Finesse", "Light"], damage: [{ dice: "1d6", type: "Piercing", ability: "DEX" }] },
-  rapier:      { name: "Rapier", category: "Equipped", weight: 2, isWeapon: true, attackAbility: "DEX",
+                 properties: ["Versatile (1d10)"], damage: [{ dice: "1d8", type: "Slashing", ability: "STR" }],
+                 description: "A straight blade for one hand, or 1d10 in two." },
+  shortsword:  { srd: "Shortsword", name: "Shortsword", category: "Equipped", weight: 2, isWeapon: true, attackAbility: "DEX",
                  proficiencyRequired: "Martial", magicBonus: 0, weaponType: "melee", range: "5 ft",
-                 properties: ["Finesse"], damage: [{ dice: "1d8", type: "Piercing", ability: "DEX" }] },
-  dagger:      { name: "Dagger", category: "Equipped", weight: 1, isWeapon: true, attackAbility: "DEX",
+                 properties: ["Finesse", "Light"], damage: [{ dice: "1d6", type: "Piercing", ability: "DEX" }],
+                 description: "A short stabbing blade. Light enough to pair with a second weapon." },
+  rapier:      { srd: "Rapier", name: "Rapier", category: "Equipped", weight: 2, isWeapon: true, attackAbility: "DEX",
+                 proficiencyRequired: "Martial", magicBonus: 0, weaponType: "melee", range: "5 ft",
+                 properties: ["Finesse"], damage: [{ dice: "1d8", type: "Piercing", ability: "DEX" }],
+                 description: "A duelling blade that uses Dexterity rather than Strength." },
+  scimitar:    { srd: "Scimitar", name: "Scimitar", category: "Equipped", weight: 3, isWeapon: true, attackAbility: "DEX",
+                 proficiencyRequired: "Martial", magicBonus: 0, weaponType: "melee", range: "5 ft",
+                 properties: ["Finesse", "Light"], damage: [{ dice: "1d6", type: "Slashing", ability: "DEX" }],
+                 description: "A curved single-edged sword, light and quick." },
+  handaxe:     { srd: "Handaxe", name: "Handaxe", category: "Equipped", weight: 2, isWeapon: true, attackAbility: "STR",
+                 proficiencyRequired: "Simple", magicBonus: 0, weaponType: "melee", range: "5 ft",
+                 properties: ["Light", "Thrown (range 20/60)"], damage: [{ dice: "1d6", type: "Slashing", ability: "STR" }],
+                 description: "A one-handed axe you can also throw up to 60 feet." },
+  dagger:      { srd: "Dagger", name: "Dagger", category: "Equipped", weight: 1, isWeapon: true, attackAbility: "DEX",
                  proficiencyRequired: "Simple", magicBonus: 0, weaponType: "melee", range: "5 ft",
                  properties: ["Finesse", "Light", "Thrown (range 20/60)"],
-                 damage: [{ dice: "1d4", type: "Piercing", ability: "DEX" }] },
-  mace:        { name: "Mace", category: "Equipped", weight: 4, isWeapon: true, attackAbility: "STR",
+                 damage: [{ dice: "1d4", type: "Piercing", ability: "DEX" }],
+                 description: "A small blade, thrown or held. Concealable and always useful." },
+  mace:        { srd: "Mace", name: "Mace", category: "Equipped", weight: 4, isWeapon: true, attackAbility: "STR",
                  proficiencyRequired: "Simple", magicBonus: 0, weaponType: "melee", range: "5 ft",
-                 properties: [], damage: [{ dice: "1d6", type: "Bludgeoning", ability: "STR" }] },
-  warhammer:   { name: "Warhammer", category: "Equipped", weight: 2, isWeapon: true, attackAbility: "STR",
+                 properties: [], damage: [{ dice: "1d6", type: "Bludgeoning", ability: "STR" }],
+                 description: "A weighted club. Simple to use and hard on armour." },
+  warhammer:   { srd: "Warhammer", name: "Warhammer", category: "Equipped", weight: 2, isWeapon: true, attackAbility: "STR",
                  proficiencyRequired: "Martial", magicBonus: 0, weaponType: "melee", range: "5 ft",
-                 properties: ["Versatile (1d10)"], damage: [{ dice: "1d8", type: "Bludgeoning", ability: "STR" }] },
-  quarterstaff:{ name: "Quarterstaff", category: "Equipped", weight: 4, isWeapon: true, attackAbility: "STR",
+                 properties: ["Versatile (1d10)"], damage: [{ dice: "1d8", type: "Bludgeoning", ability: "STR" }],
+                 description: "A heavy hammer for one hand, or 1d10 in two." },
+  quarterstaff:{ srd: "Quarterstaff", name: "Quarterstaff", category: "Equipped", weight: 4, isWeapon: true, attackAbility: "STR",
                  proficiencyRequired: "Simple", magicBonus: 0, weaponType: "melee", range: "5 ft",
-                 properties: ["Versatile (1d8)"], damage: [{ dice: "1d6", type: "Bludgeoning", ability: "STR" }] },
-  shortbow:    { name: "Shortbow", category: "Equipped", weight: 2, isWeapon: true, attackAbility: "DEX",
+                 properties: ["Versatile (1d8)"], damage: [{ dice: "1d6", type: "Bludgeoning", ability: "STR" }],
+                 description: "A stout wooden staff. 1d8 when held in both hands." },
+  javelins4:   { srd: "Javelin", name: "Javelin", category: "Equipped", weight: 2, qty: 4, isWeapon: true, attackAbility: "STR",
+                 proficiencyRequired: "Simple", magicBonus: 0, weaponType: "melee", range: "5 ft",
+                 properties: ["Thrown (range 30/120)"], damage: [{ dice: "1d6", type: "Piercing", ability: "STR" }],
+                 description: "Throwing spears, good to 120 feet." },
+  javelins5:   { srd: "Javelin", name: "Javelin", category: "Equipped", weight: 2, qty: 5, isWeapon: true, attackAbility: "STR",
+                 proficiencyRequired: "Simple", magicBonus: 0, weaponType: "melee", range: "5 ft",
+                 properties: ["Thrown (range 30/120)"], damage: [{ dice: "1d6", type: "Piercing", ability: "STR" }],
+                 description: "Throwing spears, good to 120 feet." },
+  darts10:     { srd: "Dart", name: "Dart", category: "Equipped", weight: 0.25, qty: 10, isWeapon: true, attackAbility: "DEX",
+                 proficiencyRequired: "Simple", magicBonus: 0, weaponType: "ranged", range: "20/60 ft",
+                 properties: ["Finesse", "Thrown"], damage: [{ dice: "1d4", type: "Piercing", ability: "DEX" }],
+                 description: "A weighted throwing dart, thrown with Dexterity." },
+  shortbow:    { srd: "Shortbow", name: "Shortbow", category: "Equipped", weight: 2, isWeapon: true, attackAbility: "DEX",
                  proficiencyRequired: "Simple", magicBonus: 0, weaponType: "ranged", range: "80/320 ft",
-                 properties: ["Ammunition", "Two-Handed"], ammunition: "Quiver",
-                 damage: [{ dice: "1d6", type: "Piercing", ability: "DEX" }] },
-  longbow:     { name: "Longbow", category: "Equipped", weight: 2, isWeapon: true, attackAbility: "DEX",
+                 properties: ["Ammunition", "Two-Handed"], ammunition: "Arrows",
+                 damage: [{ dice: "1d6", type: "Piercing", ability: "DEX" }],
+                 description: "A short two-handed bow. Spends an arrow per shot." },
+  longbow:     { srd: "Longbow", name: "Longbow", category: "Equipped", weight: 2, isWeapon: true, attackAbility: "DEX",
                  proficiencyRequired: "Martial", magicBonus: 0, weaponType: "ranged", range: "150/600 ft",
-                 properties: ["Ammunition", "Heavy", "Two-Handed"], ammunition: "Quiver",
-                 damage: [{ dice: "1d8", type: "Piercing", ability: "DEX" }] },
+                 properties: ["Ammunition", "Heavy", "Two-Handed"], ammunition: "Arrows",
+                 damage: [{ dice: "1d8", type: "Piercing", ability: "DEX" }],
+                 description: "A tall two-handed bow reaching 600 feet. Spends an arrow per shot." },
+  lightcrossbow:{ srd: "Crossbow, Light", name: "Crossbow, Light", category: "Equipped", weight: 5, isWeapon: true, attackAbility: "DEX",
+                 proficiencyRequired: "Simple", magicBonus: 0, weaponType: "ranged", range: "80/320 ft",
+                 properties: ["Ammunition", "Loading", "Two-Handed"], ammunition: "Crossbow Bolts",
+                 damage: [{ dice: "1d8", type: "Piercing", ability: "DEX" }],
+                 description: "A two-handed crossbow. One shot per action, however many attacks you have." },
 
-  arrows:      { name: "Arrows", category: "Carrying", weight: 0.05, qty: 40,
-                 description: "Loose arrows, kept in the pack.",
+  /* ---------- ammunition and its containers ---------- */
+  /* The SRD grants 20 arrows, so 20 is what the stack holds -- the old kit gave
+     40 loose plus a full quiver of 20 on top. The quiver arrives empty and the
+     player's first Refill moves arrows into it; putting the 20 in both places
+     is what produced 60 in the first place. */
+  arrows:      { srd: "Arrows (20)", name: "Arrows", category: "Carrying", weight: 0.05, qty: 20,
+                 description: "Ammunition for a bow.",
                  resource: { max: 0, recharge: { on: "none", amount: "all" } } },
-  quiver:      { name: "Quiver", category: "Worn", weight: 1,
-                 description: "Holds twenty arrows within easy reach.",
-                 resource: { max: 20, loaded: 20, refillFrom: "Arrows", recharge: { on: "none", amount: "all" } } },
+  bolts:       { srd: "Crossbow Bolts (20)", name: "Crossbow Bolts", category: "Carrying", weight: 0.075, qty: 20,
+                 description: "Ammunition for a crossbow.",
+                 resource: { max: 0, recharge: { on: "none", amount: "all" } } },
+  quiver:      { srd: "Quiver", name: "Quiver", category: "Worn", weight: 1,
+                 description: "Holds up to 20 arrows within easy reach. Refill draws from your arrow stack.",
+                 resource: { max: 20, loaded: 0, refillFrom: "Arrows", recharge: { on: "none", amount: "all" } } },
 
-  explorer:    { name: "Explorer's Pack", category: "Carrying", weight: 59,
-                 description: "Backpack, bedroll, mess kit, tinderbox, torches, rations and rope." },
-  spellbook:   { name: "Spellbook", category: "Carrying", weight: 3, description: "Your spells, written down." },
-  thievestools:{ name: "Thieves' Tools", category: "Carrying", weight: 1, description: "Picks, a small file, and a mirror on a handle." },
-  rations:     { name: "Rations", category: "Carrying", weight: 2, qty: 5,
-                 resource: { max: 0, recharge: { on: "none", amount: "all" } } }
+  /* ---------- equipment packs ---------- */
+  burglar:     { srd: "Burglar's Pack", name: "Burglar's Pack", category: "Carrying", weight: 0,
+                 description: "Backpack, 1,000 ball bearings, 10 ft of string, a bell, 5 candles, a crowbar, a hammer, 10 pitons, a hooded lantern, 2 flasks of oil, 5 days of rations, a tinderbox, a waterskin, and 50 feet of rope." },
+  diplomat:    { srd: "Diplomat's Pack", name: "Diplomat's Pack", category: "Carrying", weight: 0,
+                 description: "Chest, 2 map cases, fine clothes, ink, an ink pen, a lamp, 2 flasks of oil, 5 sheets of paper, perfume, sealing wax and soap." },
+  dungeoneer:  { srd: "Dungeoneer's Pack", name: "Dungeoneer's Pack", category: "Carrying", weight: 0,
+                 description: "Backpack, a crowbar, a hammer, 10 pitons, 10 torches, a tinderbox, 10 days of rations, a waterskin, and 50 feet of rope." },
+  entertainer: { srd: "Entertainer's Pack", name: "Entertainer's Pack", category: "Carrying", weight: 0,
+                 description: "Backpack, a bedroll, 2 costumes, 5 candles, 5 days of rations, a waterskin, and a disguise kit." },
+  explorer:    { srd: "Explorer's Pack", name: "Explorer's Pack", category: "Carrying", weight: 0,
+                 description: "Backpack, a bedroll, a mess kit, a tinderbox, 10 torches, 10 days of rations, a waterskin, and 50 feet of rope." },
+  priest:      { srd: "Priest's Pack", name: "Priest's Pack", category: "Carrying", weight: 0,
+                 description: "Backpack, a blanket, 10 candles, a tinderbox, an alms box, 2 blocks of incense, a censer, vestments, 2 days of rations, and a waterskin." },
+  scholar:     { srd: "Scholar's Pack", name: "Scholar's Pack", category: "Carrying", weight: 0,
+                 description: "Backpack, a book of lore, ink, an ink pen, 10 sheets of parchment, a bag of sand, and a small knife." },
+
+  /* ---------- spellcasting focuses ---------- */
+  componentpouch: { srd: "Component Pouch", name: "Component Pouch", category: "Carrying", weight: 2,
+                 description: "A watertight belt pouch of material components. Covers any spell component without a stated cost." },
+  arcanefocus: { srd: "Arcane Focus, Crystal", name: "Arcane Focus, Crystal", category: "Carrying", weight: 1,
+                 description: "A spellcasting focus for sorcerer, warlock or wizard spells, used in place of components." },
+  druidicfocus:{ srd: "Druidic Focus, Sprig of Mistletoe", name: "Druidic Focus, Sprig of Mistletoe", category: "Carrying", weight: 0,
+                 description: "A spellcasting focus for druid spells, used in place of components." },
+  holysymbol:  { srd: "Amulet", name: "Amulet", category: "Carrying", weight: 1,
+                 description: "A holy symbol worn at the throat. A cleric or paladin casts through it in place of components." },
+
+  /* ---------- tools, instruments and gear ---------- */
+  thievestools:{ srd: "Thieves' Tools", name: "Thieves' Tools", category: "Carrying", weight: 1,
+                 description: "Lock picks, a file, a small mirror, scissors and pliers. Proficiency adds your bonus to picking locks and disarming traps." },
+  lute:        { srd: "Lute", name: "Lute", category: "Carrying", weight: 2, description: "A stringed instrument. Proficiency lets you add your bonus to performing with it." },
+  flute:       { srd: "Flute", name: "Flute", category: "Carrying", weight: 1, description: "A wind instrument. Proficiency lets you add your bonus to performing with it." },
+  spellbook:   { srd: "Spellbook", name: "Spellbook", category: "Carrying", weight: 3, description: "A leather-bound tome of 100 blank vellum pages. A wizard's spells live here, not in memory." },
+
+  /* ---------- background items ----------
+     The four backgrounds' gear. Weights follow srd-equipment.js where it has
+     the item; vestments, incense, the small knife and the three keepsakes
+     (letter, insignia, trophy) are background-only and have no catalogue
+     entry to match, so they're recorded at their nearest sensible weight. */
+  crowbar:     { srd: "Crowbar", name: "Crowbar", category: "Carrying", weight: 5, description: "Advantage on Strength checks where leverage applies." },
+  commonclothes:{ srd: "Clothes, Common", name: "Clothes, Common", category: "Carrying", weight: 3, description: "An ordinary outfit -- what most people wear most days." },
+  darkclothes: { srd: "Clothes, Common", name: "Clothes, Common (dark, hooded)", category: "Carrying", weight: 3, description: "Plain dark clothes with a hood, for not being looked at twice." },
+  pouch:       { srd: "Pouch", name: "Pouch", category: "Carrying", weight: 1, description: "A belt pouch. Holds coin, sling bullets, or anything else small." },
+  ink:         { srd: "Ink (1 ounce bottle)", name: "Ink (1 ounce bottle)", category: "Carrying", weight: 0, description: "A bottle of black ink." },
+  inkpen:      { srd: "Ink Pen", name: "Ink Pen", category: "Carrying", weight: 0, description: "A quill cut for writing." },
+  smallknife:  { name: "Knife, Small", category: "Carrying", weight: 0.5, description: "A small utility knife -- for sharpening quills and cutting pages, not for fighting." },
+  letter:      { name: "Letter from a Dead Colleague", category: "Carrying", weight: 0, description: "A letter posing a question you have not yet been able to answer." },
+  insignia:    { name: "Insignia of Rank", category: "Carrying", weight: 0, description: "The badge of the rank you held, recognised by anyone who served." },
+  trophy:      { name: "Trophy from a Fallen Enemy", category: "Carrying", weight: 0, description: "A dagger, broken blade or piece of a banner taken from an enemy you beat." },
+  diceset:     { srd: "Dice Set", name: "Dice Set", category: "Carrying", weight: 0, description: "Bone dice, for passing a watch." },
+  prayerbook:  { name: "Prayer Book", category: "Carrying", weight: 5, description: "The prayers of your faith, written down. A prayer wheel serves the same purpose." },
+  incense:     { name: "Incense", category: "Carrying", weight: 0, qty: 5, description: "A stick of incense, burned during a rite." },
+  vestments:   { name: "Vestments", category: "Carrying", weight: 4, description: "The robes you wear to lead a ceremony." }
 };
 
 const CREATOR_ABILITY_ORDER = ["Strength", "Dexterity", "Constitution", "Intelligence", "Wisdom", "Charisma"];

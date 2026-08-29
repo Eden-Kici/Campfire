@@ -2,8 +2,31 @@
    MODAL SYSTEM
    ============================================================ */
 
+/* A screen that would lose work if it vanished (the character creator) parks a
+   function here while it is open. It runs only on a *user-initiated* dismissal
+   -- backdrop, handle, drag-down, X -- and returning false calls it off.
+   Programmatic closeModal() stays unconditional, so one modal can always
+   replace another. */
+window.modalDismissGuard = null;
+
+// whether the overlay currently on screen is the tutorial's own -- tracked
+// rather than sniffed out of the DOM so closeModal() behaves identically
+// under the test harness's stub, which hands back a permissive proxy for
+// every lookup
+let openModalIsTutorial = false;
+
+function dismissModal() {
+  if (typeof modalDismissGuard === "function" && modalDismissGuard() === false) return;
+  const wasTutorial = openModalIsTutorial;
+  closeModal();
+  // only a *dismissal* moves the tutorial on. Programmatic closeModal() is
+  // one modal replacing another, which should leave the tour alone.
+  if (wasTutorial && typeof noteTutorialModalClosed === "function") noteTutorialModalClosed();
+}
+
 function openModal(mode, contentHtml) {
   closeModal();
+  openModalIsTutorial = String(contentHtml).indexOf("data-tutorial-modal") !== -1;
   const phone = document.querySelector(".phone");
   const overlay = document.createElement("div");
   overlay.id = "modal-overlay";
@@ -18,17 +41,23 @@ function openModal(mode, contentHtml) {
       <div class="modal-content">${contentHtml}</div>
     </div>
   `;
-  overlay.addEventListener("click", (e) => { if (e.target === overlay) closeModal(); });
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) dismissModal(); });
   phone.appendChild(overlay);
   phone.scrollIntoView({ block: "center" });
 
   if (showHandle) makeDraggable(overlay.querySelector(".modal-handle"), overlay.querySelector(".modal-box"));
-  else overlay.querySelector(".modal-close-x").addEventListener("click", closeModal);
+  else overlay.querySelector(".modal-close-x").addEventListener("click", dismissModal);
 }
 
 function closeModal() {
   const existing = document.getElementById("modal-overlay");
   if (existing) existing.remove();
+  // the guard belongs to the modal that was open, not to the app
+  modalDismissGuard = null;
+  openModalIsTutorial = false;
+  // toasts anchor to the bottom while a modal is up, so a toast that outlives
+  // the modal has to be moved back before it lands on the tab bar
+  if (typeof repositionToasts === "function") repositionToasts();
 }
 
 function makeDraggable(handleEl, boxEl) {
@@ -43,14 +72,171 @@ function makeDraggable(handleEl, boxEl) {
     if (!dragging) return;
     dragging = false;
     boxEl.style.transition = "transform .2s ease";
-    if (currentY > 80) closeModal(); else boxEl.style.transform = "translateY(0)";
+    if (currentY > 80) { dismissModal(); boxEl.style.transform = "translateY(0)"; }
+    else boxEl.style.transform = "translateY(0)";
     currentY = 0;
   });
-  handleEl.addEventListener("click", () => closeModal());
+  handleEl.addEventListener("click", () => dismissModal());
+}
+
+/* ============================================================
+   CONFIRMATION
+   ============================================================ */
+
+/* The app used to ask with the browser's own confirm(), which puts the page's
+   origin ("127.0.0.1:5500") above the question and styles the buttons like the
+   OS, not like Campfire. It's also synchronous and modal to the whole tab,
+   which a phone app can't be.
+
+   This is deliberately NOT built on openModal(): a confirmation is nearly
+   always raised from inside another modal (discard the creator, delete a
+   category), and openModal() begins by closing whatever is open. So it gets
+   its own overlay on its own layer, above modals and above toasts.
+
+   Callers pass onConfirm rather than reading a return value -- the whole
+   point is that nothing blocks while the player decides. */
+function confirmModal(options) {
+  const existing = document.getElementById("confirm-overlay");
+  if (existing) existing.remove();
+
+  const overlay = document.createElement("div");
+  overlay.id = "confirm-overlay";
+  overlay.className = "confirm-overlay";
+  overlay.innerHTML = `
+    <div class="confirm-box">
+      <div class="confirm-title">${esc(options.title)}</div>
+      ${options.body ? `<div class="confirm-body">${esc(options.body)}</div>` : ""}
+      <div class="btn-row-2" style="margin-top:16px;">
+        <button class="btn-secondary" id="confirm-cancel">${esc(options.cancelLabel || "Cancel")}</button>
+        <button class="btn-primary ${options.danger ? "btn-danger" : ""}" id="confirm-ok">${esc(options.confirmLabel || "Confirm")}</button>
+      </div>
+    </div>
+  `;
+  document.querySelector(".phone").appendChild(overlay);
+
+  const close = () => { const el = document.getElementById("confirm-overlay"); if (el) el.remove(); };
+  overlay.addEventListener("click", (e) => {
+    if (e.target !== overlay) return;
+    close();
+    if (options.onCancel) options.onCancel();
+  });
+  document.getElementById("confirm-cancel").addEventListener("click", () => {
+    close();
+    if (options.onCancel) options.onCancel();
+  });
+  document.getElementById("confirm-ok").addEventListener("click", () => {
+    close();
+    if (options.onConfirm) options.onConfirm();
+  });
+}
+
+/* Same layer as confirmModal, for the same reason: an explanation is nearly
+   always wanted from *inside* a form, and openModal() would close the form to
+   show it. Read-only, so one dismiss button and nothing to cancel. */
+function infoModal(title, body) {
+  const existing = document.getElementById("confirm-overlay");
+  if (existing) existing.remove();
+
+  const overlay = document.createElement("div");
+  overlay.id = "confirm-overlay";
+  overlay.className = "confirm-overlay";
+  overlay.innerHTML = `
+    <div class="confirm-box">
+      <div class="confirm-title">${esc(title)}</div>
+      <div class="confirm-body">${esc(body)}</div>
+      <button class="btn-secondary" id="info-close" style="margin-top:16px;">Close</button>
+    </div>
+  `;
+  document.querySelector(".phone").appendChild(overlay);
+
+  const close = () => { const el = document.getElementById("confirm-overlay"); if (el) el.remove(); };
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+  document.getElementById("info-close").addEventListener("click", close);
+}
+
+/* "Discard changes?" for any modal that is a form.
+
+   Every edit form in the app could be dismissed by dragging the handle, tapping
+   the backdrop or hitting the X, and the edit vanished without a word. The
+   creator already guarded itself this way; this generalises it so a form only
+   has to say that it *is* a form.
+
+   Dirtiness is decided by comparing a signature of the modal's controls at open
+   against the same signature at dismiss, rather than by asking each form to
+   describe its own fields -- one line per call site instead of a bespoke
+   comparison per form, and it can't drift when a field is added.
+
+   Under the test harness querySelectorAll returns [], so the signature is
+   constant and the guard never fires. That's correct: there is no drag, no
+   backdrop and no unsaved work in a test. */
+function modalFieldSignature() {
+  const modal = document.getElementById("modal-overlay");
+  if (!modal || !modal.querySelectorAll) return "";
+  const values = [];
+  modal.querySelectorAll("input, textarea").forEach(el => values.push(el.value));
+  modal.querySelectorAll(".toggle-line.on, .toggle-btn.active, .mini-checkbox.checked, .prop-row.on")
+    .forEach(el => values.push(el.className));
+  return values.join("\u0001");
+}
+
+function guardModalEdits(options) {
+  options = options || {};
+  const initial = modalFieldSignature();
+  modalDismissGuard = () => {
+    if (modalFieldSignature() === initial) return true;
+    confirmModal({
+      title: options.title || "Discard changes?",
+      body: options.body || "Your edits to this form will be lost.",
+      confirmLabel: "Discard",
+      danger: true,
+      onConfirm: () => { modalDismissGuard = null; closeModal(); }
+    });
+    return false;
+  };
+}
+
+/* Most breakdown rows are bonuses and want a sign. Some are not: the AC
+   breakdown's first row is the armour's base value, and it read "Chain Shirt
+   +13" -- a false statement inside the app's best feature. A source can now say
+   it is a plain quantity, and the sign is only added where a sign is true.
+
+   `suffix` exists for the same reason: weight rows are pounds, not modifiers. */
+/* One item-detail body, used everywhere an item explains itself.
+
+   The character creator grew its own version of this with its own hand-written
+   descriptions, which meant two answers to "what is a Priest's Pack" and a
+   player who saw less in the creator than in the library. Everything that
+   describes an item now renders through here, so the equipment step, the
+   content browser and anything later all show the same facts. */
+function itemFactsHtml(item) {
+  const kind = itemType(item);
+  return `
+    ${item.official === false ? `<div class="breakdown-source" style="margin-bottom:6px;">Third-party (not core SRD)</div>` : ""}
+    ${item.description ? `<div class="trait-desc" style="margin:6px 0 12px;">${esc(item.description)}</div>` : ""}
+    ${item.weight != null ? `<div class="breakdown-row"><span>Weight</span><span>${item.weight} lb</span></div>` : ""}
+    ${item.cost ? `<div class="breakdown-row"><span>Cost</span><span>${esc(item.cost)}</span></div>` : ""}
+    ${item.rarity ? `<div class="breakdown-row"><span>Rarity</span><span>${esc(item.rarity)}</span></div>` : ""}
+    ${item.rarity ? `<div class="breakdown-row"><span>Attunement</span><span>${item.attunement ? "Required" : "Not required"}</span></div>` : ""}
+    ${kind === "weapon" ? `
+      <div class="breakdown-row"><span>Attack Ability</span><span>${esc(item.attackAbility)}</span></div>
+      <div class="breakdown-row"><span>Attack Type</span><span>${item.weaponType === "ranged" ? "Ranged" : "Melee"}</span></div>
+      <div class="breakdown-row"><span>Range</span><span>${esc(item.range || "\u2014")}</span></div>
+      <div class="breakdown-row"><span>Proficiency</span><span>${esc(item.proficiencyRequired || "None")}</span></div>
+      ${(item.damage || []).map(d => `<div class="breakdown-row"><span>Damage</span><span>${esc(d.dice)} ${esc(d.type)}</span></div>`).join("")}
+      ${item.properties && item.properties.length ? `<div class="item-effect" style="margin-top:6px;">${esc(item.properties.join(", "))}</div>` : ""}
+    ` : ""}
+    ${kind === "armour" ? `
+      <div class="breakdown-row"><span>Base AC</span><span>${item.armour.base}</span></div>
+      <div class="breakdown-row"><span>Armour Type</span><span>${esc((ARMOUR_KINDS.find(k => k.value === item.armour.kind) || {}).label || item.armour.kind)}</span></div>
+      <div class="breakdown-row"><span>Max Dexterity Bonus</span><span>${item.armour.dexCap == null ? "No limit" : item.armour.dexCap}</span></div>
+    ` : ""}`;
 }
 
 function breakdownRowsHtml(sources) {
-  return sources.map(s => `<div class="breakdown-row"><span>${esc(s.label)}</span><span>${formatModifier(s.value)}</span></div>`).join("");
+  return sources.map(s => {
+    const value = s.plain ? s.value : formatModifier(s.value);
+    return `<div class="breakdown-row ${s.heading ? "breakdown-row-heading" : ""}"><span>${esc(s.label)}</span><span>${esc(String(value) + (s.suffix || ""))}</span></div>`;
+  }).join("");
 }
 
 function openBreakdownModal(title, total, suffix, sources, rollButton) {
@@ -144,8 +330,57 @@ function toggleLineHtml(id, label, on, opts) {
    data-whatever="value" keeps working; only the tag and the "checked" class
    change. `disabled` greys it out and drops the pointer, same meaning as the
    native attribute. */
+/* A <span>, not a <button>, deliberately.
+
+   This used to be a <button>, and the property picker nested it inside another
+   <button> -- invalid HTML that Chromium tolerates and every other engine does
+   not. A spec-compliant parser auto-closes the outer button, so the row broke
+   into three stacked siblings and the label fell outside the tap target. It was
+   only ever driven by a click listener anyway, so it gains nothing from being a
+   real control and can't be nested wrongly as a span.
+
+   `disabled` is a class rather than an attribute now, so every listener has to
+   check it -- a span ignores the attribute. */
 function miniCheckboxHtml(dataAttr, value, checked, disabled) {
-  return `<button type="button" class="mini-checkbox ${checked ? "checked" : ""} ${disabled ? "disabled" : ""}" data-${dataAttr}="${esc(value)}"${disabled ? " disabled" : ""}></button>`;
+  return `<span role="checkbox" tabindex="0" aria-checked="${checked ? "true" : "false"}"` +
+    ` class="mini-checkbox ${checked ? "checked" : ""} ${disabled ? "disabled" : ""}"` +
+    ` data-${dataAttr}="${esc(value)}"></span>`;
+}
+
+// every mini-checkbox listener goes through this, because `disabled` stopped
+// being an attribute the browser enforces when the element stopped being a button
+function miniCheckboxBlocked(el) {
+  return el.classList.contains("disabled");
+}
+
+/* Three-or-so mutually exclusive choices, side by side. The app already had
+   this shape in the item type toggle; giving it a name means "pick one of a
+   short fixed set" stops being spelled as a dropdown in some places and a
+   segmented control in others. */
+function segmentedFieldHtml(id, label, options, value) {
+  const items = options.map(o => (typeof o === "string" ? { value: o, label: o } : o));
+  const selected = items.find(i => i.value === value) || items[0];
+  return fieldHtml(label, `
+    <input type="hidden" id="${id}" value="${esc(selected.value)}">
+    <div class="type-toggle" data-segmented-for="${id}">
+      ${items.map(i => `<button type="button" class="toggle-btn ${i.value === selected.value ? "active" : ""}" data-segment="${esc(i.value)}">${esc(i.label)}</button>`).join("")}
+    </div>`);
+}
+
+/* Writes the hidden input and fires "change", so a segmented field is a drop-in
+   for selectFieldHtml everywhere that reads `.value` or listens for change. */
+function wireSegmented(id) {
+  const wrap = document.querySelector(`[data-segmented-for="${id}"]`);
+  if (!wrap) return;
+  const input = document.getElementById(id);
+  wrap.querySelectorAll("[data-segment]").forEach(button => {
+    button.addEventListener("click", () => {
+      input.value = button.dataset.segment;
+      wrap.querySelectorAll("[data-segment]").forEach(other =>
+        other.classList.toggle("active", other === button));
+      input.dispatchEvent(new Event("change"));
+    });
+  });
 }
 
 /* An in-app replacement for <select>, which renders as an OS picker on mobile.
@@ -168,7 +403,7 @@ function selectFieldHtml(id, label, options, value) {
         </button>
         <div class="select-list" hidden>
           ${items.map(item => `
-            <button type="button" class="select-option ${selected && item.value === selected.value ? "active" : ""}" data-value="${esc(item.value)}">${esc(item.label)}</button>
+            <button type="button" class="select-option ${selected && item.value === selected.value ? "active" : ""}${item.disabled ? " disabled" : ""}" data-value="${esc(item.value)}"${item.disabled ? " disabled" : ""}>${esc(item.label)}</button>
           `).join("")}
         </div>
       </div>`);
@@ -189,6 +424,9 @@ function wireSelect(id) {
 
   list.querySelectorAll(".select-option").forEach(option => {
     option.addEventListener("click", () => {
+      // an option that would do nothing says so by being unavailable, rather
+      // than by being pickable and then explained away in a warning underneath
+      if (option.classList.contains("disabled")) return;
       input.value = option.dataset.value;
       wrap.querySelector(".select-value").textContent = option.textContent.trim();
       list.querySelectorAll(".select-option").forEach(other => other.classList.toggle("active", other === option));
@@ -227,7 +465,7 @@ function comboFieldHtml(id, label, placeholder, value) {
   return `
     <div class="field combo">
       <label>${esc(label)}</label>
-      <input id="${id}" autocomplete="off" placeholder="${placeholder}" value="${esc(value || "")}">
+      <input id="${id}" autocomplete="off" placeholder="${esc(placeholder)}" value="${esc(value || "")}">
       <div class="combo-list" id="${id}-list" hidden></div>
     </div>`;
 }
@@ -243,7 +481,7 @@ function wireCombo(id, options, onChange) {
     const matches = options.filter(option => option.toLowerCase().includes(query));
     list.innerHTML = matches.length
       ? matches.map(option => `<button type="button" class="combo-option" data-pick="${esc(option)}">${esc(option)}</button>`).join("")
-      : `<div class="combo-empty">No match — "${input.value.trim()}" will be used as a custom entry</div>`;
+      : `<div class="combo-empty">No match — "${esc(input.value.trim())}" will be used as a custom entry</div>`;
 
     // pointerdown fires before the input loses focus, on both touch and mouse
     list.querySelectorAll("[data-pick]").forEach(button => {
@@ -275,7 +513,7 @@ function wireConditionField(idPrefix, existingValue) {
 
     const level = existingValue && existingValue.level ? existingValue.level : 1;
     extra.innerHTML = numberFieldHtml(idPrefix + "-condition-level", "Exhaustion Level", level,
-      { min: 1, max: 6, hint: "Each level adds to the ones below it. A long rest removes one." });
+      { min: 1, max: 6 });
   }
 
   wireCombo(idPrefix + "-condition", ALL_CONDITIONS, reveal);
@@ -374,7 +612,13 @@ function rechargeCustomFieldHtml(idPrefix, value) {
   `;
 }
 
-function rechargeFieldHtml(idPrefix, recharge) {
+/* `opts.noMaximum` means this resource has no capacity to restore to -- an
+   uncapped stack. "All" and "Half" are proportions of a maximum, so with no
+   maximum they are not choices that do the wrong thing, they are not choices
+   at all. Greyed out rather than explained: the control says what is possible,
+   which is what a control is for. */
+function rechargeFieldHtml(idPrefix, recharge, opts) {
+  opts = opts || {};
   recharge = recharge || { on: "SR", amount: "all" };
   const known = ["SR", "LR", "none"];
   const isKnown = known.includes(recharge.on);
@@ -391,13 +635,13 @@ function rechargeFieldHtml(idPrefix, recharge) {
         { value: "Custom", label: "Custom" }
       ], selectedOn)}
       ${selectFieldHtml(idPrefix + "-amount-type", "Restores", [
-        { value: "all", label: "All" },
-        { value: "half", label: "Half" },
+        { value: "all", label: "All", disabled: opts.noMaximum },
+        { value: "half", label: "Half", disabled: opts.noMaximum },
         { value: "custom", label: "Custom" }
-      ], amountType)}
+      ], opts.noMaximum && amountType !== "custom" ? "custom" : amountType)}
     </div>
     <div id="${idPrefix}-amount-custom-wrap">
-      ${amountType === "custom" ? rechargeAmountFieldHtml(idPrefix, amount) : ""}
+      ${amountType === "custom" || opts.noMaximum ? rechargeAmountFieldHtml(idPrefix, amount) : ""}
     </div>
     <div id="${idPrefix}-tag-custom-wrap">
       ${selectedOn === "Custom" ? rechargeCustomFieldHtml(idPrefix, isKnown ? "" : recharge.on) : ""}

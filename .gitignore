@@ -1,0 +1,9 @@
+# Patch archives used to move work onto this machine. Not part of the app.
+_to_delete/
+
+# Scratch output from review passes.
+review-findings/
+
+# OS and editor noise
+.DS_Store
+Thumbs.db

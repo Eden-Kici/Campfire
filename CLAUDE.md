@@ -13,7 +13,15 @@ node --check <file>.js       # syntax check a single file; there is no linter
 Suites live in `tests/` and are registered in the `SUITES` array in `tests/run.js`. Adding a
 `*.test.js` file does nothing until it is listed there.
 
-There is **no build step and no dependencies**. Open `index.html` in a browser to run the app.
+```bash
+node tools/build-sw.js       # regenerate the service worker's cache list after adding a file
+```
+
+There is **no build step and no dependencies**. Open `index.html` in a browser to run the app —
+the service worker won't register over `file://`, which is fine and expected.
+
+It is also a **PWA**: `manifest.json`, `sw.js` and four icons. Served over HTTPS it installs to a
+phone's home screen and runs offline. See `DEPLOY.md`.
 
 ## What this is
 
@@ -50,8 +58,8 @@ same name is a real hazard (`let`/`const` throws at load; `function` silently sh
 - **`srd-data.js`** — static tables only. Conditions, damage types, SRD-shaped races/classes/
   backgrounds/kits, and the fixed lists forms are built from. No functions, no DOM. This is a
   stand-in for content a real build would load rather than hardcode.
-- **`character-data.js`** — the character object plus every calculation. **One DOM reference in
-  1,079 lines.** This layer is the actual output of the POC and ports to any platform unchanged.
+- **`character-data.js`** — the character object plus every calculation. **Zero DOM references in
+  1,297 lines.** This layer is the actual output of the POC and ports to any platform unchanged.
 - **everything else** — UI. Template literals into `innerHTML`. None of it survives a move to a
   real framework, so don't over-invest in it.
 
@@ -148,15 +156,23 @@ first-ever launch does. Tutorial tests set `tutorialState` by hand instead.
   history, and Help & Rules.
 - **Real content:** races, classes, subclasses, backgrounds, feats, equipment, magic items (281),
   spells (319) and conditions are imported SRD 5.1 text, sourced from the CC-BY mirrors 5esrd.com
-  and 5thsrd.org. Third-party entries carry `official: false` and render a 3PP tag. `KIT_ITEMS` is
-  still a small hand-written table serving `STARTING_KIT` only.
-- **Faked:** the party finder (`FAKE_PARTIES`, no networking at all) and the note sharing built on
-  top of it. That's the whole list — `MENU_STUBS` is empty, and Help & Rules says outright that the
-  party screen is a mockup rather than describing an intention.
-- Persistence carries `SCHEMA_VERSION` and **refuses** older saves rather than half-loading them. A
-  real build needs migrations; a POC only needs to notice. Tutorial progress, dice history, theme,
-  settings and custom content each keep their own key, so refusing a stale character save doesn't
-  take any of them with it.
+  and 5thsrd.org. Third-party entries carry `official: false` and render a 3PP tag. `KIT_ITEMS`
+  entries mostly carry an `srd:` link naming a row in the equipment catalogue and inherit its facts;
+  only seven background trinkets with no catalogue row keep their own fields.
+- **Faked — and there are three fakes, on two unrelated rosters:**
+  1. the **party finder** (`FAKE_PARTIES` in `party.js`, no networking anywhere in the app — joining
+     one is a `setTimeout`);
+  2. **note sharing** (`tab-notes.js`), which is *not* built on the party finder — it reads
+     `character.partyMembers`, a hardcoded array of four name strings that only the demo character
+     has. `creator.js` gives every created character `partyMembers: []`, so Share is empty on any
+     character you make;
+  3. **item giving** (`partyRosterForGiving` in `tab-inventory.js`), which reads that same array and
+     regex-parses the GM out of it. `applyGive` deletes the item and toasts; nothing receives it.
+- Persistence carries `SCHEMA_VERSION` and **sets aside** an older save under `campfire.characters.vN`
+  rather than loading it. It used to merely refuse it — and then the first render's
+  `persistCharacters()` wrote the demo character straight over it, so a schema bump silently deleted
+  every character. Tutorial progress, dice history, theme, settings and custom content each keep
+  their own key.
 
 ## Known gaps
 
@@ -165,8 +181,65 @@ first-ever launch does. Tutorial tests set `tutorialState` by hand instead.
 - `traits > Proficiencies > Weapons` is flavour text duplicating the authoritative
   `weaponProficiencies` list — the last known two-sources-of-truth.
 - Emoji stand in for an icon set throughout.
-- `index.html` has no `<meta viewport>` and `.phone` is a fixed 390×812 box, so on a real phone it
-  renders as a zoomed-out desktop page. It is a phone mockup, not yet a phone app.
+- **Every id is `Math.max(...) + 1` scoped to one array on one device** — characters, items, effect
+  groups, resources, spells, notes, custom content. Two devices both produce id 4. This is the first
+  thing that has to change before anything syncs.
+- **Nothing has a stable identity.** No device id, no user id; `settings.username` is "Adventurer"
+  on every fresh install.
+- Inventory items reference the *recipient's* world by name — `category` keys into their
+  `categoryRules`, and an item in a category they don't have renders nowhere at all, silently.
+  `ammunition` and `resource.refillFrom` are name lookups too.
+- Effect groups have no provenance (no `sourceCharacterId`), and `effectAmount()` resolves scaling
+  tiers against the *holder's* level, so a tiered effect pushed from another character recomputes
+  wrongly on arrival.
+- Three backgrounds (Soldier, Sage, Criminal) are PHB text, not SRD 5.1 — only Acolyte is in the
+  SRD. They carry `official: false` and render a "3PP" tag, which says *third-party homebrew* when
+  the truth is *unlicensed WotC*. The comment at the table says so.
+- No attribution ships anywhere in the app: every mention of CC-BY, the SRD and 5esrd.com is in a
+  source comment. No LICENSE file, no credits screen. CC-BY requires attribution in the distributed
+  work.
+
+## Writing copy
+
+Say the thing in as few words as it takes. A confirmation is "Are you sure you want to
+continue?", not a paragraph explaining what continuing means. The player is holding a phone at a
+table, not reading documentation.
+
+Two rules that came out of getting this wrong:
+
+- **A warning that is always on screen is not a warning.** If something needs the player's
+  attention at a decision point, ask at the decision point -- a confirm on Next, not a banner that
+  is already there when the step loads. A banner the player has been staring at since the page
+  loaded is furniture.
+- **Don't narrate state back at the player.** A description that reads "Optional rule: your
+  origin's increases go wherever you want them. Dragonborn's own increase is replaced -- +2
+  Strength, +1 Charisma" is telling them three things they can already see, in a sentence they have
+  to parse. Name the rule, stop.
+
+- **Assume the player knows D&D.** This is a character sheet, not a tutorial. Someone equipping a
+  weapon knows what "Martial" is; someone casting knows what a spell slot does. Name the thing and
+  stop -- "Martial", not "needs Martial proficiency". The exceptions are what *this app* has
+  decided (which category counts weight, what a custom origin does to your race's increase) and
+  content the player wrote themselves, because neither is knowable from the rules.
+
+Applies to warnings, hints, empty states, confirmations and field notes alike. Long explanatory
+prose belongs in Help & Rules, where someone has chosen to go and read.
+
+## Verification
+
+**The suite cannot catch a UI bug.** The harness has no layout engine and fires no listener, so a
+control that renders perfectly and does nothing passes. Every interaction bug found in this repo was
+found by driving a real browser, not by the tests.
+
+So: after any change to markup, wiring or CSS, drive it in Chromium. `/home/claude/drive.js` in the
+authoring environment is one way; any Playwright script that loads `index.html` and clicks the thing
+you changed is equivalent. Assert the DOM, not the source.
+
+And Chromium alone is not enough. The weapon property picker shipped a `<button>` inside a
+`<button>` — invalid HTML that Chromium tolerates and every spec-compliant parser reshapes. It
+rendered correctly in Chromium, passed 1,522 tests, and was visibly broken in Firefox with the tap
+target in the wrong place. The `structure` suite now fails on nested `<button>`/`<a>`/`<form>`, but
+the lesson generalises: **a green suite and a good screenshot are weaker evidence than they feel.**
 
 ## Working in this repo
 

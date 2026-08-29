@@ -230,11 +230,17 @@ function syncFeatureList(idPrefix, features, withLevel) {
     if (f.choice) {
       syncChoiceOptions(idPrefix, i, f.choice);
       const options = f.choice.options;
+      // `grants` has no form control -- it is what tells Half-Elf's Skill
+      // Versatility (two new proficiencies) from Rogue's Expertise -- so it
+      // has to be carried across rather than rebuilt away. Opening and saving
+      // an imported feature used to silently drop it and change what it did.
+      const grants = f.choice.grants;
       f.choice = {
         kind: document.getElementById(idPrefix + "-choice-" + i + "-kind").value,
         count: parseInt(document.getElementById(idPrefix + "-choice-" + i + "-count").value) || 1,
         prompt: document.getElementById(idPrefix + "-choice-" + i + "-prompt").value.trim()
       };
+      if (grants) f.choice.grants = grants;
       if (f.choice.kind === "custom") f.choice.options = options || [];
     }
     if (f.resource) {

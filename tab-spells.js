@@ -26,6 +26,16 @@ function spellCastingTimeCode(text) {
   return "A";
 }
 
+// the row shows the one-letter code as a quiet tag; the detail window has the
+// room to say it in full. Anything not one of the three buckets (an imported
+// spell, a hand-typed one) is shown as-is rather than silently relabelled.
+function castingTimeLabel(code) {
+  if (code === "A") return "Action";
+  if (code === "B") return "Bonus Action";
+  if (code === "R") return "Reaction";
+  return code || "";
+}
+
 // heuristic, not data -- SRD_SPELLS is description-only (see its own header
 // comment) and carries no structured attack-roll flag, so this reads the
 // spell's own text the same way a player would, to decide whether "Requires
@@ -36,17 +46,56 @@ function spellLikelyAttackRoll(desc) {
   return /spell attack/i.test(desc);
 }
 
+/* Damage is authored, not derived: SRD_SPELLS is prose (see its own header)
+   and carries no structured damage, so a spell's `damage` is a notation the
+   player owns, exactly like a weapon's. This reads the description the way a
+   player would -- the first dice expression the text calls damage -- purely
+   to PRE-FILL that field, where a wrong reading is a typo the player corrects
+   before saving. It is never consulted at render or roll time; a guess on the
+   sheet would be a number the player never agreed to. */
+function suggestedSpellDamage(desc) {
+  const match = (desc || "").match(/(\d*d\d+(?:\s*[+-]\s*\d+)?)(?=[^.]{0,40}?damage)/i);
+  return match ? match[1].replace(/\s+/g, "") : "";
+}
+
+/* The to-hit bonus belongs to the spell's own casting class, so a spell
+   naming a class this character doesn't cast has no number to show. Returning
+   null rather than calculating against an undefined ability keeps NaN off the
+   sheet; the pill still renders, and tapping it explains (rollSpellAttack). */
+function spellAttackBonus(spell) {
+  const caster = character.spellcasting.classes.find(c => c.name === spell.classSource);
+  return caster ? calculateSpellAttack(character, caster.ability) : null;
+}
+
+function spellSaveDC(spell) {
+  const caster = character.spellcasting.classes.find(c => c.name === spell.classSource);
+  return caster ? calculateSpellDC(character, caster.ability) : null;
+}
+
+/* Pinning is stored on the spell itself rather than in a second list, so it
+   rides along in the existing save/export and can never point at a spell that
+   was deleted. */
+function pinnedSpells(character) {
+  return character.spells.filter(s => s.pinned);
+}
+
+/* One row shape, shared by the Spells tab and the Combat tab's pinned list, so
+   a pinned Fire Bolt reads exactly like the weapon rows above it: filled pills
+   are rolls, and a spell that attacks gets the same to-hit/damage pair a
+   weapon does. Cast is the extra one -- it's what spends the slot. */
 function renderSpellRow(spell) {
   const showClassTag = character.spellcasting.classes.length > 1;
+  const atk = spell.attackRoll ? spellAttackBonus(spell) : null;
   return `
     <div class="atk-row" data-spell-view="${spell.id}">
       ${spell.level > 0 ? `<div class="prof-dot ${spell.prepared ? "prof" : ""}" data-spell-prep="${spell.id}"></div>` : ""}
-      <div style="flex:1;">
-        <div class="atk-name">${esc(spell.name)}</div>
+      <div style="flex:1;min-width:0;">
+        <div class="atk-name">${esc(spell.name)}<span class="res-tag">${esc(spell.castingTime)}</span></div>
         ${showClassTag ? `<div class="atk-range">${esc(spell.classSource)}</div>` : ""}
       </div>
-      <div class="spell-tag">${esc(spell.castingTime)}</div>
       ${spell.level > 0 ? `<button class="atk-pill" data-spell-cast="${spell.id}">Cast</button>` : ""}
+      ${spell.attackRoll ? `<button class="atk-pill" data-spell-roll="${spell.id}">${atk ? formatModifier(atk.total) : "Attack"}</button>` : ""}
+      ${spell.damage ? `<button class="atk-pill" data-spell-damage="${spell.id}">${esc(spell.damage)}</button>` : ""}
     </div>
   `;
 }
@@ -69,7 +118,15 @@ function renderSpellsTab() {
 
   const prepared = calculatePreparedSpellCount(character);
   const visibleSpells = character.spells.filter(s => spellFilter === "all" || s.level === 0 || s.prepared);
-  const levels = [0].concat(Object.keys(character.spellSlots).map(n => parseInt(n)).sort((a, b) => a - b));
+  // levels come from the slots AND from the spells themselves: a spell can
+  // outrun its slots (added before levelling, imported, or granted by an
+  // item), and a level that renders no header renders no row, which makes
+  // the spell impossible to edit or delete
+  const levels = [...new Set(
+    [0]
+      .concat(Object.keys(character.spellSlots).map(n => parseInt(n)))
+      .concat(character.spells.map(s => s.level))
+  )].filter(n => !isNaN(n)).sort((a, b) => a - b);
 
   const levelsHtml = levels.map(lvl => {
     const spellsInLevel = visibleSpells.filter(s => s.level === lvl);
@@ -79,13 +136,32 @@ function renderSpellsTab() {
       <div class="section-head-row" data-spelllevel-toggle="${lvl}" style="cursor:pointer;margin-top:16px;">
         <div class="section-head" style="font-size:14px;margin:0;">${esc(levelLabel(lvl))}</div>
         <div style="display:flex;align-items:center;gap:10px;">
-          ${slot ? `<button class="mini-edit" data-edit-slots="${lvl}">\u270E</button><span style="color:var(--text-dim);font-size:12px;">${slot.current}/${slot.max} slots</span>` : ""}
-          <span style="color:var(--text-dim);font-size:12px;">${isOpen ? "\u2212" : "+"}</span>
+          ${slot
+            ? `<button class="mini-edit" data-edit-slots="${lvl}">\u270E</button><span style="color:var(--text-dim);font-size:12px;">${slot.current}/${slot.max} slots</span>`
+            : (lvl > 0 ? `<span style="color:var(--text-dim);font-size:12px;">no slots</span>` : "")}
         </div>
       </div>
       ${isOpen ? (spellsInLevel.map(s => renderSpellRow(s)).join("") || `<div class="empty-hint">Nothing here</div>`) : ""}
     `;
   }).join("");
+
+  /* A non-caster arriving here used to see a filter, "0 / 0 prepared" and an
+     empty Cantrips heading, which reads as a screen that failed to load rather
+     than one that doesn't apply. Nothing about a Barbarian says "you don't
+     cast" anywhere else, so it has to be said here. */
+  const nonCaster = !classes.length && !character.spells.length;
+  if (nonCaster) {
+    return `
+      <div class="empty-hint" style="padding:70px 20px;">
+        ${esc(character.name)} doesn't cast spells.<br><br>
+        Nothing in ${esc(classLineFor(character))} grants spellcasting. If a feat,
+        item or multiclass changes that, add a spell here and this tab fills in.
+      </div>
+      <div class="section-head-row" style="margin-top:20px;">
+        <div class="section-head">Spells</div>
+        <button class="add-link" id="add-spell-button">+ Add</button>
+      </div>`;
+  }
 
   return `
     ${statSquaresHtml}
@@ -110,6 +186,19 @@ function renderSpellsTab() {
 // rather than refusing the cast.
 function castSpell(spellId) {
   const spell = character.spells.find(s => s.id == spellId);
+  if (!spell) return;
+
+  // resolve everything that can fail BEFORE spending anything -- this used to
+  // decrement first and then throw on `cls.ability`, so the slot was gone,
+  // the re-render never ran, and the screen still showed the old count
+  const caster = spell.attackRoll
+    ? character.spellcasting.classes.find(c => c.name === spell.classSource)
+    : null;
+  if (spell.attackRoll && !caster) {
+    showToast(spell.name + " is set to roll to hit for " + (spell.classSource || "no class") + ", which isn't one of your casting classes");
+    return;
+  }
+
   const slot = character.spellSlots[spell.level];
   if (slot) {
     if (slot.current <= 0) showToast("No " + levelLabel(spell.level).replace(" Level", "") + "-level slots left");
@@ -117,24 +206,40 @@ function castSpell(spellId) {
   } else if (spell.level > 0) {
     showToast("No " + levelLabel(spell.level).replace(" Level", "") + "-level slots on this sheet");
   }
-  if (spell.attackRoll) {
-    const cls = character.spellcasting.classes.find(c => c.name === spell.classSource);
-    const atk = calculateSpellAttack(character, cls.ability);
-    showRoll({ label: spell.name, notation: "1d20" + formatModifier(atk.total),
-               sources: atk.sources, kind: "attack" });
-  }
+  if (caster) rollSpellAttack(spell);
   renderContent();
+}
+
+/* Shared by Cast and by a cantrip's Roll pill. Returns false when the spell
+   names a class this character doesn't cast, so no caller rolls on undefined. */
+function rollSpellAttack(spell) {
+  const caster = character.spellcasting.classes.find(c => c.name === spell.classSource);
+  if (!caster) {
+    showToast(spell.name + " is set to roll to hit for " + (spell.classSource || "no class") + ", which isn't one of your casting classes");
+    return false;
+  }
+  const atk = calculateSpellAttack(character, caster.ability);
+  showRoll({ label: spell.name, notation: "1d20" + formatModifier(atk.total),
+             sources: atk.sources, kind: "attack" });
+  return true;
+}
+
+/* The whole notation is the player's, so there is no breakdown to show -- the
+   same as a weapon damage part with no ability modifier on it. kind "damage"
+   is what gives the roll window its half/max readouts. */
+function rollSpellDamage(spell) {
+  showRoll({ label: spell.name + " Damage", notation: spell.damage, sources: [], kind: "damage" });
 }
 
 function wireSpellsTab() {
   character.spellcasting.classes.forEach(cls => {
-    const atkBox = document.querySelector(`[data-spell-atk="${esc(cls.name)}"]`);
+    const atkBox = [...document.querySelectorAll("[data-spell-atk]")].find(el => el.dataset.spellAtk === cls.name);
     if (atkBox) atkBox.addEventListener("click", () => {
       const atk = calculateSpellAttack(character, cls.ability);
       openBreakdownModal(cls.name + " Spell Attack", formatModifier(atk.total), "", atk.sources,
         { label: cls.name + " Spell Attack", notation: "1d20" + formatModifier(atk.total), kind: "attack" });
     });
-    const dcBox = document.querySelector(`[data-spell-dc="${esc(cls.name)}"]`);
+    const dcBox = [...document.querySelectorAll("[data-spell-dc]")].find(el => el.dataset.spellDc === cls.name);
     if (dcBox) dcBox.addEventListener("click", () => {
       const dc = calculateSpellDC(character, cls.ability);
       openBreakdownModal(cls.name + " Spell DC", dc.total, "", dc.sources);
@@ -157,7 +262,18 @@ function wireSpellsTab() {
     btn.addEventListener("click", (e) => { e.stopPropagation(); openEditSlotsModal(parseInt(btn.dataset.editSlots)); });
   });
 
-  document.querySelectorAll("[data-spell-prep]").forEach(dot => {
+  wireSpellRows(document.getElementById("content"));
+
+  const addSpellButton = document.getElementById("add-spell-button");
+  if (addSpellButton) addSpellButton.addEventListener("click", openAddSpellModal);
+}
+
+/* Spell rows are rendered on two tabs now, so their listeners are attached
+   from one place. `root` is always the tab container, never the document -- a
+   document-wide query here would reach into whatever modal happens to be open
+   and wire its controls a second time (see the note above wireCombatTab). */
+function wireSpellRows(root) {
+  root.querySelectorAll("[data-spell-prep]").forEach(dot => {
     dot.addEventListener("click", (e) => {
       e.stopPropagation();
       const spell = character.spells.find(s => s.id == dot.dataset.spellPrep);
@@ -166,27 +282,33 @@ function wireSpellsTab() {
     });
   });
 
-  document.querySelectorAll("[data-spell-cast]").forEach(btn => {
+  root.querySelectorAll("[data-spell-cast]").forEach(btn => {
     btn.addEventListener("click", (e) => { e.stopPropagation(); castSpell(btn.dataset.spellCast); });
   });
 
-  document.querySelectorAll("[data-spell-view]").forEach(row => {
-    row.addEventListener("click", (e) => {
-      if (e.target.closest("[data-spell-prep]") || e.target.closest("[data-spell-cast]")) return;
-      const spell = character.spells.find(s => s.id == row.dataset.spellView);
-      if (spell.level === 0 && spell.attackRoll) {
-        const cls = character.spellcasting.classes.find(c => c.name === spell.classSource);
-        const atk = calculateSpellAttack(character, cls.ability);
-        showRoll({ label: spell.name, notation: "1d20" + formatModifier(atk.total),
-                   sources: atk.sources, kind: "attack" });
-      } else {
-        openSpellDetailModal(spell.id);
-      }
+  root.querySelectorAll("[data-spell-roll]").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      rollSpellAttack(character.spells.find(s => s.id == btn.dataset.spellRoll));
     });
   });
 
-  const addSpellButton = document.getElementById("add-spell-button");
-  if (addSpellButton) addSpellButton.addEventListener("click", openAddSpellModal);
+  root.querySelectorAll("[data-spell-damage]").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      rollSpellDamage(character.spells.find(s => s.id == btn.dataset.spellDamage));
+    });
+  });
+
+  root.querySelectorAll("[data-spell-view]").forEach(row => {
+    row.addEventListener("click", (e) => {
+      if (e.target.closest("[data-spell-prep]") || e.target.closest("[data-spell-cast]")
+          || e.target.closest("[data-spell-roll]") || e.target.closest("[data-spell-damage]")) return;
+      // the row opens the spell's own window; rolling is the pills' job, so an
+      // attack cantrip is still reachable for editing and deleting
+      openSpellDetailModal(row.dataset.spellView);
+    });
+  });
 }
 
 function openEditSlotsModal(level) {
@@ -215,6 +337,11 @@ function openEditSlotsModal(level) {
 // Language already uses.
 function spellFormFieldsHtml(spell, pickFromSrd) {
   const classOptions = character.spellcasting.classes.map(c => c.name);
+  // a spell already carrying a damage notation keeps it; one that never had
+  // one gets the description read to it as a starting point, said out loud in
+  // the field hint so nothing is stored the player didn't look at
+  const suggested = spell && !spell.damage ? suggestedSpellDamage(spell.desc) : "";
+  const damageValue = spell ? (spell.damage || suggested) : "";
   return `
     ${pickFromSrd
       ? comboFieldHtml("spell-form-name", "Name", "Search the SRD or type your own", "")
@@ -229,6 +356,12 @@ function spellFormFieldsHtml(spell, pickFromSrd) {
       { value: "A", label: "Action" }, { value: "B", label: "Bonus Action" }, { value: "R", label: "Reaction" }
     ], spell ? spell.castingTime : "A")}
     ${toggleLineHtml("spell-form-attack-switch", "Requires spell attack roll", spell && spell.attackRoll)}
+    ${textFieldHtml("spell-form-damage", "Damage", damageValue, {
+      placeholder: "e.g. 8d6",
+      hint: suggested
+        ? "Read out of the description \u2014 check it before saving. Blank means no damage pill."
+        : "Dice this spell deals, rolled as written. Leave blank for a spell that deals none."
+    })}
     ${textAreaFieldHtml("spell-form-desc", "Description", spell ? spell.desc : "", { placeholder: "Optional", large: true })}
   `;
 }
@@ -239,6 +372,7 @@ function readSpellForm() {
     level: parseInt(document.getElementById("spell-form-level").value),
     classSource: document.getElementById("spell-form-class").value,
     castingTime: document.getElementById("spell-form-time").value,
+    damage: document.getElementById("spell-form-damage").value.trim(),
     desc: document.getElementById("spell-form-desc").value.trim()
   };
 }
@@ -250,6 +384,7 @@ function openAddSpellModal() {
     ${spellFormFieldsHtml(null, true)}
     <button class="btn-primary" id="save-spell-button" style="margin-top:6px;">Add Spell</button>
   `);
+  guardModalEdits();
   wireSelect("spell-form-level"); wireSelect("spell-form-class"); wireSelect("spell-form-time");
   document.getElementById("spell-form-attack-switch").addEventListener("click", (e) => { attackOn = !attackOn; e.currentTarget.classList.toggle("on", attackOn); });
 
@@ -269,6 +404,7 @@ function openAddSpellModal() {
     if (matchedClass) setSelectValue("spell-form-class", matchedClass);
     attackOn = spellLikelyAttackRoll(known.desc);
     document.getElementById("spell-form-attack-switch").classList.toggle("on", attackOn);
+    document.getElementById("spell-form-damage").value = suggestedSpellDamage(known.desc);
     document.getElementById("spell-form-desc").value = known.desc;
   });
 
@@ -276,6 +412,7 @@ function openAddSpellModal() {
     const formData = readSpellForm();
     const newId = Math.max(0, ...character.spells.map(s => s.id)) + 1;
     const spell = Object.assign({ id: newId, attackRoll: attackOn }, formData);
+    if (!spell.damage) delete spell.damage;
     if (spell.level > 0) spell.prepared = false;
     character.spells.push(spell);
     closeModal();
@@ -283,7 +420,74 @@ function openAddSpellModal() {
   });
 }
 
+/* The full-info window for a spell -- the sibling of openAttackDetailModal.
+   Tapping a row used to land straight in the form, which is the one screen
+   that can't answer "what does this spell do again?". Editing is a route out
+   of here, exactly as it is for a weapon, and delete stays inside the form
+   with the rest of the destructive work. */
 function openSpellDetailModal(spellId) {
+  const spell = character.spells.find(s => s.id == spellId);
+  if (!spell) return;
+  const atk = spell.attackRoll ? spellAttackBonus(spell) : null;
+  const dc = spellSaveDC(spell);
+  const meta = [
+    spell.level === 0 ? "Cantrip" : levelLabel(spell.level),
+    spell.classSource,
+    castingTimeLabel(spell.castingTime)
+  ].filter(Boolean).join(" \u00B7 ");
+
+  openModal("full", `
+    <div class="modal-heading">${esc(spell.name)}</div>
+    <div class="breakdown-source">${esc(meta)}</div>
+    ${spell.desc ? `<div class="breakdown-source spell-desc">${esc(spell.desc)}</div>` : ""}
+
+    ${spell.level > 0 ? toggleLineHtml("spell-prepared-switch", "Prepared", !!spell.prepared) : ""}
+    ${toggleLineHtml("spell-pin-switch", "Pin to the Combat tab", spell.pinned,
+      { hint: "Shows under Attacks. Unpinning doesn't delete it.",
+        style: "margin-top:12px;" })}
+
+    ${spell.attackRoll && !atk ? `
+      <div class="breakdown-source" style="margin-top:14px;">Set to roll to hit for ${esc(spell.classSource || "no class")}, which isn't one of your casting classes.</div>` : ""}
+    ${atk ? `
+      <div class="breakdown-subhead">To Hit</div>
+      ${breakdownRowsHtml(atk.sources)}
+      <hr class="breakdown-divider">
+      <div class="breakdown-total"><span>Total</span><span>${formatModifier(atk.total)}</span></div>` : ""}
+
+    ${spell.damage ? `
+      <div class="breakdown-subhead">Damage</div>
+      <div class="breakdown-row"><span>Dice</span><span>${esc(spell.damage)}</span></div>` : ""}
+
+    ${dc && !spell.attackRoll ? `
+      <div class="breakdown-subhead">${esc(spell.classSource)} Save DC</div>
+      ${breakdownRowsHtml(dc.sources)}
+      <hr class="breakdown-divider">
+      <div class="breakdown-total"><span>Total</span><span>${dc.total}</span></div>` : ""}
+
+    <button class="btn-primary" id="edit-spell-button" style="margin-top:22px;">Edit Spell</button>
+  `);
+
+  // pinning is a stored flag on the spell, so it redraws the sheet the same
+  // way the attack window's grip switch does -- Combat is one tap away
+  const preparedSwitch = document.getElementById("spell-prepared-switch");
+  if (preparedSwitch) preparedSwitch.addEventListener("click", (e) => {
+    spell.prepared = !spell.prepared;
+    e.currentTarget.classList.toggle("on", spell.prepared);
+    renderContent();          // the row's dot and the "x / y prepared" count
+  });
+
+  document.getElementById("spell-pin-switch").addEventListener("click", (e) => {
+    spell.pinned = !spell.pinned;
+    if (!spell.pinned) delete spell.pinned;
+    e.currentTarget.classList.toggle("on", !!spell.pinned);
+    renderContent();
+    showToast(spell.pinned ? spell.name + " pinned to Combat" : spell.name + " unpinned from Combat");
+  });
+
+  document.getElementById("edit-spell-button").addEventListener("click", () => openSpellEditModal(spellId));
+}
+
+function openSpellEditModal(spellId) {
   const spell = character.spells.find(s => s.id == spellId);
   let attackOn = spell.attackRoll || false;
   openModal("full", `
@@ -291,23 +495,35 @@ function openSpellDetailModal(spellId) {
     ${spellFormFieldsHtml(spell)}
     <div class="btn-row-2" style="margin-top:6px;">
       <button class="btn-primary" id="save-spell-edit-button">Save Changes</button>
-      <button class="btn-primary" id="remove-spell-button" style="background:var(--danger-surface);color:var(--danger-text);">Remove</button>
+      <button class="btn-primary btn-danger" id="remove-spell-button">Remove</button>
     </div>
   `);
+  guardModalEdits();
   wireSelect("spell-form-level"); wireSelect("spell-form-class"); wireSelect("spell-form-time");
   document.getElementById("spell-form-attack-switch").addEventListener("click", (e) => { attackOn = !attackOn; e.currentTarget.classList.toggle("on", attackOn); });
   document.getElementById("save-spell-edit-button").addEventListener("click", () => {
     const formData = readSpellForm();
     Object.assign(spell, formData);
     spell.attackRoll = attackOn;
+    if (!spell.damage) delete spell.damage;
     if (spell.level === 0) delete spell.prepared;
     else if (spell.prepared === undefined) spell.prepared = false;
     closeModal();
     renderContent();
   });
+  // now that a spell can also be pinned to Combat, "Remove" and "unpin" are
+  // two different things and one of them is permanent -- so it asks
   document.getElementById("remove-spell-button").addEventListener("click", () => {
-    character.spells = character.spells.filter(s => s.id != spellId);
-    closeModal();
-    renderContent();
+    confirmModal({
+      title: "Remove " + spell.name + "?",
+      body: "This deletes the spell from your sheet, including anywhere it's pinned.",
+      confirmLabel: "Remove",
+      danger: true,
+      onConfirm: () => {
+        character.spells = character.spells.filter(s => s.id != spellId);
+        closeModal();
+        renderContent();
+      }
+    });
   });
 }

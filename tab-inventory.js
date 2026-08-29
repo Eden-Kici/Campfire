@@ -5,42 +5,112 @@
 let openInvCategories = {};
 let suppressInvClickUntil = 0;
 
-function renderInventoryTab() {
-  const bonuses = [];
-  character.inventory.forEach(item => {
-    const rule = character.categoryRules[item.category];
-    if (!rule || !rule.appliesEffects) return;
-    if (item.acBonus) bonuses.push({ value: formatModifier(item.acBonus) + " AC", name: item.name });
-    if (item.attackBonus) bonuses.push({ value: formatModifier(item.attackBonus) + " Attack", name: item.name });
+/* Coin gets its own row at the top rather than living as an inventory item.
+   It's the number a player checks most often in a shop and it doesn't behave
+   like an item -- no category, no quantity-of-one, and the denominations
+   convert into each other.
+
+   The stash only renders when the setting is on, so a table that doesn't
+   track it never sees a second row it has to ignore. */
+function coinCellsHtml(purse, target) {
+  return COIN_TYPES.map(coin => `
+    <button class="coin-cell" data-coin-edit="${target}:${coin.key}" title="${esc(coin.name)}">
+      <span class="coin-amount">${coinCount(purse, coin.key)}</span>
+      <span class="coin-label">${coin.label}</span>
+    </button>`).join("");
+}
+
+function moneyRowHtml() {
+  const stashOn = typeof settings !== "undefined" && settings.trackStashedMoney;
+  return `
+    <div class="money-block">
+      <div class="money-head">
+        <span class="money-head-label">${stashOn ? "Carried" : "Money"}</span>
+        <span class="money-total">${formatGold(moneyInGold(character.purse))} gp</span>
+      </div>
+      <div class="coin-row">${coinCellsHtml(character.purse, "purse")}</div>
+      ${stashOn ? `
+        <div class="money-head" style="margin-top:10px;">
+          <span class="money-head-label">Stashed</span>
+          <span class="money-total">${formatGold(moneyInGold(character.stash))} gp</span>
+        </div>
+        <div class="coin-row">${coinCellsHtml(character.stash, "stash")}</div>` : ""}
+    </div>`;
+}
+
+// two decimals only when they say something -- "42 gp", not "42.00 gp"
+function formatGold(value) {
+  const rounded = Math.round(value * 100) / 100;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
+}
+
+function roundWeight(value) {
+  const rounded = Math.round(value * 100) / 100;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
+}
+
+function openCoinEditModal(target, key) {
+  const coin = COIN_TYPES.find(c => c.key === key);
+  const purse = target === "stash" ? character.stash : character.purse;
+  const where = target === "stash" ? "Stashed" : "Carried";
+
+  openModal("center", `
+    <div class="modal-heading">${esc(where)} ${esc(coin.name)}</div>
+    ${numberFieldHtml("coin-amount-input", coin.name + " pieces", coinCount(purse, key))}
+    <button class="btn-primary" id="coin-save">Save</button>
+  `);
+  guardModalEdits();
+  document.getElementById("coin-save").addEventListener("click", () => {
+    const value = parseInt(document.getElementById("coin-amount-input").value);
+    if (target === "stash") {
+      if (!character.stash) character.stash = emptyPurse();
+      character.stash[key] = isNaN(value) ? 0 : value;
+    } else {
+      if (!character.purse) character.purse = emptyPurse();
+      character.purse[key] = isNaN(value) ? 0 : value;
+    }
+    modalDismissGuard = null;
+    closeModal();
+    renderContent();
   });
+}
+
+/* The gear-bonus chips are gone.
+
+   "+1 Attack Ring of Precision" was inert text wearing a control's shape --
+   nothing happened when you tapped it -- and the Ring of Precision row a
+   hundred pixels below already said "+1 Attack". The CSS comment records that
+   an orange callout was removed once before for duplicating the item rows; the
+   duplication survived, it just got quieter. The item row is the one place
+   this belongs, and the stat it feeds explains itself in its own breakdown. */
+function renderInventoryTab() {
   const weight = calculateCarriedWeight(character);
   const categories = Object.keys(character.categoryRules);
 
+  const capacity = calculateCarryingCapacity(character);
+  const over = weight.total > capacity.total;
+
   return `
+    ${moneyRowHtml()}
     <div class="weight-line" style="display:flex;align-items:center;justify-content:space-between;">
-      <span>Carried weight: <strong>${weight.total} lb</strong></span>
+      <button class="weight-total ${over ? "over" : ""}" id="weight-breakdown">Carried weight: <strong>${roundWeight(weight.total)} / ${capacity.total} lb</strong></button>
       <button class="add-link" id="add-inventory-button">+ Add</button>
     </div>
-    ${bonuses.length ? `
-      <div class="chip-row" style="margin-top:10px;">
-        ${bonuses.map(bonus => `<div class="chip chip-stat"><span class="chip-value">${esc(bonus.value)}</span>${esc(bonus.name)}</div>`).join("")}
-      </div>` : ""}
 
     <div id="inventory-sections">
       ${categories.map(cat => {
         const isOpen = openInvCategories[cat] !== false;
         const items = character.inventory.filter(i => i.category === cat);
         return `
-          <div class="section-head-row" data-cat-card="${esc(cat)}" data-inv-cat-toggle="${esc(cat)}" style="cursor:pointer;touch-action:none;">
+          <div class="section-head-row" data-cat-card="${esc(cat)}" data-inv-cat-toggle="${esc(cat)}" style="cursor:pointer;touch-action:pan-y;">
             <div class="section-head">${esc(cat)}</div>
             <div style="display:flex;align-items:center;gap:10px;">
               <button class="mini-edit" data-edit-category="${esc(cat)}">\u270E</button>
-              <span style="color:var(--text-dim);font-size:12px;">${isOpen ? "\u2212" : "+"}</span>
             </div>
           </div>
           <div data-cat-body="${esc(cat)}" style="${isOpen ? "" : "display:none;"}">
             ${items.map(item => `
-              <div class="item-row" data-item-view="${item.id}" data-item-id="${item.id}" style="touch-action:none;">
+              <div class="item-row" data-item-view="${item.id}" data-item-id="${item.id}" style="touch-action:pan-y;">
                 <div style="flex:1;">
                   <div class="item-name">${esc(item.name)}${item.qty > 1 ? " \u00D7" + item.qty : ""}</div>
                   ${(character.categoryRules[cat].appliesEffects && (item.acBonus || item.attackBonus)) ? `<div class="item-effect">${item.acBonus ? formatModifier(item.acBonus) + " AC " : ""}${item.attackBonus ? formatModifier(item.attackBonus) + " Attack " : ""}</div>` : ""}
@@ -174,6 +244,24 @@ function wireItemDragging() {
 function wireInventoryTab() {
   document.getElementById("add-inventory-button").addEventListener("click", () => openAddInventoryModal());
 
+  document.querySelectorAll("[data-coin-edit]").forEach(cell => {
+    cell.addEventListener("click", () => {
+      const [target, key] = cell.dataset.coinEdit.split(":");
+      openCoinEditModal(target, key);
+    });
+  });
+
+  // the weight total could not explain itself, though it already computed the
+  // itemised list -- and there was no capacity to compare it against
+  const weightButton = document.getElementById("weight-breakdown");
+  if (weightButton && weightButton.addEventListener) weightButton.addEventListener("click", () => {
+    const weight = calculateCarriedWeight(character);
+    const capacity = calculateCarryingCapacity(character);
+    const rows = weight.sources.map(src => ({ label: src.label, value: roundWeight(src.value), plain: true, suffix: " lb" }))
+      .concat(capacity.sources.map(src => ({ label: "Capacity \u00B7 " + src.label, value: src.value, plain: true, suffix: " lb", heading: true })));
+    openBreakdownModal("Carried Weight", roundWeight(weight.total) + " / " + capacity.total, " lb", rows);
+  });
+
   document.querySelectorAll("[data-inv-cat-toggle]").forEach(head => {
     head.addEventListener("click", (e) => {
       if (Date.now() < suppressInvClickUntil) return;
@@ -244,39 +332,28 @@ function commonItemFieldsHtml(item) {
       ${numberFieldHtml("if-ac", "AC Bonus", item.acBonus || 0)}
       ${numberFieldHtml("if-atkb", "Attack Bonus", item.attackBonus || 0)}
     </div>
-    ${toggleLineHtml("if-resource-switch", "Track under Resources", item.resource,
-      { hint: "for things you spend, like arrows" })}
-    <div id="if-resource-fields">${item.resource ? itemResourceFieldsHtml(item.resource) : ""}</div>`;
+`;
 }
+
+/* Tracking is not edited here.
+
+   It used to be a toggle in this form and a set of facts in the item's detail
+   view and a full editor under Resources -- three places describing the same
+   thing. It belongs where the player is looking at the item, so the toggle
+   lives in the detail modal and the fine configuration stays in the Resource
+   editor on Combat. This form is for what the item *is*. */
 
 function itemResourceFieldsHtml(resource) {
   resource = resource || {};
+  const noMaximum = (resource.max || 0) === 0;
   return `
     ${numberFieldHtml("if-res-max", "Capacity", resource.max != null ? resource.max : 0,
       { placeholder: "0", hint: "Leave at 0 for an uncapped stack — it'll show a bare count." })}
-    ${(resource.max || 0) === 0 && ["all", "half"].includes(resource.recharge && resource.recharge.amount)
-      ? `<div class="form-warning">An uncapped stack has no full amount to restore to, so "All" and "Half" do nothing here. Give it a capacity, or set a specific amount.</div>` : ""}
     ${comboFieldHtml("if-res-refill", "Refills From (optional)", "e.g. Arrows", resource.refillFrom)}
     <div class="atk-range" style="margin:-6px 0 12px;">Name another tracked item and this becomes a container: the count is what's loaded, and a Refill button moves units across.</div>
-    ${rechargeFieldHtml("if-res", resource.recharge || { on: "none", amount: "all" })}`;
-}
-
-// the quantity is the count, so there's no separate "current" to keep in step
-function wireItemResourceFields(item) {
-  const wrap = document.getElementById("if-resource-fields");
-  const toggle = document.getElementById("if-resource-switch");
-  let on = !!(item && item.resource);
-
-  function draw() {
-    wrap.innerHTML = on ? itemResourceFieldsHtml(item && item.resource) : "";
-    if (on) { wireRechargeField("if-res"); wireCombo("if-res-refill", resourceRows(character).map(r => r.name)); }
-  }
-  toggle.addEventListener("click", () => {
-    on = !on;
-    toggle.classList.toggle("on", on);
-    draw();
-  });
-  if (on) { wireRechargeField("if-res"); wireCombo("if-res-refill", resourceRows(character).map(r => r.name)); }
+    <div id="if-res-recharge-wrap">
+      ${rechargeFieldHtml("if-res", resource.recharge || { on: "none", amount: "all" }, { noMaximum })}
+    </div>`;
 }
 
 function readItemResourceFields(existing) {
@@ -323,7 +400,7 @@ function weaponFieldsHtml(weapon) {
     </div>
     <div class="field-row">
       ${comboFieldHtml("wf-req", "Requires Proficiency", "None", weapon.proficiencyRequired)}
-      ${selectFieldHtml("wf-prof", "Proficient?", [
+      ${segmentedFieldHtml("wf-prof", "Proficient?", [
         { value: "derived", label: "Auto" }, { value: "yes", label: "Yes" }, { value: "no", label: "No" }
       ], profValue)}
     </div>
@@ -339,7 +416,7 @@ function weaponFieldsHtml(weapon) {
 function wireWeaponFields(state) {
   wireSelect("wf-ability");
   wireSelect("wf-type");
-  wireSelect("wf-prof");
+  wireSegmented("wf-prof");
   wireCombo("wf-req", WEAPON_PROFICIENCY_TYPES);
   wireCombo("wf-ammo", character.resources.map(r => r.name));
 
@@ -454,6 +531,7 @@ function openAddInventoryModal(presetCategory, presetType) {
     </div>
     <div id="add-inv-body"></div>
   `);
+  guardModalEdits();
 
   const modeItemBtn = document.getElementById("mode-invitem-btn");
   const modeCatBtn = document.getElementById("mode-invcat-btn");
@@ -471,7 +549,6 @@ function openAddInventoryModal(presetCategory, presetType) {
       <button class="btn-primary" id="save-item-button" style="margin-top:16px;">Add Item</button>
     `;
     wireSelect("if-category");
-    wireItemResourceFields(null);
 
     const typeFields = document.getElementById("type-fields");
     renderItemTypeFields(typeFields, state.type, null, state);
@@ -485,8 +562,7 @@ function openAddInventoryModal(presetCategory, presetType) {
       const attackBonus = parseInt(document.getElementById("if-atkb").value) || 0;
       if (acBonus) item.acBonus = acBonus;
       if (attackBonus) item.attackBonus = attackBonus;
-      const tracked = readItemResourceFields(null);
-      if (tracked) item.resource = tracked;
+      // tracking is turned on from the item's own detail view, not here
 
       applyItemType(item, state.type, state);
 
@@ -545,9 +621,10 @@ function openEditCategoryModal(category) {
     ${categoryRuleTogglesHtml("sw-edit-", rule)}
     <div class="btn-row-2">
       <button class="btn-primary" id="save-cat-edit-button">Save Changes</button>
-      <button class="btn-primary" id="remove-cat-button" style="background:var(--danger-surface);color:var(--danger-text);">Remove</button>
+      <button class="btn-primary btn-danger" id="remove-cat-button">Remove</button>
     </div>
   `);
+  guardModalEdits();
   document.getElementById("sw-edit-weight").addEventListener("click", (e) => { weightOn = !weightOn; e.currentTarget.classList.toggle("on", weightOn); });
   document.getElementById("sw-edit-effects").addEventListener("click", (e) => { effectsOn = !effectsOn; e.currentTarget.classList.toggle("on", effectsOn); });
   document.getElementById("sw-edit-attacks").addEventListener("click", (e) => { attacksOn = !attacksOn; e.currentTarget.classList.toggle("on", attacksOn); });
@@ -572,21 +649,41 @@ function openEditCategoryModal(category) {
   });
   document.getElementById("remove-cat-button").addEventListener("click", () => {
     const count = character.inventory.filter(i => i.category === category).length;
-    const warning = count > 0
-      ? `This category contains ${count} item${count === 1 ? "" : "s"} that will also be deleted. Remove "${esc(category)}"?`
-      : `Remove empty category "${esc(category)}"?`;
-    if (!confirm(warning)) return;
-    delete character.categoryRules[category];
-    character.inventory = character.inventory.filter(i => i.category !== category);
-    delete openInvCategories[category];
-    closeModal();
-    renderContent();
+    confirmModal({
+      title: `Remove "${category}"?`,
+      body: count > 0
+        ? `This category contains ${count} item${count === 1 ? "" : "s"}. They will be deleted too.`
+        : "This category is empty.",
+      confirmLabel: "Remove", danger: true,
+      onConfirm: () => {
+        delete character.categoryRules[category];
+        character.inventory = character.inventory.filter(i => i.category !== category);
+        delete openInvCategories[category];
+        closeModal();
+        renderContent();
+      }
+    });
   });
 }
 
 /* Tapping an item shows what it is; editing is a deliberate second step. Same
    split as an attack, a skill or an effect -- looking at something shouldn't
    drop you into a form. */
+/* A tick or a cross, not the word "yes".
+
+   Whether you're proficient is the one fact in this block a player scans for
+   mid-turn, and "yes (needs Simple)" made them read a sentence to find it. The
+   mark carries the answer and the colour carries it again, so it survives a
+   glance. The category is named plainly beside it -- a player who has got as
+   far as equipping a weapon knows what "Martial" means without being told it
+   is a thing they need. */
+function proficiencyMarkHtml(proficiency) {
+  const category = proficiency.required ? ` <span class="prof-need">${esc(proficiency.required)}</span>` : "";
+  return proficiency.proficient
+    ? `<span class="prof-yes">\u2713${category}</span>`
+    : `<span class="prof-no">\u2717${category}</span>`;
+}
+
 function openItemDetailModal(itemId) {
   const item = character.inventory.find(i => i.id == itemId);
   if (!item) return;
@@ -631,7 +728,7 @@ function openItemDetailModal(itemId) {
       ${atk.damage.map(part => `
         <div class="breakdown-row"><span>${esc(part.type || "Damage")}</span><span>${esc(part.notation)}</span></div>
       `).join("")}
-      <div class="breakdown-row"><span>Proficiency</span><span>${atk.proficiency.proficient ? "yes" : "no"}${atk.proficiency.required ? " (needs " + esc(atk.proficiency.required) + ")" : ""}</span></div>
+      <div class="breakdown-row"><span>Proficiency</span>${proficiencyMarkHtml(atk.proficiency)}</div>
       ${item.properties && item.properties.length ? `<div class="breakdown-row"><span>Properties</span><span>${esc(item.properties.join(", "))}</span></div>` : ""}
       ${rule.providesAttacks ? "" : `<div class="menu-note">Stowed in ${esc(item.category)}, so it isn't on your Attacks list.</div>`}
       ${toggleLineHtml("item-offhand-switch", "Off-hand weapon", atk.offHand,
@@ -653,7 +750,10 @@ function openItemDetailModal(itemId) {
       <button class="btn-primary" id="detail-edit-button">Edit</button>
       <button class="btn-primary" id="detail-give-button" style="background:var(--control);color:var(--accent-soft);">Give</button>
     </div>
-    ${item.resource ? `<button class="btn-secondary" id="detail-untrack-button">Stop tracking as a resource</button>` : ""}
+    ${toggleLineHtml("detail-track-switch", "Track under Resources", !!item.resource,
+      { hint: "For things you spend, like arrows", style: "margin-top:14px;" })}
+    <div id="detail-resource-fields">${item.resource ? itemResourceFieldsHtml(item.resource) : ""}</div>
+    ${item.resource ? `<button class="btn-primary" id="detail-resource-save">Save Tracking</button>` : ""}
   `);
 
   const offHandSwitch = document.getElementById("item-offhand-switch");
@@ -664,14 +764,52 @@ function openItemDetailModal(itemId) {
     openItemDetailModal(itemId);
   });
 
-  const untrack = document.getElementById("detail-untrack-button");
-  if (untrack) untrack.addEventListener("click", () => {
-    // takes it off the Resources list; the item itself is untouched
-    delete item.resource;
+  /* Tracking is turned on and off here, where the player is looking at the
+     item -- it used to be a toggle buried in the edit form. Switching it on
+     creates an uncapped stack, because the quantity is already the count and
+     anything more specific (a capacity, a container to refill from, a
+     recharge) belongs in the Resource editor on Combat, which owns it. */
+  const trackSwitch = document.getElementById("detail-track-switch");
+  if (trackSwitch && trackSwitch.addEventListener) trackSwitch.addEventListener("click", () => {
+    if (item.resource) {
+      // takes it off the Resources list; the item itself is untouched
+      delete item.resource;
+      showToast(item.name + " is no longer tracked");
+    } else {
+      item.resource = { max: 0, recharge: { on: "none", amount: "all" } };
+    }
     closeModal();
     renderContent();
-    showToast(item.name + " is no longer tracked as a resource");
+    openItemDetailModal(itemId);
   });
+
+  // the whole tracking block lives here: turning it on and configuring it are
+  // the same job, and there is nowhere else to set a capacity for an item that
+  // isn't tracked yet
+  if (item.resource) {
+    wireRechargeField("if-res");
+    wireCombo("if-res-refill", resourceRows(character).map(r => r.name));
+
+    /* Capacity decides whether "All" and "Half" mean anything, so the Restores
+       control has to be rebuilt when capacity changes -- otherwise the greying
+       is only correct for the value the form opened with. */
+    const capacity = document.getElementById("if-res-max");
+    if (capacity && capacity.addEventListener) capacity.addEventListener("input", () => {
+      const wrap = document.getElementById("if-res-recharge-wrap");
+      if (!wrap) return;
+      const current = readRechargeValue("if-res");
+      wrap.innerHTML = rechargeFieldHtml("if-res", current, { noMaximum: (parseInt(capacity.value) || 0) === 0 });
+      wireRechargeField("if-res");
+    });
+    const saveTracking = document.getElementById("detail-resource-save");
+    if (saveTracking && saveTracking.addEventListener) saveTracking.addEventListener("click", () => {
+      const tracked = readItemResourceFields(item);
+      if (tracked) item.resource = tracked;
+      closeModal();
+      renderContent();
+      showToast(item.name + " tracking saved");
+    });
+  }
 
   document.getElementById("detail-edit-button").addEventListener("click", () => openItemEditModal(itemId));
   document.getElementById("detail-give-button").addEventListener("click", () => startGiveFlow(item));
@@ -695,9 +833,9 @@ function openItemEditModal(itemId) {
       <button class="btn-primary" id="give-item-button" style="background:var(--control);color:var(--accent-soft);">Give</button>
     </div>
   `);
+  guardModalEdits();
 
   wireSelect("if-category");
-  wireItemResourceFields(item);
   const typeFields = document.getElementById("type-fields");
   renderItemTypeFields(typeFields, state.type, item, state);
   wireItemTypeToggle(state, typeFields, item);
@@ -708,8 +846,8 @@ function openItemEditModal(itemId) {
     const atkb = parseInt(document.getElementById("if-atkb").value) || 0;
     if (ac) item.acBonus = ac; else delete item.acBonus;
     if (atkb) item.attackBonus = atkb; else delete item.attackBonus;
-    const tracked = readItemResourceFields(item);
-    if (tracked) item.resource = tracked; else delete item.resource;
+    // item.resource is deliberately untouched -- this form no longer owns it,
+    // and reading an absent field would silently drop a tracked item's config
 
     applyItemType(item, state.type, state);
 
@@ -724,22 +862,31 @@ function openItemEditModal(itemId) {
   });
 }
 
-function confirmDeleteItem(item) {
-  openModal("center", `
-    <div class="modal-heading">Remove ${esc(item.name)}?</div>
-    <div class="breakdown-source" style="margin-bottom:14px;">This can't be undone.</div>
-    <button class="btn-primary" id="confirm-remove-item-button" style="background:var(--danger-surface);color:var(--danger-text);margin-bottom:8px;">Remove</button>
-    <button class="btn-secondary" id="cancel-remove-item-button">Cancel</button>
-  `);
-  document.getElementById("confirm-remove-item-button").addEventListener("click", () => {
-    character.inventory = character.inventory.filter(i => i.id !== item.id);
-    closeModal();
-    renderContent();
-    showToast("Removed " + item.name);
-  });
-  document.getElementById("cancel-remove-item-button").addEventListener("click", closeModal);
-}
+/* confirmModal, not openModal.
 
+   This was built on openModal, which begins by closing whatever is already
+   open. Deleting from inside the edit form therefore destroyed the form: open
+   Edit Item, change the name, tap the bin, tap Cancel -- and the edit and the
+   unsaved change were both gone. A confirmation is the one dialog that must
+   never take its own caller down with it, which is exactly what confirmModal's
+   separate layer is for. */
+function confirmDeleteItem(item, onDone) {
+  confirmModal({
+    title: "Remove " + item.name + "?",
+    body: "This can't be undone.",
+    confirmLabel: "Remove",
+    danger: true,
+    onConfirm: () => {
+      character.inventory = character.inventory.filter(i => i.id !== item.id);
+      // the caller decides what to do with itself -- the detail modal closes,
+      // the edit form closes, a row just re-renders
+      if (onDone) onDone();
+      else closeModal();
+      renderContent();
+      showToast("Removed " + item.name);
+    }
+  });
+}
 
 /* ---------- give item flow ---------- */
 

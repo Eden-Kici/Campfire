@@ -223,7 +223,7 @@ function subclassesForClass(className) {
    preserved long enough for grantFeatures() to notice it. Callers that only
    want display text strip it themselves. */
 function featuresAtLevel(className, subclassName, level) {
-  const cls = SRD_CLASSES.find(c => c.name === className);
+  const cls = classByName(className);
   if (!cls) return [];
 
   const own = (cls.features || []).filter(f => f.level === level);
@@ -307,7 +307,8 @@ function openLevelUpModal() {
     newClass: "",
     hpMode: "average",
     hpRolled: null,
-    hpManual: null
+    hpManual: null,
+    subclass: null
   };
   openModal("full", "");
   redrawLevelUp();
@@ -316,7 +317,7 @@ function openLevelUpModal() {
 function levelUpTarget() {
   const classes = character.classes || [];
   if (levelUpState.target === "new") {
-    const srd = SRD_CLASSES.find(c => c.name.toLowerCase() === levelUpState.newClass.trim().toLowerCase());
+    const srd = allClasses().find(c => c.name.toLowerCase() === levelUpState.newClass.trim().toLowerCase());
     return {
       isNew: true,
       name: levelUpState.newClass.trim() || "—",
@@ -354,17 +355,53 @@ function levelUpHitPoints(target) {
   };
 }
 
+/* The class field's onChange fires on every keystroke, and this redraw
+   replaces the input being typed into -- which dropped the character just
+   typed and blurred the field. Nothing else in the app redraws from a live
+   text input, so the fix lives here rather than in wireCombo: remember which
+   field had focus and where the caret was, and put it back. */
 function redrawLevelUp() {
   const box = document.querySelector("#modal-overlay .modal-content");
   if (!box) return;
+  const active = document.activeElement;
+  const focusedId = active && active.id && box.contains(active) ? active.id : null;
+  const caret = focusedId ? active.selectionStart : null;
+
   box.innerHTML = levelUpHtml();
   wireLevelUp();
+
+  if (!focusedId) return;
+  const restored = document.getElementById(focusedId);
+  if (!restored) return;
+  restored.focus();
+  try { if (caret !== null) restored.setSelectionRange(caret, caret); } catch (err) { /* not a text input */ }
+}
+
+/* A class that picks its subclass above level 1 (every class but Cleric,
+   Sorcerer and Warlock) has to be asked somewhere, and level-up is the only
+   place it can be: the creator deliberately stopped asking at level 1, which
+   left a wizard-built Fighter with no route to Champion at all. */
+function subclassChoiceDue(entry) {
+  const at = subclassChoiceLevel(entry.name);
+  return !!at && !entry.subclass && entry.level >= at && subclassesForClass(entry.name).length > 0;
+}
+
+// the level-up modal asks about the level being *gained*, not the current one
+function subclassDueAtLevelUp(target) {
+  return subclassChoiceDue({ name: target.name, level: target.to, subclass: target.entry ? target.entry.subclass : null });
+}
+
+function levelUpSubclassFor(target) {
+  if (target.entry && target.entry.subclass) return target.entry.subclass;
+  return levelUpState.subclass || null;
 }
 
 function levelUpHtml() {
   const classes = character.classes || [];
   const known = classes.map(c => c.name);
-  const available = SRD_CLASSES.filter(c => !known.includes(c.name)).map(c => c.name);
+  // the combo below suggests allClasses(), so this list has to agree -- a
+  // player whose only untaken class is a custom one still needs the option
+  const available = allClasses().filter(c => !known.includes(c.name)).map(c => c.name);
   const target = levelUpTarget();
 
   const currentTotal = totalLevel(character);
@@ -374,13 +411,17 @@ function levelUpHtml() {
     (bonusNow - (character.proficiencyBonusOverride ?? proficiencyBonusForLevel(currentTotal)));
 
   const hp = target ? levelUpHitPoints(target) : null;
-  const gained = target ? featuresAtLevel(target.name, target.entry ? target.entry.subclass : null, target.to) : [];
+  const gained = target
+    ? featuresAtLevel(target.name, levelUpSubclassFor(target), target.to)
+    : [];
 
   /* Only things that actually change are listed. A row saying "unchanged" is
      noise on a screen whose whole job is answering "what do I get". */
   const changes = [];
   if (target) {
-    changes.push(["Level", "Level " + target.from + " → Level " + target.to]);
+    changes.push(["Level", target.isNew
+      ? "New class · Level " + target.to
+      : "Level " + target.from + " → Level " + target.to]);
     if (bonusNext !== bonusNow) {
       changes.push(["Proficiency bonus", formatModifier(bonusNow) + " → " + formatModifier(bonusNext)]);
     }
@@ -397,21 +438,20 @@ function levelUpHtml() {
     <div class="breakdown-source">Level ${currentTotal} → ${nextTotal}</div>
 
     <div class="breakdown-subhead">Which class</div>
-    ${classes.map((entry, index) => `
-      <button class="toggle-btn creator-option ${levelUpState.target === index ? "active" : ""}"
-        data-levelup-target="${index}"
-        style="display:block;width:100%;text-align:left;margin-bottom:8px;padding:12px 14px;">
-        ${esc(entry.name)}${entry.subclass ? " (" + esc(entry.subclass) + ")" : ""} ${entry.level} → ${entry.level + 1}
-        <span class="atk-range"> · ${esc(entry.hitDie)}</span>
-      </button>
-    `).join("")}
+    ${classes.map((entry, index) => optionButtonHtml(
+      entry.name + (entry.subclass ? " (" + entry.subclass + ")" : "")
+        + " " + entry.level + " \u2192 " + (entry.level + 1) + " \u00B7 " + entry.hitDie,
+      levelUpState.target === index, "levelup-target", String(index))).join("")}
     ${available.length ? `
-      <button class="toggle-btn creator-option ${levelUpState.target === "new" ? "active" : ""}"
-        data-levelup-target="new"
-        style="display:block;width:100%;text-align:left;margin-bottom:8px;padding:12px 14px;">
-        Take a level in something new
-      </button>
+      ${optionButtonHtml("Take a level in something new", levelUpState.target === "new", "levelup-target", "new")}
       ${levelUpState.target === "new" ? comboFieldHtml("levelup-new-class", "Class", available[0], levelUpState.newClass) : ""}
+    ` : ""}
+
+    ${target && subclassDueAtLevelUp(target) ? `
+      <div class="breakdown-subhead">${esc(target.name)} subclass</div>
+      <div class="breakdown-source" style="margin-bottom:8px;">Chosen at level ${subclassChoiceLevel(target.name)}.</div>
+      ${subclassesForClass(target.name).map(sc =>
+        optionButtonHtml(sc.name, levelUpState.subclass === sc.name, "levelup-subclass", sc.name)).join("")}
     ` : ""}
 
     ${target ? `
@@ -452,7 +492,7 @@ function levelUpHtml() {
 
       <div id="levelup-total">${levelUpTotalHtml(target)}</div>
 
-      <button class="btn-primary" id="levelup-confirm" style="margin-top:16px;">Confirm Level Up</button>
+      <div class="modal-sticky-action"><button class="btn-primary" id="levelup-confirm">Confirm Level Up</button></div>
     ` : `<div class="empty-hint">Pick a class to continue.</div>`}
   `;
 }
@@ -487,14 +527,24 @@ function wireLevelUp() {
       const value = button.dataset.levelupTarget;
       levelUpState.target = value === "new" ? "new" : parseInt(value);
       levelUpState.hpRolled = null;
+      levelUpState.subclass = null;      // belongs to the class you were on
       redrawLevelUp();
     });
   });
 
   const classes = character.classes || [];
   const known = classes.map(c => c.name);
-  wireCombo("levelup-new-class", SRD_CLASSES.filter(c => !known.includes(c.name)).map(c => c.name), value => {
+  document.querySelectorAll("[data-levelup-subclass]").forEach(button => {
+    button.addEventListener("click", () => {
+      levelUpState.subclass = button.dataset.levelupSubclass;
+      redrawLevelUp();
+    });
+  });
+
+  const pickable = allClasses();
+  wireCombo("levelup-new-class", pickable.filter(c => !known.includes(c.name)).map(c => c.name), value => {
     levelUpState.newClass = value;
+    redrawLevelUp();
   });
 
   document.querySelectorAll("[data-hp-mode]").forEach(button => {
@@ -525,6 +575,50 @@ function wireLevelUp() {
   if (confirm) confirm.addEventListener("click", applyLevelUp);
 }
 
+/* Nothing in the app had ever created a spell slot: the creator shipped an
+   empty object and this function never touched it, so a Wizard levelled to 20
+   still had none. Slots are recomputed from the class's own `spellcasting`
+   descriptor rather than incremented, so a level-up tops the maximum up and
+   leaves what's already been spent alone.
+
+   Each casting class is kept in its own bucket rather than merged through the
+   SRD's multiclass caster-level table. That is a deliberate simplification:
+   the table needs one shared pool plus a separate pact pool, which is a model
+   decision this POC hasn't made yet. Two casting classes therefore get more
+   slots than the SRD allows -- correct for a single-class character, generous
+   for a multiclass one, and honest about which. */
+function refreshSpellcastingForLevel(entry) {
+  const cls = classByName(entry.name);
+  const casting = cls && cls.spellcasting;
+  if (!casting || !ABILITY_FULL_NAMES[casting.ability]) return;
+
+  const slotCounts = spellSlotsAtLevel(casting, entry.level);
+  if (!Object.keys(slotCounts).length) return;
+
+  if (!character.spellcasting || !Array.isArray(character.spellcasting.classes)) {
+    character.spellcasting = { classes: [] };
+  }
+  if (!character.spellcasting.classes.some(c => c.name === cls.name)) {
+    character.spellcasting.classes.push({ name: cls.name, ability: casting.ability });
+  }
+
+  character.spellSlots = character.spellSlots || {};
+  Object.keys(slotCounts).forEach(level => {
+    const existing = character.spellSlots[level];
+    const max = existing ? Math.max(existing.max, slotCounts[level]) : slotCounts[level];
+    const gained = max - (existing ? existing.max : 0);
+    character.spellSlots[level] = {
+      current: (existing ? existing.current : 0) + gained,
+      max,
+      recharge: existing ? existing.recharge : spellSlotRecharge(casting)
+    };
+  });
+
+  character.maxPreparedByClass = character.maxPreparedByClass || {};
+  const abilityMod = abilityModifier(effectiveAbilityScore(character, casting.ability));
+  character.maxPreparedByClass[cls.name] = maxPreparedSpells(casting, entry.level, abilityMod);
+}
+
 function applyLevelUp() {
   const target = levelUpTarget();
   if (!target) return;
@@ -536,6 +630,11 @@ function applyLevelUp() {
       showToast("You already have levels in " + name);
       return;
     }
+  }
+
+  if (subclassDueAtLevelUp(target) && !levelUpState.subclass) {
+    showToast("Choose a " + target.name + " subclass to continue");
+    return;
   }
 
   const hp = levelUpHitPoints(target);
@@ -557,12 +656,17 @@ function applyLevelUp() {
     ? character.classes[character.classes.length - 1]
     : target.entry;
 
+  // set before grantFeatures, so featuresAtLevel() picks up the subclass's own
+  if (levelUpState.subclass && !entry.subclass) entry.subclass = levelUpState.subclass;
+
   // captured before granting features, so only choices THIS level-up created
   // get chained into -- an older unresolved one stays on the banner rather
   // than being swept into a flow the player didn't ask for right now
   const beforeChoiceIds = character.pendingChoices.map(p => p.id);
   grantFeatures(character, featuresAtLevel(entry.name, entry.subclass, entry.level));
   const newChoiceIds = character.pendingChoices.filter(p => !beforeChoiceIds.includes(p.id)).map(p => p.id);
+
+  refreshSpellcastingForLevel(entry);
 
   // a level never reduces your maximum, however the dice fell
   const gainedHitPoints = Math.max(1, hp.total);
@@ -586,52 +690,64 @@ function customContentTotal() {
   return customContent.races.length + customContent.classes.length + customContent.backgrounds.length + customContent.items.length;
 }
 
+/* Reachable from the character list (#selector-menu-button) as well as from a
+   sheet (#app-menu-button). The
+   entries that need an open character -- resting, levelling, exporting, and
+   the dice history, which is written per character -- are simply absent there
+   rather than shown disabled: there is nothing the player could do to enable
+   them except open a character, which is what the screen behind is for. */
 function openAppMenu() {
   const contentCount = customContentTotal();
+  const onSheet = typeof currentScreen === "undefined" || currentScreen === "sheet";
   openModal("drawer", `
     <div class="modal-heading">Campfire</div>
 
+    ${onSheet ? `
     <div class="drawer-section">Rest</div>
     <button class="drawer-item" id="menu-short-rest">Short Rest<span class="drawer-hint">1 hour</span></button>
     <button class="drawer-item" id="menu-long-rest">Long Rest<span class="drawer-hint">8 hours</span></button>
+    ` : ""}
 
     <div class="drawer-section">App</div>
     <button class="drawer-item" id="menu-party">Party<span class="drawer-hint">${esc(party.status === "none" ? "Not connected" : (party.status === "hosting" ? "Hosting" : "Connected"))}</span></button>
     ${MENU_STUBS.map(item => `
       <button class="drawer-item" data-stub="${esc(item.label)}">${esc(item.label)}<span class="drawer-hint">${item.hint}</span></button>
     `).join("")}
-    <button class="drawer-item" id="menu-dice-history">Dice History<span class="drawer-hint">${rollHistory.length ? rollHistory.length + " rolls" : ""}</span></button>
+    ${onSheet ? `<button class="drawer-item" id="menu-dice-history">Dice History<span class="drawer-hint">${rollHistory.length ? rollHistory.length + (rollHistory.length === 1 ? " roll" : " rolls") : ""}</span></button>` : ""}
     <button class="drawer-item" id="menu-content">Manage Content<span class="drawer-hint">${contentCount ? contentCount + " custom" : ""}</span></button>
     <button class="drawer-item" id="menu-theme">Theme<span class="drawer-hint">${esc((THEMES.find(t => t.value === theme.base) || {}).label || "")}</span></button>
     <button class="drawer-item" id="menu-options">Options</button>
     <button class="drawer-item" id="menu-help">Help &amp; Rules</button>
     <button class="drawer-item" id="menu-tutorial">Replay Tutorial<span class="drawer-hint">${tutorialState.active ? "in progress" : ""}</span></button>
 
+    ${onSheet ? `
     <div class="drawer-section">Character</div>
     <button class="drawer-item" id="menu-level-up">Level Up<span class="drawer-hint">level ${totalLevel(character)}</span></button>
     <button class="drawer-item" id="menu-export">Export Character<span class="drawer-hint">.json</span></button>
+    ` : ""}
 
     <div class="drawer-section">Development</div>
     <button class="drawer-item" id="menu-reset-demo">Reset to Demo Character<span class="drawer-hint">clears saved data</span></button>
   `);
-  document.getElementById("menu-short-rest").addEventListener("click", openShortRestModal);
-  document.getElementById("menu-long-rest").addEventListener("click", openLongRestModal);
+  const on = (id, handler) => { const el = document.getElementById(id); if (el) el.addEventListener("click", handler); };
+  on("menu-short-rest", openShortRestModal);
+  on("menu-long-rest", openLongRestModal);
   document.getElementById("menu-party").addEventListener("click", openPartyFinder);
   document.getElementById("menu-content").addEventListener("click", openContentManager);
   document.querySelectorAll("[data-stub]").forEach(button => {
     button.addEventListener("click", () => { closeModal(); showToast(button.dataset.stub + " isn't built yet"); });
   });
   document.getElementById("menu-reset-demo").addEventListener("click", confirmResetToDemo);
-  document.getElementById("menu-level-up").addEventListener("click", openLevelUpModal);
+  on("menu-level-up", openLevelUpModal);
   document.getElementById("menu-theme").addEventListener("click", openThemeModal);
   document.getElementById("menu-options").addEventListener("click", openSettingsModal);
   document.getElementById("menu-tutorial").addEventListener("click", startTutorial);
-  document.getElementById("menu-dice-history").addEventListener("click", openDiceHistoryModal);
+  on("menu-dice-history", openDiceHistoryModal);
   document.getElementById("menu-help").addEventListener("click", openHelpModal);
   // the character list's own menu exports whichever card you tapped; this one
   // is scoped to the sheet that's actually open, which is the only character
   // the drawer knows about
-  document.getElementById("menu-export").addEventListener("click", () => { closeModal(); exportCharacter(character); });
+  on("menu-export", () => { closeModal(); exportCharacter(character); });
 }
 
 // development aid: persistence means the demo character keeps whatever state
@@ -642,7 +758,7 @@ function confirmResetToDemo() {
     <div class="menu-note" style="margin-top:0;">
       Deletes every saved character and reloads the page with Sigrid as she ships. There's no undo.
     </div>
-    <button class="btn-primary" id="confirm-reset" style="background:var(--danger-surface);color:var(--danger-text);margin-top:16px;">Delete everything and reset</button>
+    <button class="btn-primary btn-danger" id="confirm-reset" style="margin-top:16px;">Delete everything and reset</button>
     <button class="btn-secondary" id="cancel-reset">Cancel</button>
   `);
   document.getElementById("confirm-reset").addEventListener("click", () => {

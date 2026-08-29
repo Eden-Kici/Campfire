@@ -9,7 +9,6 @@ function renderCollapseSection(title, key, bodyHtml) {
   return `
     <div class="section-head-row" data-section-toggle="${key}" style="cursor:pointer;">
       <div class="section-head">${esc(title)}</div>
-      <span style="color:var(--text-dim);font-size:12px;">${openSections[key] ? "\u2212" : "+"}</span>
     </div>
     ${openSections[key] ? bodyHtml : ""}
   `;
@@ -94,7 +93,6 @@ function renderCharacterTab() {
           <span>${esc(category)}</span>
           <div style="display:flex;align-items:center;gap:10px;">
             <button class="mini-edit" data-edit-subsection="${esc(category)}">\u270E</button>
-            <span>${openFeatureCategories[category] ? "\u2212" : "+"}</span>
           </div>
         </div>
         <div class="collapse-body ${openFeatureCategories[category] ? "open" : ""}">
@@ -295,13 +293,13 @@ function openEditSavingThrowModal(ability) {
     ${breakdownRowsHtml(current.sources)}
     <hr class="breakdown-divider">
     <div class="breakdown-total" style="margin-bottom:14px;"><span>Total</span><span>${formatModifier(current.total)}</span></div>
-    ${fieldHtml("Proficient?", selectFieldHtml("edit-save-prof", "", [{ value: "yes", label: "Yes" }, { value: "no", label: "No" }], character.savingThrowProficiency[ability] ? "yes" : "no"))}
+    ${segmentedFieldHtml("edit-save-prof", "Proficient?", [{ value: "no", label: "No" }, { value: "yes", label: "Yes" }], character.savingThrowProficiency[ability] ? "yes" : "no")}
     ${toggleLineHtml("save-override-switch", "Override bonus", isOverridden)}
     <div id="save-override-wrap">${isOverridden ? numberFieldHtml("edit-save-override-value", "Bonus", overrideVal) : ""}</div>
     <button class="btn-primary" id="save-save-button">Save</button>
   `);
 
-  wireSelect("edit-save-prof");
+  wireSegmented("edit-save-prof");
 
   const switchEl = document.getElementById("save-override-switch");
   const wrap = document.getElementById("save-override-wrap");
@@ -338,7 +336,7 @@ function openEditSkillModal(skillName) {
     ${breakdownRowsHtml(currentSkill.sources)}
     <hr class="breakdown-divider">
     <div class="breakdown-total" style="margin-bottom:14px;"><span>Total</span><span>${formatModifier(currentSkill.total)}</span></div>
-    ${selectFieldHtml("edit-skill-prof", "Proficiency", [
+    ${segmentedFieldHtml("edit-skill-prof", "Proficiency", [
       { value: "0", label: "None" }, { value: "1", label: "Proficient" }, { value: "2", label: "Expertise" }
     ], String(current))}
     ${toggleLineHtml("skill-override-switch", "Override bonus", isOverridden)}
@@ -346,7 +344,7 @@ function openEditSkillModal(skillName) {
     <button class="btn-primary" id="save-skill-button">Save</button>
   `);
 
-  wireSelect("edit-skill-prof");
+  wireSegmented("edit-skill-prof");
 
   const switchEl = document.getElementById("skill-override-switch");
   const wrap = document.getElementById("skill-override-wrap");
@@ -379,7 +377,7 @@ function openEditSubsectionModal(category) {
     ${textFieldHtml("edit-subsection-name", "Name", category)}
     <div class="btn-row-2">
       <button class="btn-primary" id="save-subsection-edit-button">Save Changes</button>
-      <button class="btn-primary" id="remove-subsection-button" style="background:var(--danger-surface);color:var(--danger-text);">Remove</button>
+      <button class="btn-primary btn-danger" id="remove-subsection-button">Remove</button>
     </div>
   `);
   document.getElementById("save-subsection-edit-button").addEventListener("click", () => {
@@ -399,14 +397,19 @@ function openEditSubsectionModal(category) {
   });
   document.getElementById("remove-subsection-button").addEventListener("click", () => {
     const count = character.traits[category].length;
-    const warning = count > 0
-      ? `This section contains ${count} feature${count === 1 ? "" : "s"} that will also be deleted. Remove "${esc(category)}"?`
-      : `Remove empty section "${esc(category)}"?`;
-    if (!confirm(warning)) return;
-    delete character.traits[category];
-    delete openFeatureCategories[category];
-    closeModal();
-    renderContent();
+    confirmModal({
+      title: `Remove "${category}"?`,
+      body: count > 0
+        ? `This section contains ${count} feature${count === 1 ? "" : "s"}. They will be deleted too.`
+        : "This section is empty.",
+      confirmLabel: "Remove", danger: true,
+      onConfirm: () => {
+        delete character.traits[category];
+        delete openFeatureCategories[category];
+        closeModal();
+        renderContent();
+      }
+    });
   });
 }
 
@@ -505,6 +508,7 @@ function openAddFeatureOrSectionModal() {
     </div>
     <div id="add-body"></div>
   `);
+  guardModalEdits();
 
   const modeFeatureBtn = document.getElementById("mode-feature-btn");
   const modeSectionBtn = document.getElementById("mode-section-btn");
@@ -587,9 +591,10 @@ function openEditFeatureModal(category, index) {
     <button class="add-link" id="add-feature-effect-button">+ Add Effect</button>
     <div class="btn-row-2" style="margin-top:14px;">
       <button class="btn-primary" id="save-feature-edit-button">Save Changes</button>
-      <button class="btn-primary" id="remove-feature-button" style="background:var(--danger-surface);color:var(--danger-text);">Remove</button>
+      <button class="btn-primary btn-danger" id="remove-feature-button">Remove</button>
     </div>
   `);
+  guardModalEdits();
 
   const listEl = document.getElementById("feature-effects-list");
   renderFeatureEffectsList(listEl, formEffects);
@@ -607,8 +612,16 @@ function openEditFeatureModal(category, index) {
     renderContent();
   });
   document.getElementById("remove-feature-button").addEventListener("click", () => {
-    character.traits[category].splice(index, 1);
-    closeModal();
-    renderContent();
+    confirmModal({
+      title: "Remove " + trait.name + "?",
+      body: "This can't be undone.",
+      confirmLabel: "Remove",
+      danger: true,
+      onConfirm: () => {
+        character.traits[category].splice(index, 1);
+        closeModal();
+        renderContent();
+      }
+    });
   });
 }

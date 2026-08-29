@@ -28,7 +28,7 @@
 
   --text: #FAF6F0;
   --text-dim: #9C9186;
-  --text-faint: #6E655B;
+  --text-faint: #988E80;
   --on-fill: #FAF6F0;
 
   --accent: #E8843A;
@@ -50,6 +50,7 @@
 
   --scrim: rgba(0, 0, 0, .6);
   --fill-shadow: rgba(0, 0, 0, .85);
+  --card-edge: rgba(255, 255, 255, .07);
 }
 
 /* Warm leather and antique gold. Still dark, so it reads as a different mood
@@ -67,7 +68,7 @@
 
   --text: #F3E6D0;
   --text-dim: #C2A984;
-  --text-faint: #8C775C;
+  --text-faint: #AC9880;
   --on-fill: #F3E6D0;
 
   --accent: #C89440;
@@ -89,13 +90,14 @@
 
   --scrim: rgba(10, 6, 2, .65);
   --fill-shadow: rgba(0, 0, 0, .8);
+  --card-edge: rgba(255, 255, 255, .08);
 }
 
 /* Paper. The surfaces invert, but the accent and the state colours stay
    recognisably the same app. */
 [data-theme="light"] {
   --page: #E8E3DB;
-  --frame: #FFFFFF;
+  --frame: #F6F2EA;
   --sunken: #EDE9E2;
   --surface: #FFFFFF;
   --control: #F1EDE6;
@@ -106,14 +108,16 @@
 
   --text: #201B16;
   --text-dim: #6B6157;
-  --text-faint: #948A7E;
+  --text-faint: #6A5F52;
   --on-fill: #FAF6F0;
 
-  /* dark enough to read as text on a white card, which is the constraint a
-     light theme adds -- on a dark theme the accent only ever has to be bright */
-  --accent: #A85310;
+  /* The brand orange survives on white as an accent; the gold "soft" tone
+     does not -- as body text it reads as washed-out yellow. Light gets a
+     warm brown-red for secondary text instead. The three themes do not have
+     to use the same hue for this, only the same role. */
+  --accent: #A8451A;
   --accent-ink: #FFFFFF;
-  --accent-soft: #8A5A10;
+  --accent-soft: #6B4A3A;
 
   --danger: #B33A32;
   --danger-text: #9E2B24;
@@ -130,6 +134,7 @@
 
   --scrim: rgba(32, 27, 22, .35);
   --fill-shadow: rgba(0, 0, 0, .45);
+  --card-edge: rgba(32, 27, 22, .11);
 }
 
 * { box-sizing: border-box; }
@@ -181,6 +186,18 @@ body {
 .content { flex: 1; overflow-y: auto; padding: 0 18px 20px; }
 
 
+/* A card is told apart from the page behind it by a step in brightness. A
+   theme can be authored with the same colour for both -- the built-in light
+   theme was, and every card on every screen silently vanished -- and the
+   theme editor lets a player do it too. A translucent hairline composites
+   against whatever is actually behind it, so the edge survives any palette,
+   including a nested card drawn on a same-coloured modal. Inset, so it costs
+   nothing in layout. */
+.char-card, .hp-card, .stat-box, .conc-row, .res-row, .atk-row, .ability-box,
+.skill-card, .collapse-card, .item-row, .member-row, .recipient-row {
+  box-shadow: inset 0 0 0 1px var(--card-edge);
+}
+
 /* -------------------- character selector -------------------- */
 
 .char-card {
@@ -219,7 +236,12 @@ body {
 .tutorial-title { font-size: 14px; font-weight: bold; margin-top: 3px; }
 .tutorial-body { font-size: 12.5px; color: var(--text-dim); line-height: 1.5; margin-top: 5px; }
 .tutorial-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; gap: 10px; }
-.tutorial-skip { background: none; border: none; color: var(--text-faint); font-size: 12px; cursor: pointer; padding: 6px 0; }
+/* the tour's only way out -- it was --text-faint at 12px, which measured
+   2.6:1 and read as disabled body text rather than a control */
+.tutorial-skip {
+  background: none; border: 1px solid var(--border-strong); color: var(--text);
+  font-size: 12px; cursor: pointer; padding: 7px 12px; border-radius: 999px; white-space: nowrap;
+}
 .tutorial-next {
   background: var(--accent); color: var(--accent-ink); border: none; border-radius: 10px;
   padding: 8px 16px; font-weight: bold; font-size: 13px; cursor: pointer;
@@ -233,7 +255,7 @@ body {
   0%, 100% { outline-offset: 2px; }
   50% { outline-offset: 5px; }
 }
-.tutorial-glow { outline: 2px solid var(--accent); border-radius: 10px; animation: tutorial-glow-pulse 1.4s ease-in-out infinite; }
+.tutorial-glow { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 10px; animation: tutorial-glow-pulse 1.4s ease-in-out infinite; }
 
 
 /* -------------------- HP -------------------- */
@@ -270,12 +292,19 @@ body {
 .death-status { font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: .6px; color: var(--danger-text); }
 .death-card.stable .death-status { color: var(--success-text); }
 
-.death-track { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; }
+.death-track { display: flex; align-items: center; justify-content: space-between; padding: 0; }
 .death-label { font-size: 12px; color: var(--text-dim); }
-.death-pips { display: flex; gap: 7px; }
-.death-pip { width: 17px; height: 17px; border-radius: 50%; border: 2px solid var(--border-strong); background: none; padding: 0; cursor: pointer; }
-.death-pip.success { background: var(--success-text); border-color: var(--success-text); }
-.death-pip.failure { background: var(--danger); border-color: var(--danger); }
+.death-pips { display: flex; gap: 1px; }
+.death-pip {
+  width: 38px; height: 38px; border: none; background: none; padding: 0; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.death-pip::before {
+  content: ""; width: 17px; height: 17px; border-radius: 50%;
+  border: 2px solid var(--border-strong); box-sizing: border-box;
+}
+.death-pip.success::before { background: var(--success-text); border-color: var(--success-text); }
+.death-pip.failure::before { background: var(--danger); border-color: var(--danger); }
 
 
 /* -------------------- stat grid -------------------- */
@@ -344,20 +373,23 @@ body {
 /* -------------------- resources -------------------- */
 
 .res-row {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
   background: var(--surface); border-radius: 14px; padding: 11px 14px; margin-bottom: 8px;
 }
-.res-name-wrap { cursor: pointer; }
+.res-name-wrap { cursor: pointer; min-width: 0; }
 .res-name { font-weight: bold; font-size: 14px; }
-.res-tag { font-size: 10px; color: var(--text-faint); font-weight: bold; margin-left: 6px; padding: 1px 5px; border-radius: 6px; }
+.res-tag { white-space: nowrap; font-size: 10px; color: var(--text-faint); font-weight: bold; margin-left: 6px; padding: 1px 5px; border-radius: 6px; }
 .res-count { font-weight: bold; font-size: 13px; color: var(--text-dim); min-width: 34px; text-align: center; }
 
 .hitdice-row { display: flex; align-items: center; gap: 10px; background: var(--control); border-radius: 12px; padding: 9px 12px; margin-bottom: 8px; }
 .hitdice-die { font-weight: bold; font-size: 14px; min-width: 34px; }
 .hitdice-count { font-size: 12px; color: var(--text-dim); flex: 1; }
 
-.stepper { display: flex; align-items: center; gap: 10px; }
-.stepper button {
+.stepper { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+/* :not() keeps the round 26px stepper look off Refill, which sits in the same
+   row but is a labelled action, not a nudge control -- it was being squashed
+   into a 26px circle with its text overflowing. */
+.stepper button:not(.pill-outline) {
   width: 26px; height: 26px; border-radius: 50%; border: none;
   background: var(--control); color: var(--text); font-size: 15px; cursor: pointer;
 }
@@ -377,19 +409,18 @@ body {
   background: var(--danger-surface); color: var(--danger-text); font-size: 10px; vertical-align: middle;
 }
 .atk-range { font-size: 11px; color: var(--text-faint); }
-.grip-toggle {
+/* Two pill shapes, and the difference carries meaning: filled (.atk-pill)
+   always means "tap to roll", outlined means a mode toggle or a secondary
+   action. Refill used to be filled, which read as a roll. */
+.grip-toggle, .pill-outline {
   border: 1px solid var(--border-strong); background: none; border-radius: 8px; padding: 5px 7px;
   font-size: 10px; font-weight: bold; color: var(--text-faint); cursor: pointer; font-family: inherit;
 }
-.grip-toggle.two { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
+.grip-toggle.two, .pill-outline.on { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
 
 .atk-pill {
   border: none; background: var(--control); border-radius: 8px; padding: 6px 10px;
   font-weight: bold; font-size: 13px; color: var(--text); cursor: pointer; min-width: 50px;
-}
-.spell-tag {
-  background: var(--control); border-radius: 8px; padding: 5px 9px;
-  font-size: 11px; font-weight: bold; color: var(--text-dim);
 }
 
 
@@ -435,7 +466,13 @@ body {
   display: flex; align-items: center; justify-content: space-between; padding: 13px 16px;
   cursor: pointer; font-weight: bold; font-size: 14px; color: var(--text);
 }
-.collapse-head span:last-child { color: var(--text-dim); font-weight: normal; font-size: 12px; }
+/* Was `span:last-child`, meant for the +/- indicator that used to sit at the
+   end of the row. With the indicators gone that selector started matching the
+   TITLE of any head with a single span -- Help topics, creator choice cards,
+   Character sections -- and demoted them all to dim 12px body text. */
+/* The +/- indicators these used to style are gone; what is left needing the
+   quiet treatment is Help's 3PP tag, which rides inside the title span. */
+.collapse-head .res-tag { color: var(--text-dim); font-weight: normal; font-size: 10px; }
 .collapse-body { display: none; padding: 0 16px 14px; }
 .collapse-body.open { display: block; }
 .trait-item { padding: 8px 0; border-top: 1px solid var(--border); cursor: pointer; }
@@ -467,14 +504,20 @@ body {
 }
 .subcard-head .chip-remove { font-size: 13px; padding: 0 0 0 8px; }
 
-/* unused SRD properties, offered as dashed "add" chips to distinguish them
-   from the solid chips of ones already on the weapon */
-.prop-palette { display: flex; flex-wrap: wrap; gap: 6px; }
-.prop-add {
-  background: none; border: 1px dashed var(--border-strong); color: var(--text-dim);
-  border-radius: 20px; padding: 5px 11px; font-size: 12px; font-family: inherit; cursor: pointer;
+/* Weapon properties are a fixed set you tick, not a palette of eleven
+   "+ Name" actions that wrapped to four ragged lines and moved a property
+   into a differently-shaped chip once it was chosen. */
+.prop-list { display: flex; flex-direction: column; }
+.prop-row {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 9px 4px; border: none; border-bottom: 1px solid var(--border);
+  background: none; color: var(--text); font-family: inherit; font-size: 13px;
+  text-align: left; cursor: pointer;
 }
-.prop-add:hover { color: var(--accent); border-color: var(--accent); }
+.prop-row:last-child { border-bottom: none; }
+.prop-row.on .prop-row-name { font-weight: bold; }
+.prop-row-name { flex: 1; min-width: 0; }
+.prop-row-custom { cursor: default; }
 .prop-custom-add { width: auto; flex: 0 0 auto; margin-top: 0; padding: 10px 16px; }
 
 
@@ -530,6 +573,21 @@ body {
 
 
 /* -------------------- modal system -------------------- */
+
+/* A confirmation is nearly always raised from inside another modal, so it
+   gets its own layer above both modals (100) and roll toasts (200) rather
+   than going through openModal(), which would close the thing being asked
+   about. */
+.confirm-overlay {
+  position: absolute; inset: 0; background: var(--scrim); z-index: 400;
+  display: flex; align-items: center; justify-content: center;
+}
+.confirm-box {
+  background: var(--surface); width: 82%; border-radius: 16px; padding: 18px;
+  box-shadow: inset 0 0 0 1px var(--card-edge);
+}
+.confirm-title { font-size: 16px; font-weight: bold; }
+.confirm-body { font-size: 13px; color: var(--text-dim); line-height: 1.5; margin-top: 8px; }
 
 .modal-overlay { position: absolute; inset: 0; background: var(--scrim); z-index: 100; display: flex; }
 .modal-center { align-items: center; justify-content: center; }
@@ -621,6 +679,9 @@ body {
 .select-option:last-child { border-bottom: none; }
 .select-option:active, .select-option:hover { background: var(--control); }
 .select-option.active { color: var(--accent); font-weight: bold; }
+/* an option that would do nothing, greyed rather than warned about */
+.select-option.disabled { color: var(--text-dim); opacity: .45; cursor: default; }
+.select-option.disabled:active, .select-option.disabled:hover { background: none; }
 
 /* A field that takes only the width it needs, for pairing a short control with
    a full-width one on the same row. .field-control gives the short control the
@@ -645,8 +706,11 @@ body {
 /* in-app suggestion list, in place of a native <datalist> dropdown */
 .combo-list {
   margin-top: 6px; background: var(--surface); border: 1px solid var(--border);
-  border-radius: 10px; max-height: 176px; overflow-y: auto;
+  border-radius: 10px; max-height: 190px; overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent;
 }
+.combo-list::-webkit-scrollbar { width: 6px; }
+.combo-list::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
 .combo-list[hidden] { display: none; }
 .combo-option {
   display: block; width: 100%; text-align: left; background: none; border: none;
@@ -665,6 +729,13 @@ body {
   width: 100%; background: var(--accent); color: var(--accent-ink); border: none; border-radius: 12px;
   padding: 13px; font-weight: bold; font-size: 14px; cursor: pointer; margin-top: 6px;
 }
+/* after .btn-primary on purpose: same specificity, so the later rule wins.
+   The tinted treatment, not a solid red fill: sixteen destructive buttons
+   across the app already wear it inline, and confirmModal's was the only
+   solid one -- so a tinted Remove could raise a solid red Remove sitting
+   directly on top of it. */
+.btn-danger { background: var(--danger-surface); color: var(--danger-text); }
+
 .btn-row-2 { display: flex; gap: 10px; margin-top: 6px; }
 .btn-row-2 button { flex: 1; margin-top: 0; }
 
@@ -750,16 +821,23 @@ body {
 .btn-disabled { opacity: .5; pointer-events: none; }
 
 
+/* Picking "something new" makes this modal taller than the phone, and the
+   confirm button went below the fold with nothing to say it was there. */
+.modal-sticky-action {
+  position: sticky; bottom: 0; margin-top: 16px; padding: 12px 0 4px;
+  background: var(--surface); box-shadow: 0 -10px 12px -6px var(--surface);
+}
+
 /* -------------------- HP calculator -------------------- */
 
-.calc-display { background: var(--track); border-radius: 14px; padding: 16px; text-align: right; margin-bottom: 14px; }
-.calc-expr { font-size: 20px; color: var(--text); min-height: 26px; }
+.calc-display { background: var(--track); border-radius: 14px; padding: 11px 14px; text-align: right; margin-bottom: 10px; }
+.calc-expr { font-size: 20px; color: var(--text); min-height: 22px; }
 
 .calc-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
 .calc-grid.dice button { background: var(--control-raised); color: var(--accent-soft); font-weight: bold; }
 .calc-grid button {
   border: none; background: var(--control); border-radius: 10px; color: var(--text);
-  font-size: 16px; font-weight: bold; padding: 14px 0; cursor: pointer;
+  font-size: 16px; font-weight: bold; padding: 11px 0; cursor: pointer;
 }
 
 .calc-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
@@ -821,6 +899,298 @@ body {
 
 /* the row is the control: tapping what you're concentrating on checks it */
 .conc-check {
+  /* matches .res-name -- this is the row's title, the same as "Exhaustion"
+     one row above, and it read as body text next to it */
+  font-weight: bold;
   flex: 1; text-align: left; background: none; border: none; padding: 0;
   color: var(--text); font-family: inherit; font-size: 14px; cursor: pointer;
 }
+
+
+/* A spell's casting time is an annotation, not a control. It used to be a
+   filled pill, which in this app is the shape that means "tap to roll" --
+   sitting right where the roll pills now are. It reuses .res-tag instead, the
+   same quiet uppercase marker SR/LR wear on a resource row. */
+.atk-name .res-tag { vertical-align: middle; }
+
+/* The full spell description in the detail window keeps the SRD's own
+   paragraph breaks -- desc is stored with real newlines in it. */
+.spell-desc { white-space: pre-wrap; margin-top: 8px; }
+
+/* A spell row can carry three pills (Cast, to-hit, damage) where a weapon
+   carries two, and 390px doesn't have room for three 50px minimums plus a
+   name. Inside a spell row the pills size to their own label instead, and the
+   name is the part that gives way. */
+[data-spell-view] .atk-pill { min-width: 0; padding: 6px 9px; }
+
+
+
+/* -------------------- palette: the cautionary tone --------------------
+
+   A warning is not an error. The creator's "you have gone outside standard
+   point buy" line was painted in --danger-text, which is the colour the app
+   uses for damage, death saves and destructive buttons -- it read as "you
+   broke something" when it means "this is fine, it's just not standard".
+
+   These three blocks are an addition to the palette at the top of this file,
+   not a replacement: custom properties cascade, so declaring only the two new
+   names here leaves every other token exactly as the theme defined it. They
+   live down here because this pass may only append to this stylesheet.
+
+   --warning-text clears 4.5:1 both on --surface (the modal it renders in)
+   and on --warning-tint (its own pill) in all three themes. */
+:root,
+[data-theme="ember"] {
+  --warning-text: #EFC25A;
+  --warning-tint: #332813;
+}
+
+[data-theme="fantasy"] {
+  --warning-text: #EDC469;
+  --warning-tint: #3B2C14;
+}
+
+[data-theme="light"] {
+  --warning-text: #7A5200;
+  --warning-tint: #FBEECD;
+}
+
+.creator-warning {
+  display: flex; gap: 7px; align-items: flex-start;
+  background: var(--warning-tint); color: var(--warning-text);
+  border-radius: 10px; padding: 9px 11px; margin-bottom: 10px;
+  font-size: 12px; line-height: 1.4;
+}
+
+
+/* -------------------- the creator's one option row --------------------
+
+   Race, subrace, class, subclass, background, starting kit and every option
+   of every granted choice are the same control -- "pick one of these" -- and
+   used to be drawn six different ways, each with its own inline padding and
+   type scale. This is that control. The height is a comfortable tap target
+   at 46px, the label wraps rather than truncating (a Dragonborn ancestry
+   option is a sentence), and the tick is what says "picked" alongside the
+   accent fill so the state does not rest on colour alone. */
+.creator-option {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; min-height: 46px;
+  margin-bottom: 8px; padding: 11px 14px;
+  border: none; border-radius: 12px;
+  background: var(--control); color: var(--text);
+  font-family: inherit; font-size: 14px; font-weight: 600; line-height: 1.35;
+  text-align: left; cursor: pointer;
+}
+.creator-option.active { background: var(--accent); color: var(--accent-ink); }
+.creator-option-label { flex: 1; min-width: 0; }
+.creator-option-mark { flex: 0 0 auto; font-size: 13px; font-weight: bold; }
+
+/* The row is the whole control. Its description sits under it and appears
+   only while it is the selected one, so a list of ten options is ten short
+   rows plus at most one paragraph. */
+.creator-option-row { display: flex; flex-wrap: wrap; align-items: stretch; margin-bottom: 8px; }
+.creator-option-row .creator-option { flex: 1 1 100%; margin-bottom: 0; }
+.creator-option-desc {
+  flex-basis: 100%;
+  padding: 8px 4px 2px; font-size: 12.5px; line-height: 1.45; color: var(--text-dim);
+}
+
+
+/* -------------------- what arrives at later levels --------------------
+
+   A level-to-feature list, read straight down: levels right-aligned in their
+   own column so the numbers stack, names left-aligned beside them. Tighter
+   than the chip row it replaces, and it no longer looks tappable. */
+.level-list { margin-bottom: 12px; }
+.level-list-row {
+  display: flex; align-items: baseline; gap: 10px; width: 100%;
+  padding: 4px 2px; border: none; background: none; color: inherit;
+  font-family: inherit; font-size: 13px; text-align: left; cursor: pointer;
+}
+.level-list-row.open .level-list-name { color: var(--text); font-weight: bold; }
+.level-list-level { flex: 0 0 26px; text-align: right; font-weight: bold; color: var(--accent-soft); }
+.level-list-name { flex: 1; min-width: 0; color: var(--text-dim); }
+.level-list-desc {
+  font-size: 12px; line-height: 1.45; color: var(--text-dim);
+  padding: 2px 2px 10px 38px;
+}
+
+
+/* -------------------- the creator's skill matrix --------------------
+
+   Not an option row: a skill can be offered by the race AND the class at
+   once, so it needs a target per grantor rather than one per row. It does
+   get the option row's height and rhythm, and each column is a 44px cell so
+   the 18px checkbox inside is not the whole tap target -- ::before stretches
+   the button's hit area over the cell without changing what is drawn. */
+.creator-skill-row { min-height: 46px; cursor: default; }
+.creator-skill-row .skill-bonus { font-size: 15px; min-width: 40px; }
+.creator-skill-cell { display: inline-flex; align-items: center; justify-content: center; width: 44px; flex: 0 0 44px; align-self: stretch; }
+.creator-skill-cell .mini-checkbox { position: relative; }
+.creator-skill-cell .mini-checkbox::before { content: ""; position: absolute; top: -13px; right: -13px; bottom: -13px; left: -13px; }
+.creator-skill-tag { background: var(--control-raised); color: var(--accent-soft); margin-left: 0; }
+.creator-skill-headings { justify-content: flex-end; gap: 10px; margin: 10px 0 4px; }
+.creator-skill-heading { width: 44px; flex: 0 0 44px; text-align: center; font-size: 11px; color: var(--text-dim); }
+
+/* Ability Scores: four columns with a header, because three unlabelled
+   numbers on a row (bought, origin, total) read as noise -- the stepper's
+   number looks like the answer when the one on the right is. Only the total
+   is bold, so the eye lands on it. */
+.ability-row {
+  display: flex; align-items: center; gap: 8px; padding: 5px 0;
+}
+.ability-row-head {
+  margin-top: 4px;
+  font-size: 10.5px; font-weight: bold; letter-spacing: .4px; text-transform: uppercase;
+  color: var(--text-dim); padding-bottom: 2px; border-bottom: 1px solid var(--border);
+}
+.ability-row-name { flex: 0 0 76px; font-size: 13px; }
+.ability-row-buy { flex: 0 0 104px; display: flex; align-items: center; }
+.ability-row-origin {
+  flex: 1 1 auto; display: flex; align-items: center; gap: 4px;
+  font-size: 12px; color: var(--text-dim);
+}
+.ability-origin-label { margin-right: 6px; }
+.ability-row-total { flex: 0 0 34px; text-align: right; font-weight: bold; font-size: 15px; }
+.ability-row-head .ability-row-total { font-weight: bold; font-size: 10.5px; }
+
+/* The one option button that carries a second line of explanation. Its label
+   stacks instead of sitting on one line; the hint keeps body weight, which a
+   plain .creator-option would otherwise inherit at 600. */
+.creator-option-stacked { align-items: flex-start; }
+.creator-option-stacked .creator-option-label { display: flex; flex-direction: column; gap: 2px; }
+.creator-option-stacked .creator-option-title { font-weight: 600; }
+.creator-option-stacked .field-hint { font-weight: normal; }
+
+/* -------------------- summary line + rebuilt property rows --------------------
+
+   A summary line is "here's the answer, tap to change it" -- used where a
+   picker is tall enough to swamp the form it sits in. The property list was
+   406px of a 1,670px form for a median of two properties per weapon.
+
+   .prop-row stopped being a <button> because the row now holds two controls
+   that do different things: the checkbox ticks, the name explains. It also
+   could not stay a button -- the checkbox inside it is one too, and a button
+   inside a button is invalid HTML that only Chromium tolerates. */
+.summary-line {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  width: 100%; padding: 11px 12px; margin-bottom: 12px;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--control); color: var(--text);
+  font-family: inherit; font-size: 13px; text-align: left; cursor: pointer;
+}
+.summary-line-value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.summary-line-chevron { color: var(--text-dim); flex-shrink: 0; }
+
+.prop-row-name {
+  flex: 1; min-width: 0;
+  border: none; background: none; padding: 0; margin: 0;
+  font-family: inherit; font-size: 13px; color: var(--text); text-align: left;
+  text-decoration: underline; text-decoration-style: dotted;
+  text-decoration-color: var(--border-strong); text-underline-offset: 3px;
+  cursor: pointer;
+}
+.prop-row-custom .prop-row-name { text-decoration: none; cursor: default; }
+/* the checkbox is the tap target for toggling, so give it the 44px it needs
+   without changing the 18px box the player sees */
+.prop-row .mini-checkbox { position: relative; }
+.prop-row .mini-checkbox::before {
+  content: ""; position: absolute; top: -12px; right: -8px; bottom: -12px; left: -12px;
+}
+
+/* -------------------- money, weight, kit rows --------------------
+
+   Coin gets a block of its own at the top of Inventory rather than living as
+   an item: it's what a player checks most in a shop, and it doesn't behave
+   like an item -- no category, no quantity of one, and the denominations
+   convert into each other. */
+.money-block {
+  border: 1px solid var(--border); border-radius: 12px;
+  padding: 10px 12px 12px; margin-bottom: 12px; background: var(--surface);
+}
+.money-head { display: flex; align-items: baseline; justify-content: space-between; }
+.money-head-label { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-dim); }
+.money-total { font-size: 13px; font-weight: bold; color: var(--accent-soft); }
+.coin-row { display: flex; gap: 6px; margin-top: 8px; }
+.coin-cell {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 8px 2px; border: 1px solid var(--border); border-radius: 9px;
+  background: var(--control); color: var(--text); font-family: inherit; cursor: pointer;
+}
+.coin-amount { font-size: 14px; font-weight: bold; }
+.coin-label { font-size: 10px; letter-spacing: .06em; color: var(--text-dim); }
+
+/* The weight total could not explain itself, though it already computed the
+   itemised list -- and it had no denominator, because carrying capacity didn't
+   exist anywhere in the app. */
+.weight-total {
+  border: none; background: none; padding: 0; margin: 0;
+  font-family: inherit; font-size: inherit; color: inherit; text-align: left; cursor: pointer;
+}
+.weight-total.over { color: var(--danger-text); }
+.breakdown-row-heading { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 8px; }
+
+/* Starting gear was a row of .chip -- which in this app means "a removable
+   token", and none of these are removable. They also wrapped into ragged lines
+   and gave the player nowhere to learn what a Priest's Pack contains. */
+.kit-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  width: 100%; padding: 9px 12px; margin-bottom: 6px;
+  border: 1px solid var(--border); border-radius: 9px;
+  background: var(--control); color: var(--text);
+  font-family: inherit; font-size: 13px; text-align: left; cursor: pointer;
+}
+.kit-row-name { flex: 1; min-width: 0; }
+.kit-row-more {
+  flex: 0 0 auto; width: 18px; height: 18px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface); color: var(--text-dim); font-size: 11px; font-weight: bold;
+}
+.kit-money { font-size: 13px; color: var(--accent-soft); font-weight: bold; margin-bottom: 6px; }
+.kit-inline-desc {
+  font-size: 12px; color: var(--text-dim); line-height: 1.45;
+  padding: 2px 12px 8px; margin-top: -2px;
+}
+
+/* Proficiency reads as a mark, not a sentence -- it's the fact a player scans
+   for mid-turn, and "yes (needs Simple)" made them parse to find it. */
+/* `.breakdown-row span:last-child` paints every right-hand value --text-, and
+   it outranks a bare class, so the mark has to match its specificity to keep
+   its own colour. Matching and coming later is enough. */
+.breakdown-row span.prof-yes, .prof-yes { color: var(--success-text); font-weight: bold; }
+.breakdown-row span.prof-no, .prof-no { color: var(--danger-text); font-weight: bold; }
+/* the same lettering as every other value in the list -- it is one of them,
+   not a footnote about one */
+.breakdown-row span.prof-need, .prof-need { color: var(--text); font-weight: 600; }
+
+
+/* -------------------- on an actual phone --------------------
+
+   .phone is a 390x812 box because this began as a desktop mockup of a handset.
+   On a real device that box is the whole screen, so the frame, the rounded
+   corners and the fixed height stop being a picture of a phone and start being
+   a smaller phone inside the phone. Below 700px the frame is dropped and the
+   app fills the viewport.
+
+   100dvh rather than 100vh: on mobile Safari the URL bar shrinks and grows, and
+   100vh is the *largest* height, so the tab bar sits below the fold until you
+   scroll. dvh tracks the visible viewport. */
+@media (max-width: 700px) {
+  body { display: block; padding: 0; }
+  .phone {
+    width: 100%;
+    height: 100dvh;
+    max-width: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    /* keep content clear of the notch and the home indicator */
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    box-sizing: border-box;
+  }
+}
+
+/* iOS zooms the whole page when you focus an input under 16px, which shoves the
+   layout sideways mid-tap. 16px is the threshold, not a design choice. */
+.field input, .field select, .field textarea,
+input[type="text"], input[type="number"], textarea { font-size: 16px; }

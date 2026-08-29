@@ -338,19 +338,30 @@ module.exports = function (suite) {
   suite.runs("the creator's subclass step includes a custom subclass for Fighter", () => {
     app.openCharacterCreator();
     app.creatorState.charClass = "Fighter";
-    if (!app.creatorStepKeys().includes("subclass")) throw new Error("expected a subclass step");
-    const html = app.subclassStepHtml(1, 5);
+    // a Fighter picks its subclass at 3rd level, so the wizard has no
+    // subclass step for one -- the step's markup is still what a class that
+    // does pick at 1st level renders, custom subclasses included
+    if (app.creatorStepKeys().includes("subclass")) throw new Error("Fighter shouldn't get a level-1 subclass step");
+    const html = app.subclassStepHtml(1);
     if (!html.includes("Custom Battle Master")) throw new Error("expected the custom subclass listed as an option");
   });
 
   suite.section("custom choice options can carry their own description");
-  suite.runs("Draconic Ancestry's options explain the breath weapon, not just the label", () => {
+  // the desc now renders only for the option that is picked -- the label is
+  // just "Gold", so without this the breath weapon would be unreadable
+  suite.runs("Draconic Ancestry's options explain the breath weapon once picked", () => {
     app.openCharacterCreator();
     app.creatorState.race = "Dragonborn";
+    const before = app.raceStepHtml(1, 8);
+    if (before.includes("Breath Weapon: exhale")) {
+      throw new Error("expected no breath weapon text before anything is picked");
+    }
+    app.creatorState.choiceAnswers["Draconic Ancestry"] = { chosen: ["Gold"] };
     const html = app.raceStepHtml(1, 8);
     if (!html.includes("Breath Weapon: exhale fire in a 15-foot cone")) {
-      throw new Error("expected the Gold ancestry option's own desc to render, not just its label");
+      throw new Error("expected the Gold ancestry option's own desc to render once picked");
     }
+    app.creatorState.choiceAnswers = {};
   });
   suite.runs("choiceOptionDescFor prefers an option's own desc over an effects summary", () => {
     const pending = { kind: "custom", options: [
@@ -368,74 +379,103 @@ module.exports = function (suite) {
       pendingChoices: [] };
     app.grantFeatures(character, app.featuresAtLevel("Ranger", "Hunter", 3));
     const pending = character.pendingChoices.find(p => p.featureName === "Hunter's Prey");
+    app.choiceSelected = ["Colossus Slayer"];
     const html = app.resolveChoiceHtml(pending);
+    app.choiceSelected = [];
     if (!html.includes("Your tenacity can wear down the most potent foes")) {
       throw new Error("expected Colossus Slayer's own desc to render in the level-up resolver too");
     }
   });
 
-  suite.section("choice options are a single-open accordion, not always-visible");
-  suite.runs("creator: a collapsed option's card body isn't open, and picking one doesn't expand it", () => {
+  /* Selecting an option is now also how you read it: there is no expander,
+     and a description renders only for the row that is currently picked. At
+     the limit the next pick replaces the one made last, so browsing by
+     tapping can't strand you -- which is what makes reading-by-picking a
+     fair trade. These assertions replace the accordion ones. */
+  suite.section("a description opens by being picked, and only one is ever open");
+  suite.runs("creator: nothing is open until something is picked", () => {
     app.openCharacterCreator();
     app.creatorState.race = "Dragonborn";
     const pending = app.creatorRaceChoices().find(p => p.featureName === "Draconic Ancestry");
     const collapsed = app.choiceCardHtml(pending);
-    if (!collapsed.includes(`data-choice-expand="Draconic Ancestry|||Gold -- Fire, 15 ft. cone (Dex save)"`)) {
-      throw new Error("expected an expand header for the Gold option");
+    if (!collapsed.includes(`data-choice-pick="Draconic Ancestry|||Gold"`)) {
+      throw new Error("expected the Gold option row to be the pick target");
     }
-    // exactly one "collapse-body open" with nothing expanded -- the pending
-    // card's own outer wrapper, which is always open; every nested option
-    // card should be collapsed
-    const openCount = (collapsed.match(/collapse-body open/g) || []).length;
-    if (openCount !== 1) throw new Error("expected only the outer wrapper open, got " + openCount + " open bodies");
+    if (collapsed.includes("creator-option-info")) throw new Error("expected no expander button");
+    if ((collapsed.match(/creator-option-desc/g) || []).length !== 0) {
+      throw new Error("ten dragons' breath weapons must not print at once");
+    }
 
-    app.creatorState.expandedChoiceOption["Draconic Ancestry"] = "Gold -- Fire, 15 ft. cone (Dex save)";
+    app.creatorState.choiceAnswers["Draconic Ancestry"] = { chosen: ["Gold"] };
     const oneOpen = app.choiceCardHtml(pending);
     if (!oneOpen.includes("Breath Weapon: exhale fire in a 15-foot cone")) {
-      throw new Error("expected Gold's body to render once expanded");
+      throw new Error("expected Gold's description to render once picked");
     }
-    if ((oneOpen.match(/collapse-body open/g) || []).length !== 2) {
-      throw new Error("expected exactly two open bodies (outer wrapper + Gold) once Gold is expanded");
+    if ((oneOpen.match(/creator-option-desc/g) || []).length !== 1) {
+      throw new Error("expected exactly one description on screen");
     }
 
-    app.creatorState.expandedChoiceOption["Draconic Ancestry"] = "Black -- Acid, 5x30 ft. line (Dex save)";
+    app.creatorState.choiceAnswers["Draconic Ancestry"] = { chosen: ["Black"] };
     const switched = app.choiceCardHtml(pending);
-    // description text stays in the HTML either way (only the "open" class
-    // toggles) so the real assertion is on which option's collapse-body
-    // carries "open", not on text presence. Gold's collapse-body class
-    // attribute follows its label directly (head, then body), so a short
-    // window after the label text is enough to isolate it
-    const goldIdx = switched.indexOf("Gold -- Fire");
-    const goldBody = switched.slice(goldIdx, goldIdx + 200);
-    if (/collapse-body open/.test(goldBody)) throw new Error("expected opening Black to close Gold, accordion-style");
-    if ((switched.match(/collapse-body open/g) || []).length !== 2) {
-      throw new Error("expected exactly two open bodies (outer wrapper + Black) once switched");
+    const goldIdx = switched.indexOf(">Gold<");
+    if (/creator-option-desc/.test(switched.slice(goldIdx, goldIdx + 300))) {
+      throw new Error("expected picking Black to close Gold");
+    }
+    if ((switched.match(/creator-option-desc/g) || []).length !== 1) {
+      throw new Error("expected exactly one description once switched");
     }
   });
-  suite.runs("level-up resolver: same single-open accordion behavior via module state", () => {
+  suite.runs("creator: an option with no description renders no description slot", () => {
+    app.openCharacterCreator();
+    app.creatorState.race = "Human";
+    const pending = app.creatorRaceChoices().find(p => p.featureName === "Extra Language");
+    app.creatorState.choiceAnswers["Extra Language"] = { chosen: ["Dwarvish"] };
+    const html = app.choiceCardHtml(pending);
+    if (!html.includes(`data-choice-pick="Extra Language|||Dwarvish"`)) {
+      throw new Error("expected Dwarvish to be pickable in one tap");
+    }
+    if (html.includes("creator-option-desc")) {
+      throw new Error("a language has nothing to read -- expected no description block even when picked");
+    }
+    if (html.includes("Choose this")) throw new Error("expected no second tap to confirm the pick");
+  });
+  suite.runs("at the limit, the next pick replaces the last one", () => {
+    // refusing would mean un-picking before you could read a second option
+    const one = [];
+    app.pickInto(one, "Gold", 1);
+    app.pickInto(one, "Black", 1);
+    if (JSON.stringify(one) !== JSON.stringify(["Black"])) throw new Error("pick 1: expected Black to replace Gold, got " + JSON.stringify(one));
+    const two = [];
+    app.pickInto(two, "A", 2);
+    app.pickInto(two, "B", 2);
+    app.pickInto(two, "C", 2);
+    if (JSON.stringify(two) !== JSON.stringify(["A", "C"])) {
+      throw new Error("pick 2: expected only the most recent pick to give way, got " + JSON.stringify(two));
+    }
+    app.pickInto(two, "A", 2);
+    if (JSON.stringify(two) !== JSON.stringify(["C"])) throw new Error("tapping a picked option still clears it");
+  });
+  suite.runs("level-up resolver: the same rule, via module state", () => {
     let character = { classes: [{ name: "Ranger", level: 1, subclass: "Hunter", hitDie: "d10" }],
       traits: { "Class Features": [], "Race Traits": [], "Background": [], "Other": [] },
       pendingChoices: [] };
     app.grantFeatures(character, app.featuresAtLevel("Ranger", "Hunter", 3));
     const pending = character.pendingChoices.find(p => p.featureName === "Hunter's Prey");
-    // choiceExpanded/choiceSelected are module-level in choices.js, bridged
-    // onto app the same way character is -- set them directly rather than
-    // going through openResolveChoiceModal, which keys off app.character
-    // (the app's singleton) and would silently no-op against this throwaway
-    // local character
-    app.choiceExpanded = null;
+    // choiceSelected is module-level in choices.js, bridged onto app the same
+    // way character is -- set it directly rather than going through
+    // openResolveChoiceModal, which keys off app.character
     app.choiceSelected = [];
     const collapsed = app.resolveChoiceHtml(pending);
-    if ((collapsed.match(/collapse-body open/g) || []).length !== 0) {
+    if ((collapsed.match(/creator-option-desc/g) || []).length !== 0) {
       throw new Error("expected nothing open by default");
     }
-    app.choiceExpanded = "Colossus Slayer";
+    app.choiceSelected = ["Colossus Slayer"];
     const opened = app.resolveChoiceHtml(pending);
-    if (!/Colossus Slayer[\s\S]{0,150}collapse-body open/.test(opened)) {
-      throw new Error("expected Colossus Slayer's body to carry the open class once expanded");
+    if (!/Colossus Slayer[\s\S]{0,250}creator-option-desc/.test(opened)) {
+      throw new Error("expected Colossus Slayer's description to open once picked");
     }
     if (!opened.includes("Your tenacity can wear down the most potent foes")) {
-      throw new Error("expected Colossus Slayer's own desc to render once expanded");
+      throw new Error("expected Colossus Slayer's own desc to render once picked");
     }
   });
 
@@ -592,6 +632,9 @@ module.exports = function (suite) {
     const weapon = c.inventory.find(i => i.isWeapon);
     const attack = app.calculateAttack(c, weapon);
     app.showRoll({ label: "Test Swing", notation: "1d20+5", sources: attack.toHitSources, kind: "attack" });
+    // the window opens unrolled; rollNow() is what throws it and logs it
+    if (app.rollHistory.length !== 0) throw new Error("nothing should be logged before the throw");
+    app.rollNow();
     if (app.rollHistory.length !== 1) throw new Error("expected the roll to be logged, got " + app.rollHistory.length);
     const entry = app.rollHistory[0];
     if (entry.label !== "Test Swing") throw new Error("expected the label to be logged");
@@ -602,6 +645,7 @@ module.exports = function (suite) {
   suite.runs("a reroll logs a second entry rather than replacing the first", () => {
     app.clearRollHistory();
     app.showRoll({ label: "Rerolled", notation: "1d20", kind: "check" });
+    app.rollNow();
     app.rerollCurrent();
     if (app.rollHistory.length !== 2) throw new Error("expected both rolls kept, got " + app.rollHistory.length);
   });
@@ -619,9 +663,10 @@ module.exports = function (suite) {
   });
   suite.runs("newest first, and capped", () => {
     app.clearRollHistory();
-    for (let i = 0; i < 60; i++) app.recordRoll({ label: "Roll " + i, notation: "1d6", total: i });
-    if (app.rollHistory.length !== 50) throw new Error("expected the log capped at 50, got " + app.rollHistory.length);
-    if (app.rollHistory[0].label !== "Roll 59") throw new Error("expected newest first");
+    // the cap is a bound on growth, not a short list -- a session's rolls fit
+    for (let i = 0; i < app.HISTORY_LIMIT + 10; i++) app.recordRoll({ label: "Roll " + i, notation: "1d6", total: i });
+    if (app.rollHistory.length !== app.HISTORY_LIMIT) throw new Error("expected the log capped at " + app.HISTORY_LIMIT + ", got " + app.rollHistory.length);
+    if (app.rollHistory[0].label !== "Roll " + (app.HISTORY_LIMIT + 9)) throw new Error("expected newest first");
   });
   suite.runs("history survives a reload", () => {
     app.clearRollHistory();
@@ -694,6 +739,7 @@ module.exports = function (suite) {
     if (app.MENU_STUBS.length) throw new Error("expected MENU_STUBS emptied, still has: " + app.MENU_STUBS.map(s => s.label).join(", "));
   });
   suite.runs("the drawer offers the three that used to be stubs", () => {
+    app.currentScreen = "sheet";   // the rest/dice/character entries need a character open
     app.openAppMenu();
     const drawer = app.__modals[app.__modals.length - 1].html;
     if (!drawer.includes('id="menu-dice-history"')) throw new Error("expected a Dice History entry");
@@ -745,10 +791,15 @@ module.exports = function (suite) {
     if (app.tutorialState.phase !== "creation") throw new Error("expected phase to advance to creation");
     if (!app.creatorState) throw new Error("expected onNext to open the character creator");
   });
-  suite.runs("creation phase renders nothing until the wizard is actually started", () => {
+  // the wizard's start screen used to render no banner and so no Skip, on a
+  // screen with no app menu -- backing out of the creator mid-tour left the
+  // tutorial running with no way to see or leave it
+  suite.runs("creation phase explains the wizard's start screen too", () => {
     app.tutorialState = { active: true, phase: "creation", seenTabs: [], seenActions: [] };
     app.creatorState = { started: false, step: 0 };
-    if (app.tutorialContentFor() !== null) throw new Error("expected null before 'Build a Character' is tapped");
+    const content = app.tutorialContentFor();
+    if (!content) throw new Error("expected the start screen to be part of the lesson");
+    if (content.placement !== "inline") throw new Error("expected an inline banner");
   });
   suite.runs("creation phase content is keyed by the wizard's current step", () => {
     app.tutorialState = { active: true, phase: "creation", seenTabs: [], seenActions: [] };
@@ -789,12 +840,20 @@ module.exports = function (suite) {
     app.renderTutorialOverlay();   // this is what actually records the tab as seen
     if (!app.tutorialState.seenTabs.includes("combat")) throw new Error("expected renderTutorialOverlay to mark the tab seen");
   });
-  suite.runs("tabs phase advances to actions once all five tabs are seen", () => {
+  // marking the tab seen and advancing in the same pass meant the fifth tab
+  // never got its own banner -- "Notes" was dead content. The last tab now
+  // shows its explanation with a Got It, and that tap is what advances.
+  suite.runs("the fifth tab still gets its own banner, with a Got It", () => {
     app.tutorialState = { active: true, phase: "tabs", seenTabs: ["combat", "character", "spells", "inventory"], seenActions: [] };
     app.activeTab = "notes";
     app.currentScreen = "sheet";
     app.renderTutorialOverlay();
-    if (app.tutorialState.phase !== "actions") throw new Error("expected tabs -> actions once the fifth tab is visited");
+    const content = app.tutorialContentFor();
+    if (content.title !== "Notes") throw new Error("expected Notes' own content, not the actions phase");
+    if (!content.onNext) throw new Error("expected a Got It on the last tab");
+    if (app.tutorialState.phase !== "tabs") throw new Error("expected to still be in the tabs phase until Got It is tapped");
+    content.onNext();
+    if (app.tutorialState.phase !== "actions") throw new Error("expected Got It to advance to actions");
   });
   suite.runs("actions phase points at the right control for the active tab", () => {
     app.tutorialState = { active: true, phase: "actions", seenTabs: [], seenActions: [] };

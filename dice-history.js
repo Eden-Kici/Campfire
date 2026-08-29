@@ -21,7 +21,11 @@
    can't trust, which is worse than no log. */
 
 const ROLL_HISTORY_KEY = "campfire.rollHistory";
-const HISTORY_LIMIT = 50;
+/* 500 rather than 50: a session's worth of rolls is the point of a history,
+   and each entry is a handful of short fields -- 500 of them is well under
+   100KB of JSON, which localStorage carries without noticing. The cap exists
+   to stop unbounded growth, not to keep the list short. */
+const HISTORY_LIMIT = 500;
 
 let rollHistory = [];
 
@@ -86,7 +90,7 @@ function diceHistoryHtml() {
   const showWho = historyShowsCharacters();
   return `
     <div class="modal-heading">Dice History</div>
-    <div class="breakdown-source" style="margin-bottom:12px;">The last ${HISTORY_LIMIT} rolls, newest first.</div>
+    <div class="breakdown-source" style="margin-bottom:12px;">Newest first. The last ${HISTORY_LIMIT} are kept.</div>
     ${rollHistory.length ? `
       ${rollHistory.map(r => `
         <div class="res-row" style="align-items:flex-start;">

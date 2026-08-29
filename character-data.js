@@ -119,6 +119,12 @@ let character = {
   // place a known language lives, so there's nowhere for it to drift from.
   languages: ["Common", "Elvish"],
 
+  /* Coin. `purse` is on you and can weigh something; `stash` is somewhere else
+     and never does. Both exist on every character even when the stash setting
+     is off, so turning it on doesn't have to migrate anything. */
+  purse: { pp: 0, gp: 42, ep: 0, sp: 15, cp: 8 },
+  stash: { pp: 0, gp: 0, ep: 0, sp: 0, cp: 0 },
+
   /* A choice a granted feature owes you but hasn't answered yet -- "choose an
      extra language," "choose a fighting style." Not every feature creates
      one; only features with a `.choice` descriptor in the SRD data do (see
@@ -298,20 +304,20 @@ let character = {
   // always available). attackRoll marks spells that roll to-hit using the
   // casting class's spell attack bonus.
   spells: [
-    { id: 1, name: "Fire Bolt", level: 0, classSource: "Wizard", castingTime: "A", attackRoll: true, desc: "Ranged spell attack, 1d10 fire damage." },
+    { id: 1, name: "Fire Bolt", level: 0, classSource: "Wizard", castingTime: "A", attackRoll: true, damage: "1d10", desc: "Ranged spell attack, 1d10 fire damage." },
     { id: 2, name: "Mage Hand", level: 0, classSource: "Wizard", castingTime: "A", attackRoll: false, desc: "A spectral hand that can carry up to 10 pounds." },
     { id: 3, name: "Prestidigitation", level: 0, classSource: "Wizard", castingTime: "A", attackRoll: false, desc: "A handful of harmless minor effects." },
     { id: 4, name: "Guidance", level: 0, classSource: "Cleric", castingTime: "A", attackRoll: false, desc: "Concentration. Target adds 1d4 to one ability check." },
-    { id: 5, name: "Sacred Flame", level: 0, classSource: "Cleric", castingTime: "A", attackRoll: false, desc: "Dexterity save or 1d8 radiant damage. Cover doesn't help." },
+    { id: 5, name: "Sacred Flame", level: 0, classSource: "Cleric", castingTime: "A", attackRoll: false, damage: "1d8", desc: "Dexterity save or 1d8 radiant damage. Cover doesn't help." },
     { id: 6, name: "Thaumaturgy", level: 0, classSource: "Cleric", castingTime: "A", attackRoll: false, desc: "A minor wonder: a booming voice, trembling ground, flickering flames." },
 
     { id: 7, name: "Shield", level: 1, classSource: "Wizard", castingTime: "R", attackRoll: false, prepared: true, desc: "+5 AC until the start of your next turn, including against the triggering attack." },
-    { id: 8, name: "Magic Missile", level: 1, classSource: "Wizard", castingTime: "A", attackRoll: false, prepared: true, desc: "Three darts, 1d4+1 force damage each, automatically hitting." },
+    { id: 8, name: "Magic Missile", level: 1, classSource: "Wizard", castingTime: "A", attackRoll: false, prepared: true, damage: "3d4+3", desc: "Three darts, 1d4+1 force damage each, automatically hitting." },
     { id: 9, name: "Cure Wounds", level: 1, classSource: "Cleric", castingTime: "A", attackRoll: false, prepared: true, desc: "Heal 1d8 + Wisdom modifier, plus 2 from Disciple of Life." },
     { id: 10, name: "Bless", level: 1, classSource: "Cleric", castingTime: "A", attackRoll: false, prepared: true, desc: "Concentration. Three creatures add 1d4 to attack rolls and saving throws." },
 
     { id: 11, name: "Misty Step", level: 2, classSource: "Wizard", castingTime: "B", attackRoll: false, prepared: true, desc: "Teleport up to 30 feet to a space you can see." },
-    { id: 12, name: "Spiritual Weapon", level: 2, classSource: "Cleric", castingTime: "B", attackRoll: true, prepared: true, desc: "A floating weapon, 1d8 + Wisdom modifier force damage." }
+    { id: 12, name: "Spiritual Weapon", level: 2, classSource: "Cleric", castingTime: "B", attackRoll: true, prepared: true, damage: "1d8+3", desc: "A floating weapon, 1d8 + Wisdom modifier force damage." }
   ],
 
   // mock party roster for the sharing UI -- no real accounts/network yet
@@ -872,11 +878,13 @@ function calculateAC(character) {
 
   let dexAllowed = dexModifier;
   if (worn) {
-    sources.push({ label: worn.name, value: worn.armour.base || 0 });
+    // the armour's base AC is a value, not a bonus -- printed with a sign it
+    // read "Chain Shirt +13", which is simply untrue
+    sources.push({ label: worn.name, value: worn.armour.base || 0, plain: true });
     const cap = worn.armour.dexCap;
     if (cap !== null && cap !== undefined) dexAllowed = Math.min(dexModifier, cap);
   } else {
-    sources.push({ label: "Unarmoured", value: 10 });
+    sources.push({ label: "Unarmoured", value: 10, plain: true });
   }
 
   const capped = worn && worn.armour.dexCap !== null && worn.armour.dexCap !== undefined && dexModifier > worn.armour.dexCap;
@@ -1025,14 +1033,124 @@ function calculatePassivePerception(character) {
   return { total, sources };
 }
 
+/* ---------- money ----------
+
+   Coin is its own thing, not an inventory item. Four denominations, two
+   purses: what you carry and what you've stashed somewhere (a vault, the party
+   fund, under a floorboard). The stash is opt-in -- most tables don't track
+   it -- and only the carried purse can weigh anything.
+
+   `purse` and `stash` are plain { gp, ep, sp, cp } objects rather than a single
+   copper total, because a player looking at their sheet wants to see the coins
+   they have, not a converted number. Conversion is a thing they do at a shop,
+   so it stays a display concern (`moneyInGold`) rather than the storage shape.
+
+   Amounts are allowed to be anything the player types, including more than any
+   one denomination "should" hold -- 340 sp is a legitimate way to carry money.
+   Same reasoning as resources being allowed to exceed their max. */
+const COIN_TYPES = [
+  { key: "pp", label: "PP", name: "Platinum", perGold: 0.1 },
+  { key: "gp", label: "GP", name: "Gold", perGold: 1 },
+  { key: "ep", label: "EP", name: "Electrum", perGold: 2 },
+  { key: "sp", label: "SP", name: "Silver", perGold: 10 },
+  { key: "cp", label: "CP", name: "Copper", perGold: 100 }
+];
+
+// 50 coins to the pound, regardless of denomination
+const COINS_PER_POUND = 50;
+
+function emptyPurse() {
+  const purse = {};
+  COIN_TYPES.forEach(coin => { purse[coin.key] = 0; });
+  return purse;
+}
+
+// tolerates a missing or partial purse, because a character saved before money
+// existed has neither, and a kit only ever grants one or two denominations
+function coinCount(purse, key) {
+  return (purse && Number(purse[key])) || 0;
+}
+
+function totalCoins(purse) {
+  return COIN_TYPES.reduce((sum, coin) => sum + coinCount(purse, coin.key), 0);
+}
+
+function moneyInGold(purse) {
+  return COIN_TYPES.reduce((sum, coin) => sum + coinCount(purse, coin.key) / coin.perGold, 0);
+}
+
+function addCoins(purse, coins) {
+  const out = Object.assign(emptyPurse(), purse);
+  Object.keys(coins || {}).forEach(key => { out[key] = coinCount(out, key) + Number(coins[key] || 0); });
+  return out;
+}
+
+/* Only the carried purse, and only when the setting says coin has weight. The
+   rule is real (50 to the pound) and almost every table ignores it, so it is
+   off by default rather than absent -- the POC's job is to show the model can
+   express it. */
+function carriedCoinWeight(character) {
+  if (typeof settings === "undefined" || !settings.moneyCountsWeight) return 0;
+  return totalCoins(character.purse) / COINS_PER_POUND;
+}
+
 function calculateCarriedWeight(character) {
   const sources = [];
   character.inventory.forEach(item => {
     const rule = character.categoryRules[item.category];
     if (rule && rule.countsWeight) sources.push({ label: item.name, value: item.weight * (item.qty || 1) });
   });
+  const coins = carriedCoinWeight(character);
+  if (coins) sources.push({ label: totalCoins(character.purse) + " coins", value: coins });
   const total = sources.reduce((sum, s) => sum + s.value, 0);
   return { total, sources };
+}
+
+/* Carrying capacity is Strength x 15, and nothing in the app had it -- so
+   "Carried weight: 46 lb" was 46 out of nothing. Encumbrance variants exist
+   but the base rule is the one every table uses. */
+function calculateCarryingCapacity(character) {
+  const str = effectiveAbilityScore(character, "STR");
+  return { total: str * 15, sources: [{ label: "Strength " + str + " x 15", value: str * 15 }] };
+}
+
+/* Spell slots and prepared counts, read off a class's `spellcasting`
+   descriptor (srd-classes.js). Pure functions over the descriptor plus a
+   class level, so building a character and levelling one up can share the
+   same answer instead of each carrying its own table. Returns a plain
+   { <spell level>: <slots> } map, empty for a class that isn't casting yet
+   (a 1st-level Paladin) or doesn't cast at all. */
+function spellSlotsAtLevel(spellcasting, classLevel) {
+  const slots = {};
+  if (!spellcasting || classLevel < (spellcasting.startLevel || 1)) return slots;
+
+  if (spellcasting.progression === "pact") {
+    const pact = PACT_MAGIC_SLOTS[Math.min(classLevel, PACT_MAGIC_SLOTS.length - 1)];
+    if (pact) slots[pact.level] = pact.count;
+    return slots;
+  }
+
+  const table = spellcasting.progression === "half" ? SPELL_SLOTS_HALF_CASTER : SPELL_SLOTS_FULL_CASTER;
+  (table[Math.min(classLevel, table.length - 1)] || []).forEach((count, index) => { slots[index + 1] = count; });
+  return slots;
+}
+
+// Pact Magic comes back on a short rest; every other caster's slots on a long
+// one. Same vocabulary resources and hit dice use, so rests need no special case.
+function spellSlotRecharge(spellcasting) {
+  return { on: spellcasting && spellcasting.progression === "pact" ? "SR" : "LR", amount: "all" };
+}
+
+/* How many spells a class can have ready at once. A prepared caster works it
+   out from its ability modifier and level; a known caster (Bard, Sorcerer,
+   Warlock, Ranger) has a fixed list instead, and `known` is what it starts
+   with -- the spells-known progression past that level isn't modelled, so
+   levelling one of those is still the player's to adjust. */
+function maxPreparedSpells(spellcasting, classLevel, abilityMod) {
+  if (!spellcasting || classLevel < (spellcasting.startLevel || 1)) return 0;
+  if (spellcasting.prepared === "ability+level") return Math.max(1, abilityMod + classLevel);
+  if (spellcasting.prepared === "ability+halfLevel") return Math.max(1, abilityMod + Math.floor(classLevel / 2));
+  return spellcasting.known || 0;
 }
 
 function calculateSpellAttack(character, ability) {
