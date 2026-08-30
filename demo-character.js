@@ -323,8 +323,15 @@ let character = {
 
     { id: 7, name: "Shield", level: 1, classSource: "Wizard", castingTime: "R", attackRoll: false, prepared: true, desc: "+5 AC until the start of your next turn, including against the triggering attack." },
     { id: 8, name: "Magic Missile", level: 1, classSource: "Wizard", castingTime: "A", attackRoll: false, prepared: true, damage: "3d4+3", desc: "Three darts, 1d4+1 force damage each, automatically hitting." },
-    { id: 9, name: "Cure Wounds", level: 1, classSource: "Cleric", castingTime: "A", attackRoll: false, prepared: true, desc: "Heal 1d8 + Wisdom modifier, plus 2 from Disciple of Life." },
-    { id: 10, name: "Bless", level: 1, classSource: "Cleric", castingTime: "A", attackRoll: false, prepared: true, desc: "Concentration. Three creatures add 1d4 to attack rolls and saving throws." },
+    { id: 9, name: "Cure Wounds", level: 1, classSource: "Cleric", castingTime: "A", attackRoll: false, prepared: true,
+      heal: "1d8", healMod: true,
+      desc: "A creature you touch regains a number of hit points equal to 1d8 + your spellcasting ability modifier. This spell has no effect on undead or constructs.\n\nAt Higher Levels. When you cast this spell using a spell slot of 2nd level or higher, the healing increases by 1d8 for each slot level above 1st." },
+    { id: 10, name: "Bless", level: 1, classSource: "Cleric", castingTime: "A", attackRoll: false, prepared: true,
+      effects: [
+        { category: "Bonus", value: { stat: "Attack Rolls", amount: "1d4" } },
+        { category: "Saving Throw", value: { ability: "All", amount: "1d4" } }
+      ],
+      desc: "You bless up to three creatures of your choice within range. Whenever a target makes an attack roll or a saving throw before the spell ends, the target can roll a d4 and add the number rolled to the attack roll or saving throw.\n\nAt Higher Levels. When you cast this spell using a spell slot of 2nd level or higher, you can target one additional creature for each slot level above 1st." },
 
     { id: 11, name: "Misty Step", level: 2, classSource: "Wizard", castingTime: "B", attackRoll: false, prepared: true, desc: "Teleport up to 30 feet to a space you can see." },
     { id: 12, name: "Spiritual Weapon", level: 2, classSource: "Cleric", castingTime: "B", attackRoll: true, prepared: true, damage: "1d8+3", desc: "A floating weapon, 1d8 + Wisdom modifier force damage." }

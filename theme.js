@@ -86,11 +86,11 @@ function openSettingsModal() {
     ${toggleLineHtml("setting-fast-rolls", "Fast Rolls", settings.fastRolls,
       { hint: "Roll on the first tap" })}
     ${toggleLineHtml("setting-auto-slots", "Casting spends the slot", settings.autoSpendSlots,
-      { hint: "Off, casting leaves your slots alone and you spend them yourself" })}
+      { hint: "Casting a spell automatically uses a spell slot" })}
     ${toggleLineHtml("setting-visual-slots", "Visual spell slots", settings.visualSpellSlots,
-      { hint: "Pips instead of a count. Tap one to spend it" })}
+      { hint: "Replace number count with spell slot icons. Tap to track" })}
     ${toggleLineHtml("setting-bonus-range", "Show bonus ranges on the sheet", settings.showBonusRange,
-      { hint: "A blessed +7 reads +8~11. The roll window shows it either way" })}
+      { hint: "E.g. A blessed +7 reads +8~11" })}
     ${toggleLineHtml("setting-source-tags", "Show content source tags", settings.showSourceTags,
       { hint: "Marks every item SRD, 3PP or CC. Your own content is always marked" })}
     ${toggleLineHtml("setting-stashed-money", "Track stashed coins", settings.trackStashedMoney,

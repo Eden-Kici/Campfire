@@ -751,13 +751,20 @@ function hitDiceRowsHtml(mode) {
 // concentration, and any number of modifiers underneath. Naming it is what
 // makes non-SRD content expressible -- "Bless" or a homebrew curse is just a
 // named group, and its modifiers are removed together with it.
-function openAddEffectModal() {
-  const formEffects = [{ category: "Condition", value: {} }];
-  let concentration = false;
+/* Doubles as the editor. An effect could be created and removed but never
+   corrected, so a typo in a name or a wrong modifier meant deleting it and
+   building it again -- and rebuilding it lost the id, which is what the party
+   uses to take a pushed effect back. Editing keeps the id. */
+function openAddEffectModal(existing) {
+  const editing = !!existing;
+  const formEffects = editing
+    ? JSON.parse(JSON.stringify(existing.effects || []))
+    : [{ category: "Condition", value: {} }];
+  let concentration = editing ? !!existing.concentration : false;
 
   openModal("full", `
-    <div class="modal-heading">Add Effect</div>
-    ${textFieldHtml("effect-name", "Name", "", { placeholder: "e.g. Bless, Prone, Hexed" })}
+    <div class="modal-heading">${editing ? "Edit Effect" : "Add Effect"}</div>
+    ${textFieldHtml("effect-name", "Name", editing ? existing.name : "", { placeholder: "e.g. Bless, Prone, Hexed" })}
     ${searchListHtml("effect-name-results")}
 
     <div class="field-row">
@@ -766,21 +773,21 @@ function openAddEffectModal() {
         { value: "Short Rest", label: "Until Short Rest" },
         { value: "Long Rest", label: "Until Long Rest" },
         { value: "Permanent", label: "Permanent" }
-      ], "Permanent")}
+      ], editing ? existing.duration.type : "Permanent")}
       ${fieldHtml("Concentration",
-        `<div class="field-control"><div class="switch" id="effect-conc-switch"><div class="knob"></div></div></div>`,
+        `<div class="field-control"><div class="switch${concentration ? " on" : ""}" id="effect-conc-switch"><div class="knob"></div></div></div>`,
         { className: "field-shrink" })}
     </div>
     <div id="effect-duration-rounds"></div>
 
-    ${textAreaFieldHtml("effect-note", "Note (optional)", "",
+    ${textAreaFieldHtml("effect-note", "Note (optional)", editing ? existing.note : "",
       { placeholder: "Anything that won't fit in the name — who cast it, what ends it, table rulings" })}
 
     ${fieldLabelHtml("Modifiers", { style: "margin-top:14px;" })}
     <div id="effect-effects-list"></div>
     <button class="add-link" id="add-effect-row-button">+ Add Modifier</button>
     <div class="menu-note">Leave the list empty for a label-only reminder with no mechanical effect.</div>
-    <button class="btn-primary" id="save-effect-button" style="margin-top:14px;">Add Effect</button>
+    <button class="btn-primary" id="save-effect-button" style="margin-top:14px;">${editing ? "Save Changes" : "Add Effect"}</button>
   `);
   guardModalEdits();
 
@@ -792,8 +799,9 @@ function openAddEffectModal() {
   const listEl = document.getElementById("effect-effects-list");
 
   function renderRoundsField() {
+    const rounds = (editing && existing.duration.type === "Rounds" && existing.duration.rounds) || 1;
     roundsField.innerHTML = durationTypeSelect.value === "Rounds"
-      ? numberFieldHtml("effect-rounds", "Number of Rounds", 1) : "";
+      ? numberFieldHtml("effect-rounds", "Number of Rounds", rounds) : "";
   }
   durationTypeSelect.addEventListener("change", renderRoundsField);
   renderRoundsField();
@@ -815,8 +823,10 @@ function openAddEffectModal() {
      the app's own dialog now, so it can't block: the save continues in its
      callback instead of after a return value. */
   document.getElementById("save-effect-button").addEventListener("click", () => {
-    if (concentration && concentrationGroups(character).length) {
-      const holding = concentrationGroups(character).map(g => effectGroupLabel(g));
+    // an effect already concentrating does not have to end itself to be edited
+    const clashes = concentrationGroups(character).filter(g => g !== existing);
+    if (concentration && clashes.length) {
+      const holding = clashes.map(g => effectGroupLabel(g));
       const named = document.getElementById("effect-name").value.trim();
       confirmModal({
         title: "End your current concentration?",
@@ -834,9 +844,7 @@ function openAddEffectModal() {
     const durationType = durationTypeSelect.value;
     const name = document.getElementById("effect-name").value.trim();
 
-    const newId = makeId(character.activeEffects);
-    character.activeEffects.push({
-      id: newId,
+    const shape = {
       name,
       note: document.getElementById("effect-note").value.trim(),
       concentration,
@@ -845,7 +853,11 @@ function openAddEffectModal() {
         rounds: durationType === "Rounds" ? (parseInt(document.getElementById("effect-rounds").value) || 1) : null
       },
       effects: readFeatureEffectsFromForm(formEffects)
-    });
+    };
+    // edited in place: the id is what a party uses to take a pushed effect
+    // back again, so rebuilding the group would strand it on other sheets
+    if (editing) Object.assign(existing, shape);
+    else character.activeEffects.push(Object.assign({ id: makeId(character.activeEffects) }, shape));
     closeModal();
     renderContent();
     if (replaced.length) showToast("Concentration dropped · " + replaced.join(", ") + " ended");
@@ -933,6 +945,7 @@ function openEffectDetailModal(effectId) {
       <div class="breakdown-subhead">Modifiers</div>
       ${modifiers.map(e => `<div class="breakdown-row"><span>${esc(e.category)}</span><span>${esc(effectSummaryLabel(e, totalLevel(character)))}</span></div>`).join("")}
     ` : `<div class="empty-hint">No mechanical effect — this is a reminder only.</div>`}
+    <button class="btn-secondary" id="edit-effect-button">Edit</button>
     ${partyMemberNames(party.members, deviceId()).length
       ? `<button class="btn-secondary" id="send-effect-button">Send to a Player</button>` : ""}
     <button class="btn-primary btn-danger" id="remove-effect-button">Remove Effect</button>
@@ -942,6 +955,11 @@ function openEffectDetailModal(effectId) {
      second time on every chip you opened, and closeModal doesn't re-render, so
      the extra listeners piled up. */
   const modal = document.getElementById("modal-overlay");
+
+  modal.querySelector("#edit-effect-button").addEventListener("click", () => {
+    closeModal();
+    openAddEffectModal(character.activeEffects.find(e => sameId(e.id, effectId)));
+  });
 
   const sendButton = modal.querySelector("#send-effect-button");
   if (sendButton) sendButton.addEventListener("click", () => openSendEffectModal(group));

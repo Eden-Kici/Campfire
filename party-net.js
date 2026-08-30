@@ -330,6 +330,23 @@ function handlePartyMessage(raw) {
     return;
   }
 
+  if (msg.t === "heal") {
+    if (msg.to !== "*" && msg.to !== deviceId()) return;
+    if (currentScreen !== "sheet") { showToast(msg.fromName + " healed you for " + msg.amount + " \u2014 open a character"); return; }
+    confirmModal({
+      title: msg.fromName + " healed you",
+      body: msg.spell + " restores " + msg.amount + " hit point" + (msg.amount === 1 ? "" : "s") + ".",
+      confirmLabel: "Take it",
+      cancelLabel: "No thanks",
+      onConfirm: () => {
+        applyHp("heal", msg.amount);
+        showToast("Healed " + msg.amount);
+        renderContent();
+      }
+    });
+    return;
+  }
+
   if (msg.t === "effect") {
     if (msg.to !== "*" && msg.to !== deviceId()) return;
     if (currentScreen !== "sheet") { showToast(msg.fromName + " sent " + msg.group.name + " — open a character"); return; }
@@ -521,6 +538,18 @@ function partyRevokeEffect(group) {
   });
   delete group.castOn;
   return sent;
+}
+
+/* Healing travels as a number, not as dice: the caster rolled it, the caster's
+   own bonuses are already in it, and re-rolling it on arrival would give two
+   people two different answers to one spell. */
+function partySendHeal(spellName, amount, toDevice) {
+  return partySend("heal", {
+    spell: spellName,
+    amount: amount,
+    to: toDevice || "*",
+    fromName: myPartyName()
+  });
 }
 
 function partyPushEffect(group, toDevice) {

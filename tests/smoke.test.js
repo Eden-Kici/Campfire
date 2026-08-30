@@ -56,12 +56,12 @@ module.exports = function (suite) {
   suite.runs("cast a spell", () => app.castSpell(c.spells.find(s => s.level > 0).id));
   suite.runs("the Add Spell form searches the real SRD list, not just free text", () => {
     const fields = app.spellFormFieldsHtml(null, true);
-    if (!fields.includes('class="field combo"')) throw new Error("expected the Add flow to use the SRD-searching combo field");
+    if (!fields.includes('id="spell-form-name-results"')) throw new Error("expected the Add flow to use the shared SRD search list");
     if (!fields.includes('id="spell-form-name"')) throw new Error("expected a name field");
   });
   suite.runs("editing an existing spell still uses a plain name field, not the picker", () => {
     const fields = app.spellFormFieldsHtml(c.spells[0]);
-    if (fields.includes('class="field combo"')) throw new Error("expected Edit to keep the plain text field, not the SRD picker");
+    if (fields.includes('id="spell-form-name-results"')) throw new Error("expected Edit to keep the plain text field, not the SRD picker");
   });
   suite.runs("spellCastingTimeCode maps SRD casting-time text onto the sheet's three buckets", () => {
     if (app.spellCastingTimeCode("1 action") !== "A") throw new Error("expected Action");

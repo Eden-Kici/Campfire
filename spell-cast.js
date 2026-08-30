@@ -69,6 +69,44 @@ function spellTakesTargets(spell) {
   return /creature|target|ally|allies/i.test(spellText(spell));
 }
 
+/* ---------- healing ---------- */
+
+/* The caster's own modifier, from the spell's own class. A spell naming a
+   class this character doesn't cast adds nothing rather than a number out of
+   nowhere -- same rule spellAttackBonus follows. */
+function spellHealModifier(spell) {
+  const caster = character.spellcasting.classes.find(c => c.name === spell.classSource);
+  if (!caster) return 0;
+  return abilityModifier(effectiveAbilityScore(character, caster.ability));
+}
+
+/* "the healing increases by 1d8 for each slot level above 1st" is the only
+   phrasing the SRD uses for this, so it is the only one read. Nothing found
+   means upcasting adds no healing, which is also true of plenty of spells. */
+function spellHealUpcastDie(spell) {
+  const match = /healing increases by (\d*d\d+)\s+for each slot level above/i.exec(spellText(spell));
+  return match ? match[1] : null;
+}
+
+/* The notation actually rolled, built at the level being cast. Returned as
+   text so the roll toast, the dice history and the number applied to hit
+   points are all the same roll, said the same way. */
+function castHealNotation(spell, level) {
+  if (!spell.heal) return null;
+  let notation = spell.heal;
+  const extra = spellHealUpcastDie(spell);
+  const above = Math.max(0, (level || spell.level) - spell.level);
+  if (extra && above) {
+    const match = /^(\d*)d(\d+)$/i.exec(extra);
+    if (match) notation += " + " + ((parseInt(match[1] || "1")) * above) + "d" + match[2];
+  }
+  if (spell.healMod) {
+    const mod = spellHealModifier(spell);
+    if (mod) notation += (mod > 0 ? " + " : " - ") + Math.abs(mod);
+  }
+  return notation;
+}
+
 function castableSpellLevels(spell) {
   const slotLevels = Object.keys(character.spellSlots).map(n => parseInt(n)).filter(n => n > 0);
   const highest = slotLevels.length ? Math.max.apply(null, slotLevels) : spell.level;
@@ -135,6 +173,11 @@ function castModalHtml() {
                    : Math.abs(above) + (Math.abs(above) === 1 ? " level" : " levels") + " below its base.")
     }</div>
 
+    ${castHealNotation(spell, level) ? `
+      <div class="breakdown-row" style="margin-top:10px;"><span>Healing</span><span>${esc(castHealNotation(spell, level))}</span></div>` : ""}
+    ${spell.damage ? `
+      <div class="breakdown-row"><span>Damage</span><span>${esc(spell.damage)}</span></div>` : ""}
+
     ${spellTakesTargets(spell) ? castTargetsHtml(limit) : ""}
 
     <div class="btn-row-2" style="margin-top:18px;">
@@ -144,16 +187,24 @@ function castModalHtml() {
   `;
 }
 
+/* You are always a legal target for your own spell. Without a party the roster
+   was empty, so casting Cure Wounds on yourself -- the single most ordinary
+   thing a cleric does -- had nowhere to land. */
+function castTargetRoster() {
+  if (typeof party !== "undefined" && party.status !== "none" && party.members.length) return party.members;
+  return [{ device: deviceId(), name: character.name, you: true }];
+}
+
 function castTargetsHtml(limit) {
-  const roster = (typeof party !== "undefined" && party.status !== "none") ? party.members : [];
+  const roster = castTargetRoster();
   return `
     <div class="breakdown-subhead">Who it lands on${limit != null ? ` <span class="field-hint" style="display:inline;">up to ${limit}</span>` : ""}</div>
-    ${roster.length ? roster.map(member => `
+    ${roster.map(member => `
       <div class="member-row" data-cast-target="${esc(member.device)}" style="cursor:pointer;">
         <span>${esc(member.name)}${member.you ? " (you)" : ""}</span>
         <span class="radio-dot${castState.targets.indexOf(member.device) !== -1 ? " selected" : ""}"></span>
       </div>
-    `).join("") : `<div class="empty-hint">Nobody else is in the party.</div>`}
+    `).join("")}
     <div class="member-row">
       <span>Someone else${castState.strangers ? " ×" + castState.strangers : ""}</span>
       <span style="display:flex;gap:8px;">
@@ -218,19 +269,42 @@ function confirmCast() {
   if (autoSpendsSlots() && slot) { slot.current -= 1; spent = true; }
 
   closeModal();
-  shareCastWithTargets(spell, state.targets);
+  shareCastWithTargets(spell, state.targets, level);
 
   const on = named.length ? " on " + named.join(", ") : "";
-  if (spent) showToast("Cast " + spell.name + on + " · spent a " + slotName + "-level slot");
-  else if (!slot) showToast("Cast " + spell.name + on + " · no " + slotName + "-level slots on this sheet");
-  else showToast("Cast " + spell.name + on + " · slot not spent");
+  if (spent) showToast("Cast " + spell.name + on + " \u00B7 spent a " + slotName + "-level slot");
+  else if (!slot) showToast("Cast " + spell.name + on + " \u00B7 no " + slotName + "-level slots on this sheet");
+  else showToast("Cast " + spell.name + on + " \u00B7 slot not spent");
 
+  applyCastHealing(spell, level, state.targets);
   if (spell.attackRoll) rollSpellAttack(spell);
   renderContent();
 }
 
+/* Healing is rolled once and spent on everyone it lands on, which is what the
+   spell says: Cure Wounds is one roll, not one per target. Your own hit points
+   go up here; everybody else's are their sheet to change, so they get asked. */
+function applyCastHealing(spell, level, targets) {
+  const notation = castHealNotation(spell, level);
+  if (!notation) return;
+  const rolled = showRollToast(spell.name + " \u2013 Healing", notation);
+  const total = rolled ? rolled.total : rollNotation(notation).total;
+  const picked = targets || [];
+  /* A spell with no target list at all -- one that reads "you regain" -- heals
+     the only person it could be about. Picking nobody from a list you were
+     shown is different: that is a heal you are about to say out loud to
+     somebody who isn't on the app, so it rolls and stops there. */
+  const onMe = picked.indexOf(deviceId()) !== -1 || (!picked.length && !spellTakesTargets(spell));
+  if (onMe) applyHp("heal", total);
+
+  const others = picked.filter(device => device !== deviceId());
+  if (others.length && typeof party !== "undefined" && party.status !== "none") {
+    others.forEach(device => partySendHeal(spell.name, total, device));
+  }
+}
+
 function castTargetNames(state) {
-  const roster = (typeof party !== "undefined" && party.members) || [];
+  const roster = castTargetRoster();
   const names = state.targets
     .map(device => (roster.find(m => m.device === device) || {}).name)
     .filter(Boolean);
@@ -242,31 +316,49 @@ function castTargetNames(state) {
    Anything instantaneous -- a heal -- is a number said out loud at the table,
    and pushing an effect for it would leave "Cure Wounds" sitting on somebody's
    sheet forever with nothing to ever take it off. */
-function shareCastWithTargets(spell, devices) {
-  if (!devices || !devices.length) return;
-  if (typeof party === "undefined" || party.status === "none") return;
-  if (!spellIsConcentration(spell)) return;
+function spellLeavesSomethingBehind(spell) {
+  return spellIsConcentration(spell) || (spell.effects || []).length > 0;
+}
 
-  const others = devices.filter(device => device !== deviceId());
+function shareCastWithTargets(spell, devices, level) {
+  const picked = devices || [];
+  if (!spellLeavesSomethingBehind(spell)) return;
+
+  const onMe = picked.indexOf(deviceId()) !== -1 || (!picked.length && !spellTakesTargets(spell));
+  const group = effectGroupForSpell(spell, onMe);
+
+  const others = picked.filter(device => device !== deviceId());
   if (!others.length) return;
+  if (typeof party === "undefined" || party.status === "none") return;
 
-  const group = effectGroupForSpell(spell);
   // remembered on the caster's own copy: the caster is the one who will drop
   // concentration, and is therefore the one who has to know whose sheets to clear
   group.castOn = others.slice();
-  others.forEach(device => partyPushEffect(group, device));
+  /* Their copy carries the spell's own modifiers even when the caster kept
+     none -- casting Bless on three other people should bless them, and should
+     not bless you. Same id both ways, because the id is what takes it back. */
+  const theirs = Object.assign({}, group, { effects: spellEffectRows(spell) });
+  others.forEach(device => partyPushEffect(theirs, device));
 }
 
-function effectGroupForSpell(spell) {
+function spellEffectRows(spell) {
+  return JSON.parse(JSON.stringify(spell.effects || []));
+}
+
+/* The group the caster keeps. It exists even when the spell landed only on
+   other people, because concentration is the caster's to hold and to drop --
+   but it carries the spell's modifiers only when the caster is a target,
+   so holding Bless for the party doesn't quietly bless the cleric too. */
+function effectGroupForSpell(spell, onMe) {
   const existing = (character.activeEffects || []).find(g => g.name === spell.name);
   if (existing) return existing;
   const group = {
     id: makeId(character.activeEffects || []),
     name: spell.name,
-    note: "",
-    concentration: true,
+    note: onMe ? "" : "Cast on someone else \u2014 you are holding it, not under it.",
+    concentration: spellIsConcentration(spell),
     duration: { type: "Permanent", rounds: null },
-    effects: []
+    effects: onMe ? spellEffectRows(spell) : []
   };
   character.activeEffects.push(group);
   return group;

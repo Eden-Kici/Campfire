@@ -58,6 +58,25 @@ function suggestedSpellDamage(desc) {
   return match ? match[1].replace(/\s+/g, "") : "";
 }
 
+/* Healing, read the same way and for the same reason: to pre-fill a field the
+   player then owns. Two phrasings cover the SRD -- "regains hit points equal
+   to 1d8" puts the dice after the words, "heals 2d4 hit points" puts them
+   before -- and anything else returns nothing rather than a guess. */
+function suggestedSpellHealing(desc) {
+  const text = desc || "";
+  const after = text.match(/(?:hit points|healing)[^.]{0,40}?(\d*d\d+)/i);
+  if (after) return after[1];
+  const before = text.match(/(\d*d\d+)[^.]{0,30}?(?:hit points|healing)/i);
+  return before ? before[1] : "";
+}
+
+/* Almost every SRD heal adds the caster's own spellcasting modifier, and it is
+   the part players forget. Read once at prefill so the toggle starts in the
+   right place. */
+function spellHealingAddsModifier(desc) {
+  return /hit points[^.]{0,60}?spellcasting ability modifier/i.test(desc || "");
+}
+
 /* The to-hit bonus belongs to the spell's own casting class, so a spell
    naming a class this character doesn't cast has no number to show. Returning
    null rather than calculating against an undefined ability keeps NaN off the
@@ -349,9 +368,15 @@ function spellFormFieldsHtml(spell, pickFromSrd) {
   // the field hint so nothing is stored the player didn't look at
   const suggested = spell && !spell.damage ? suggestedSpellDamage(spell.desc) : "";
   const damageValue = spell ? (spell.damage || suggested) : "";
+  const suggestedHeal = spell && !spell.heal ? suggestedSpellHealing(spell.desc) : "";
+  const healValue = spell ? (spell.heal || suggestedHeal) : "";
+  const healModOn = spell
+    ? (spell.heal ? !!spell.healMod : spellHealingAddsModifier(spell.desc))
+    : false;
   return `
     ${pickFromSrd
-      ? comboFieldHtml("spell-form-name", "Name", "Search the SRD or type your own", "")
+      ? textFieldHtml("spell-form-name", "Name", "", { placeholder: "Search the SRD or type your own" })
+        + searchListHtml("spell-form-name-results")
       : textFieldHtml("spell-form-name", "Name", spell ? spell.name : "", { placeholder: "e.g. Fireball" })}
     <div class="field-row">
       ${selectFieldHtml("spell-form-level", "Level",
@@ -369,8 +394,45 @@ function spellFormFieldsHtml(spell, pickFromSrd) {
         ? "Read out of the description \u2014 check it before saving. Blank means no damage pill."
         : "Dice this spell deals, rolled as written. Leave blank for a spell that deals none."
     })}
+    ${textFieldHtml("spell-form-heal", "Healing", healValue, {
+      placeholder: "e.g. 1d8",
+      hint: suggestedHeal
+        ? "Read out of the description \u2014 check it before saving. Blank means the spell heals nothing."
+        : "Dice this spell heals for, rolled as written. Leave blank for a spell that heals none."
+    })}
+    ${toggleLineHtml("spell-form-heal-mod", "Add your spellcasting modifier", healModOn,
+      { hint: "Most healing spells do. Ignored when Healing is blank." })}
+
+    ${fieldLabelHtml("Conditions it applies", { style: "margin-top:14px;" })}
+    <div id="spell-form-effects-list"></div>
+    <button class="add-link" id="spell-add-effect-row">+ Add Modifier</button>
+    <div class="menu-note">Casting puts these on whoever the spell lands on, under the spell's own name. Leave it empty for a spell that only rolls dice.</div>
+
     ${textAreaFieldHtml("spell-form-desc", "Description", spell ? spell.desc : "", { placeholder: "Optional", large: true })}
   `;
+}
+
+/* Both spell forms grow the same modifier list, wired the same way. It is the
+   effect editor's list, not a second one, so a spell that grants Bless builds
+   exactly the thing Bless is on the sheet. */
+function wireSpellEffectRows(formEffects) {
+  const listEl = document.getElementById("spell-form-effects-list");
+  renderFeatureEffectsList(listEl, formEffects, EFFECT_CATEGORIES_GENERAL, "spell-effect");
+  document.getElementById("spell-add-effect-row").addEventListener("click", () => {
+    formEffects.push({ category: "Bonus", value: {} });
+    renderFeatureEffectsList(listEl, formEffects, EFFECT_CATEGORIES_GENERAL, "spell-effect");
+  });
+}
+
+/* Blank fields are absent fields. A spell carrying heal:"" healMod:false
+   effects:[] would read as different content from the catalogue row it came
+   from, and would export three keys that mean nothing. */
+function tidySpellFields(spell) {
+  if (!spell.damage) delete spell.damage;
+  if (!spell.heal) { delete spell.heal; delete spell.healMod; }
+  else if (!spell.healMod) delete spell.healMod;
+  if (!spell.effects || !spell.effects.length) delete spell.effects;
+  return spell;
 }
 
 function readSpellForm() {
@@ -380,12 +442,16 @@ function readSpellForm() {
     classSource: document.getElementById("spell-form-class").value,
     castingTime: document.getElementById("spell-form-time").value,
     damage: document.getElementById("spell-form-damage").value.trim(),
+    heal: document.getElementById("spell-form-heal").value.trim(),
+    healMod: document.getElementById("spell-form-heal-mod").classList.contains("on"),
     desc: document.getElementById("spell-form-desc").value.trim()
   };
 }
 
 function openAddSpellModal() {
   let attackOn = false;
+  let healModOn = false;
+  const formEffects = [];
   openModal("full", `
     <div class="modal-heading">Add Spell</div>
     ${spellFormFieldsHtml(null, true)}
@@ -394,6 +460,8 @@ function openAddSpellModal() {
   guardModalEdits();
   wireSelect("spell-form-level"); wireSelect("spell-form-class"); wireSelect("spell-form-time");
   document.getElementById("spell-form-attack-switch").addEventListener("click", (e) => { attackOn = !attackOn; e.currentTarget.classList.toggle("on", attackOn); });
+  document.getElementById("spell-form-heal-mod").addEventListener("click", (e) => { healModOn = !healModOn; e.currentTarget.classList.toggle("on", healModOn); });
+  wireSpellEffectRows(formEffects);
 
   // picking a real SRD spell prefills everything else on the form: level,
   // casting time (best-effort -- see spellCastingTimeCode's own comment),
@@ -401,7 +469,7 @@ function openAddSpellModal() {
   // otherwise left for the player to pick, since offering a class they
   // don't have would be worse than offering none), the attack-roll toggle
   // (see spellLikelyAttackRoll), and the full description.
-  wireCombo("spell-form-name", SRD_SPELLS.map(s => s.name), (value) => {
+  wireSearchList("spell-form-name", "spell-form-name-results", () => SRD_SPELLS.map(s => s.name), (value) => {
     const known = SRD_SPELLS.find(s => s.name === value);
     if (!known) return;
     setSelectValue("spell-form-level", String(known.level));
@@ -412,6 +480,9 @@ function openAddSpellModal() {
     attackOn = spellLikelyAttackRoll(known.desc);
     document.getElementById("spell-form-attack-switch").classList.toggle("on", attackOn);
     document.getElementById("spell-form-damage").value = suggestedSpellDamage(known.desc);
+    document.getElementById("spell-form-heal").value = suggestedSpellHealing(known.desc);
+    healModOn = spellHealingAddsModifier(known.desc);
+    document.getElementById("spell-form-heal-mod").classList.toggle("on", healModOn);
     document.getElementById("spell-form-desc").value = known.desc;
   });
 
@@ -419,7 +490,9 @@ function openAddSpellModal() {
     const formData = readSpellForm();
     const newId = makeId(character.spells);
     const spell = Object.assign({ id: newId, attackRoll: attackOn }, formData);
-    if (!spell.damage) delete spell.damage;
+    spell.healMod = healModOn;
+    spell.effects = formEffects.filter(e => e && e.category);
+    tidySpellFields(spell);
     if (spell.level > 0) spell.prepared = false;
     character.spells.push(spell);
     closeModal();
@@ -465,6 +538,16 @@ function openSpellDetailModal(spellId) {
       <div class="breakdown-subhead">Damage</div>
       <div class="breakdown-row"><span>Dice</span><span>${esc(spell.damage)}</span></div>` : ""}
 
+    ${spell.heal ? `
+      <div class="breakdown-subhead">Healing</div>
+      <div class="breakdown-row"><span>Dice</span><span>${esc(spell.heal)}</span></div>
+      ${spell.healMod ? `<div class="breakdown-row"><span>${esc(spell.classSource || "Spellcasting")} modifier</span><span>${formatModifier(spellHealModifier(spell))}</span></div>` : ""}
+      ${spellHealUpcastDie(spell) ? `<div class="breakdown-row"><span>Per level above ${esc(levelLabel(spell.level))}</span><span>+${esc(spellHealUpcastDie(spell))}</span></div>` : ""}` : ""}
+
+    ${(spell.effects || []).length ? `
+      <div class="breakdown-subhead">While it lasts</div>
+      ${spell.effects.map(e => `<div class="breakdown-row"><span>${esc(effectSummaryLabel(e, totalLevel(character)))}</span><span></span></div>`).join("")}` : ""}
+
     ${dc && !spell.attackRoll ? `
       <div class="breakdown-subhead">${esc(spell.classSource)} Save DC</div>
       ${breakdownRowsHtml(dc.sources)}
@@ -497,6 +580,8 @@ function openSpellDetailModal(spellId) {
 function openSpellEditModal(spellId) {
   const spell = character.spells.find(s => s.id == spellId);
   let attackOn = spell.attackRoll || false;
+  let healModOn = spell.heal ? !!spell.healMod : spellHealingAddsModifier(spell.desc);
+  const formEffects = JSON.parse(JSON.stringify(spell.effects || []));
   openModal("full", `
     <div class="modal-heading">Edit Spell</div>
     ${spellFormFieldsHtml(spell)}
@@ -508,11 +593,15 @@ function openSpellEditModal(spellId) {
   guardModalEdits();
   wireSelect("spell-form-level"); wireSelect("spell-form-class"); wireSelect("spell-form-time");
   document.getElementById("spell-form-attack-switch").addEventListener("click", (e) => { attackOn = !attackOn; e.currentTarget.classList.toggle("on", attackOn); });
+  document.getElementById("spell-form-heal-mod").addEventListener("click", (e) => { healModOn = !healModOn; e.currentTarget.classList.toggle("on", healModOn); });
+  wireSpellEffectRows(formEffects);
   document.getElementById("save-spell-edit-button").addEventListener("click", () => {
     const formData = readSpellForm();
     Object.assign(spell, formData);
     spell.attackRoll = attackOn;
-    if (!spell.damage) delete spell.damage;
+    spell.healMod = healModOn;
+    spell.effects = formEffects.filter(e => e && e.category);
+    tidySpellFields(spell);
     if (spell.level === 0) delete spell.prepared;
     else if (spell.prepared === undefined) spell.prepared = false;
     closeModal();

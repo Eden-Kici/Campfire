@@ -160,6 +160,10 @@ function showRollToast(label, notation) {
     activeToasts = activeToasts.filter(t => t !== toast);
     repositionToasts();
   }, 3000);
+  // handed back so a caller that has to do something with the number -- spell
+  // healing, which lands on hit points -- uses the roll it just showed rather
+  // than rolling a second, different one behind the toast
+  return result;
 }
 
 /* Stack from each toast's real height rather than a fixed stride -- a long

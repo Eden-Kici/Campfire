@@ -326,6 +326,23 @@ function parsePartyMessage(raw) {
     };
   }
 
+  /* A number of hit points somebody else rolled for you. It arrives as an
+     offer, not as a change: the receiver's hit points are the receiver's, and
+     a heal that lands without asking is a heal that lands on a character who
+     was already dead, or holding temporary points, or at a table that rules it
+     differently. */
+  if (msg.t === "heal") {
+    const amount = Math.round(Number(msg.amount));
+    if (!isFinite(amount) || amount <= 0 || amount > 999) return null;
+    return {
+      t: "heal",
+      amount: amount,
+      spell: clampText(msg.spell, 40, "a spell"),
+      to: typeof msg.to === "string" ? msg.to : "*",
+      fromName: clampText(msg.fromName, 40, "Someone")
+    };
+  }
+
   if (msg.t === "effect") {
     const group = readEffectGroup(msg.group);
     if (!group) return null;

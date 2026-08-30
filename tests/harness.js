@@ -124,6 +124,7 @@ function loadApp() {
       __rollToasts.push({ label, notation });
       const result = rollNotation(notation);
       recordRoll({ label, notation, total: result.total, detail: result.breakdown });
+      return result;
     };
   `, context);
 

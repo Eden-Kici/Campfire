@@ -135,7 +135,10 @@ module.exports = function (suite) {
   suite.ok("and drops the old group whole", /saveEffect\(dropConcentration\(\)\)/.test(save),
     "dropping concentration has to take the whole effect group, not just the flag");
   suite.ok("only when something is already held",
-    /if \(concentration && concentrationGroups\(character\)\.length\)/.test(save));
+    /if \(concentration && clashes\.length\)/.test(save));
+  suite.ok("and an effect being edited doesn't clash with itself",
+    /concentrationGroups\(character\)\.filter\(g => g !== existing\)/.test(save),
+    "editing a concentration effect must not ask you to end that same effect");
 
   suite.section("dropConcentration still takes whole groups");
   character.hp.current = 40; character.activeEffects = [];

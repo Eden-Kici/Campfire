@@ -9,6 +9,19 @@
 module.exports = function (suite) {
   const app = require("./harness").loadApp();
 
+  suite.section("an effect opened for editing shows the values it actually holds");
+  /* The app's select keeps its value in a hidden input and its label in a
+     span. Prefilling only the input left "+1d4 Attack Rolls" reading "AC" in
+     the editor -- and reading it back saved the wrong stat. */
+  {
+    const src = require("./harness").readFile("ui.js");
+    const at = src.indexOf("function prefillEffectSubfields");
+    const body = src.slice(at, at + 1600);
+    suite.ok("the label moves with the value", /setSelectValue\(/.test(body),
+      "prefilling a select has to move the visible label too, not just the hidden input");
+    suite.ok("and a plain input still takes a direct assignment", /el\.value = eff\.value\[key\]/.test(body));
+  }
+
   suite.section("combo fields escape what the player types");
 
   suite.runs("the no-match message escapes the query", () => {

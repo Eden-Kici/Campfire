@@ -700,10 +700,17 @@ function prefillEffectSubfields(eff, idPrefix) {
   const map = { ability: "-ability", skill: "-skill", stat: "-stat", condition: "-condition",
                 rollType: "-rolltype", mode: "-mode", threshold: "-threshold" };
   Object.keys(map).forEach(key => {
-    if (eff.value[key] !== undefined) {
-      const el = document.getElementById(idPrefix + map[key]);
-      if (el) el.value = eff.value[key];
-    }
+    if (eff.value[key] === undefined) return;
+    const id = idPrefix + map[key];
+    /* Most of these are the app's own select, where the value lives in a
+       hidden input and the label the player reads is a separate span. Setting
+       only the input left an effect on +1d4 Attack Rolls showing "AC" the
+       moment you opened it to edit -- a wrong answer that saves itself if you
+       touch anything else on the row. setSelectValue moves both; a plain
+       input (the condition picker) still takes the direct assignment. */
+    if (document.querySelector(`[data-select="${id}"]`)) { setSelectValue(id, eff.value[key]); return; }
+    const el = document.getElementById(id);
+    if (el) el.value = eff.value[key];
   });
 }
 

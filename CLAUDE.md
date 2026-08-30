@@ -411,13 +411,41 @@ than a button. A cantrip still resolves on the tap; anything with a level opens 
 - **Downcasting warns and allows.** The app has never refused a cast — a table ruling can put a
   character outside the slot economy entirely — and a sheet that argues with the person holding it
   is a sheet they stop using.
+- **A spell can carry what it does.** `spell.heal` is a dice notation, `spell.healMod` adds the
+  caster's own spellcasting modifier, and `spell.effects` is an effect group's modifier list living
+  on the spell — the same rows the condition editor builds, so a spell that grants Bless builds
+  exactly the thing Bless is on a sheet. All three are read out of the SRD description to *pre-fill*
+  the form (`suggestedSpellHealing()`, `spellHealingAddsModifier()`) and are the player's from
+  there, same rule `damage` has always followed. `tidySpellFields()` deletes them when blank, so a
+  spell that heals nothing carries no keys about healing.
+- **Healing is one roll, spent on everyone it lands on**, because that is what the spell says:
+  `castHealNotation()` builds `1d8 + 1d8 + 1` at the level being cast (the upcast die is read from
+  "the healing increases by 1d8 for each slot level above"), `showRollToast()` hands the total back
+  so the number applied is the number shown, and `applyHp("heal", ...)` puts it on your own sheet
+  only when you were a target. A spell with no target list at all — "you regain" — heals the only
+  person it could be about; picking nobody from a list you *were* shown rolls it and stops, since
+  that is a number you are about to say out loud to someone who isn't on the app.
+- **Somebody else's hit points are theirs.** Healing travels as a settled number (`partySendHeal`
+  → the `heal` message), never as dice, because re-rolling on arrival would give two people two
+  answers to one spell — and it arrives as an offer with Take it / No thanks, since a heal that
+  lands without asking lands on a character who was already dead, or holding temps, or at a table
+  that rules it differently.
 - **A concentration spell aimed at other players lands on their sheets**, and the caster's own copy
   records `castOn` so that dropping concentration can clear it again (`partyRevokeEffect` →
-  `effect-revoke`). Instantaneous spells push nothing: a heal is a number said out loud, and pushing
-  an effect for one would leave "Cure Wounds" on somebody's sheet forever with nothing to remove it.
+  `effect-revoke`). The caster's copy carries the spell's modifiers **only when the caster is a
+  target**: holding Bless for three other people should not quietly bless the cleric, so the group
+  on your sheet tracks the concentration with an empty modifier list while their copy — same id,
+  because the id is what takes it back — carries the real thing.
   The far side is *told*, not asked — the spell is over either way — but gets a window it must
   acknowledge, because a bonus quietly vanishing mid-fight is how people end up rolling with numbers
   that stopped being true.
+- **`openAddEffectModal(existing)` doubles as the editor.** An effect could be created and removed
+  but never corrected, so a typo meant rebuilding it — and rebuilding lost the id, which is what the
+  party uses to take a pushed effect back. Editing does `Object.assign(existing, shape)` and keeps
+  it, and the concentration clash check excludes the effect being edited from its own question.
+  Prefilling a row goes through `setSelectValue()`: the app's select keeps its value in a hidden
+  input and its label in a span, so writing the input alone left "+1d4 Attack Rolls" reading "AC" the
+  moment you opened it — a wrong answer that saved itself the moment you touched anything else.
 - `settings.autoSpendSlots` (on) spends the slot and names it in a toast; `settings.visualSpellSlots`
   (on) draws slots as tappable pips instead of a fraction, in both tabs and in Combat's Spells
   section.

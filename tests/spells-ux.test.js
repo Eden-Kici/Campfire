@@ -180,6 +180,26 @@ module.exports = function (suite) {
     if (modal.includes("To Hit")) throw new Error("Mage Hand doesn't roll to hit");
   });
 
+  suite.runs("the form has somewhere to put healing and the conditions a spell applies", () => {
+    const fields = app.spellFormFieldsHtml(null, true);
+    if (!fields.includes('id="spell-form-heal"')) throw new Error("expected a Healing field");
+    if (!fields.includes('id="spell-form-heal-mod"')) throw new Error("expected the spellcasting-modifier toggle");
+    if (!fields.includes('id="spell-form-effects-list"')) throw new Error("expected a modifiers list");
+  });
+
+  suite.runs("a healing spell pre-fills both from its own description", () => {
+    const cure = app.SRD_SPELLS.find(s => s.name === "Cure Wounds");
+    if (app.suggestedSpellHealing(cure.desc) !== "1d8") throw new Error("expected 1d8 read out of Cure Wounds");
+    if (!app.spellHealingAddsModifier(cure.desc)) throw new Error("expected the modifier toggle to start on");
+  });
+
+  suite.runs("blank healing fields are dropped rather than stored empty", () => {
+    const tidied = app.tidySpellFields({ name: "X", heal: "", healMod: false, damage: "", effects: [] });
+    if ("heal" in tidied || "healMod" in tidied || "effects" in tidied || "damage" in tidied) {
+      throw new Error("expected empty fields to be deleted, not saved as blanks");
+    }
+  });
+
   suite.runs("the editor is still where renaming and deleting live", () => {
     app.openSpellEditModal(fireBolt.id);
     const modal = app.__modals[app.__modals.length - 1].html;

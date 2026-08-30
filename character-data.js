@@ -471,13 +471,21 @@ function advantageLabel(effect) {
 // so a scaling amount shows what it's actually worth right now; callers
 // without one (there are a couple) get resolveScalingValue's fallback,
 // the value it eventually becomes.
+/* A dice bonus resolves to zero as a number, which is correct arithmetic and a
+   useless thing to read: Bless showed as "+0 Attack Rolls". It says what it
+   actually gives you instead. */
+function effectValueLabel(effect, level) {
+  const dice = effectDice(effect);
+  return dice ? "+" + dice : formatModifier(resolveScalingValue(effect.value.amount, level));
+}
+
 function effectSummaryLabel(effect, level) {
   if (effect.category === "Condition") return effect.value.condition;
   if (effect.category === "Advantage") return advantageLabel(effect);
-  if (effect.category === "Ability Score") return formatModifier(resolveScalingValue(effect.value.amount, level)) + " " + effect.value.ability;
-  if (effect.category === "Saving Throw") return formatModifier(resolveScalingValue(effect.value.amount, level)) + " " + effect.value.ability + " Save";
-  if (effect.category === "Skill") return formatModifier(resolveScalingValue(effect.value.amount, level)) + " " + effect.value.skill;
-  if (effect.category === "Bonus") return formatModifier(resolveScalingValue(effect.value.amount, level)) + " " + effect.value.stat;
+  if (effect.category === "Ability Score") return effectValueLabel(effect, level) + " " + effect.value.ability;
+  if (effect.category === "Saving Throw") return effectValueLabel(effect, level) + " " + effect.value.ability + (effect.value.ability === "All" ? " Saves" : " Save");
+  if (effect.category === "Skill") return effectValueLabel(effect, level) + " " + effect.value.skill;
+  if (effect.category === "Bonus") return effectValueLabel(effect, level) + " " + effect.value.stat;
   if (effect.category === "Reroll") {
     const label = effect.value.rollType === "damage" ? "Damage Rolls" : "Attack Rolls, Checks & Saves";
     return "Reroll " + (effect.value.threshold <= 1 ? "1s" : "1-" + effect.value.threshold + "s") + " on " + label;
