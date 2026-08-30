@@ -204,7 +204,13 @@ let character = {
       armour: { base: 13, kind: "medium", dexCap: 2 }
     },
     // not armour -- a flat bonus that stacks on top of whatever you're wearing
-    { id: 2, name: "Cloak of Protection", category: "Worn", weight: 1, qty: 1, acBonus: 1 },
+    /* These carry the catalogue's own fields rather than a hand-written
+       approximation of them. The source tag is worked out by comparing an item
+       with the catalogue row of the same name, so a demo character built from
+       near-misses reported half its own kit as homebrew. */
+    { id: 2, name: "Cloak of Protection", category: "Worn", weight: 1, qty: 1, acBonus: 1,
+      rarity: "Uncommon", attunement: true,
+      description: "You gain a +1 bonus to AC and saving throws while you wear this cloak." },
     // damage is a list, so one weapon can deal several types at once. Only a
     // part that names an `ability` adds that modifier; extra dice (poison,
     // sneak attack, elemental riders) normally don't get it.
@@ -234,22 +240,24 @@ let character = {
       weaponType: "melee", range: "5 ft", properties: ["Finesse", "Light"]
     },
     { id: 5, name: "Ring of Precision", category: "Worn", weight: 0, qty: 1, attackBonus: 1 },
-    { id: 6, name: "Bag of Holding", category: "Carrying", weight: 15, qty: 1 },
+    { id: 6, name: "Bag of Holding", category: "Carrying", weight: 15, qty: 1,
+      rarity: "Uncommon", attunement: false,
+      description: "This bag has an interior space considerably larger than its outside dimensions, roughly 2 feet in diameter at the mouth and 4 feet deep. The bag can hold up to 500 pounds, not exceeding a volume of 64 cubic feet. The bag weighs 15 pounds, regardless of its contents. Retrieving an item from the bag requires an action.\nIf the bag is overloaded, pierced, or torn, it ruptures and is destroyed, and its contents are scattered in the Astral Plane. If the bag is turned inside out, its contents spill forth, unharmed, but the bag must be put right before it can be used again. Breathing creatures inside the bag can survive up to a number of minutes equal to 10 divided by the number of creatures (minimum 1 minute), after which time they begin to suffocate.\nPlacing a bag of holding inside an extradimensional space created by a handy haversack, portable hole, or similar item instantly destroys both items and opens a gate to the Astral Plane. The gate originates where the one item was placed inside the other. Any creature within 10 feet of the gate is sucked through it to a random location on the Astral Plane. The gate then closes. The gate is one-way only and can't be reopened." },
     /* Arrows are a thing you own and a counter you spend. `resource` makes the
        item show up under Resources on the Combat tab, where its quantity IS
        the count -- so there's one number, not an item and a resource that can
        drift apart. */
     {
-      id: 9, name: "Arrows", category: "Carrying", weight: 0.05, qty: 60,
-      description: "Loose arrows, kept in the pack.",
+      id: 9, name: "Arrow", category: "Carrying", weight: 0.05, qty: 60,
+      description: "Ammunition for a bow.",
       // a stack: no capacity, so it shows a bare count rather than "60/0"
       resource: { max: 0, recharge: { on: "none", amount: "all" } }
     },
     {
       id: 10, name: "Quiver", category: "Worn", weight: 1, qty: 1,
-      description: "Holds twenty arrows within easy reach.",
+      description: "Holds up to 20 arrows.",
       // a container: the bow draws from here, and it refills from the stack
-      resource: { max: 20, loaded: 20, refillFrom: "Arrows", recharge: { on: "none", amount: "all" } }
+      resource: { max: 20, loaded: 20, refillFrom: "Arrow", recharge: { on: "none", amount: "all" } }
     },
     // stored, not worn -- proves armour only counts from a category whose
     // rules say appliesEffects

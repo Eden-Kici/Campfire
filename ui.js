@@ -268,10 +268,14 @@ function openBreakdownModal(title, total, suffix, sources, rollButton) {
    control, an inline style for fields that size themselves inside a row.
    ============================================================ */
 
+/* `labelExtra` is raw markup rather than text, and is the one thing in here
+   that is not escaped for you -- it exists so a field can carry a tag beside
+   its label, and a tag is markup. Callers pass output from a tag builder, not
+   anything a player typed. */
 function fieldHtml(label, inner, opts) {
-  const { style, hint, className } = opts || {};
+  const { style, hint, className, labelExtra } = opts || {};
   return `<div class="field${className ? " " + className : ""}"${style ? ` style="${style}"` : ""}>` +
-    (label ? `<label>${esc(label)}</label>` : "") +
+    (label ? `<label>${esc(label)}${labelExtra || ""}</label>` : "") +
     inner +
     (hint ? `<div class="field-hint">${esc(hint)}</div>` : "") +
     "</div>";
@@ -502,6 +506,50 @@ function wireCombo(id, options, onChange) {
 /* The condition field reveals a level input when what you've typed is
    exhaustion, and hides it again otherwise. It's the only condition with
    degrees, so a permanent "Level" box on every condition would be noise. */
+/* The one list the app uses for "type a name, pick from what matches". Add
+   Item, the effect editor's Name and a Condition modifier all use it, because
+   three different ways of picking a thing off a list is three things to learn.
+
+   It sits under the field and pushes the form down rather than floating over
+   it: a dropdown is fine under a mouse and a poor target for a thumb. Nothing
+   shows until you type, and an exact match disappears, because offering back
+   the thing you just picked is noise. */
+function searchListHtml(id) {
+  return `<div class="search-list" id="${id}"></div>`;
+}
+
+function wireSearchList(inputId, listId, optionsFor, onChange) {
+  const input = document.getElementById(inputId);
+  const list = document.getElementById(listId);
+  if (!input || !list) return;
+
+  function redraw() {
+    const query = input.value.trim().toLowerCase();
+    let matches = query
+      ? optionsFor().filter(name => String(name).toLowerCase().indexOf(query) !== -1)
+      : [];
+    if (matches.length === 1 && String(matches[0]).toLowerCase() === query) matches = [];
+
+    list.innerHTML = matches.slice(0, 8).map(name => `
+      <div class="res-row" data-search-pick="${esc(name)}" style="cursor:pointer;">
+        <div class="res-name">${esc(name)}</div>
+        <span class="add-link">Use</span>
+      </div>
+    `).join("");
+
+    list.querySelectorAll("[data-search-pick]").forEach(row => {
+      row.addEventListener("click", () => {
+        input.value = row.dataset.searchPick;
+        list.innerHTML = "";
+        if (onChange) onChange(input.value);
+      });
+    });
+  }
+
+  input.addEventListener("input", () => { redraw(); if (onChange) onChange(input.value); });
+  redraw();
+}
+
 function wireConditionField(idPrefix, existingValue) {
   const extra = document.getElementById(idPrefix + "-condition-extra");
   if (!extra) return;
@@ -519,35 +567,7 @@ function wireConditionField(idPrefix, existingValue) {
   }
 
   if (!input || !results) return;
-
-  function redraw() {
-    const query = input.value.trim().toLowerCase();
-    // nothing until you type, exactly as Add Item behaves -- the condition
-    // list is long enough that showing all of it buries the rest of the form
-    let matches = query
-      ? ALL_CONDITIONS.filter(name => name.toLowerCase().indexOf(query) !== -1)
-      : [];
-    // an exact match is what you already typed; offering it back is noise
-    if (matches.length === 1 && matches[0].toLowerCase() === query) matches = [];
-
-    results.innerHTML = matches.slice(0, 8).map(name => `
-      <div class="res-row" data-pick-condition="${esc(name)}" style="cursor:pointer;">
-        <div class="res-name">${esc(name)}</div>
-        <span class="add-link">Use</span>
-      </div>
-    `).join("");
-
-    results.querySelectorAll("[data-pick-condition]").forEach(row => {
-      row.addEventListener("click", () => {
-        input.value = row.dataset.pickCondition;
-        results.innerHTML = "";
-        reveal(input.value);
-      });
-    });
-  }
-
-  input.addEventListener("input", () => { redraw(); reveal(input.value); });
-  redraw();
+  wireSearchList(idPrefix + "-condition", idPrefix + "-condition-results", () => ALL_CONDITIONS, reveal);
   if (existingValue && existingValue.condition) reveal(existingValue.condition);
 }
 
@@ -563,7 +583,7 @@ function effectSubfieldsHtml(category, idPrefix, existingValue) {
        down is one you can see and hit. */
     return textFieldHtml(idPrefix + "-condition", "Condition", "",
         { placeholder: "Type to search, or write your own" }) +
-      `<div id="${idPrefix}-condition-results"></div>` +
+      searchListHtml(idPrefix + "-condition-results") +
       `<div id="${idPrefix}-condition-extra"></div>`;
   }
   if (category === "Advantage") {

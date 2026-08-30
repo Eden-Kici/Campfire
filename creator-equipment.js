@@ -35,8 +35,8 @@ function kitItemTemplate(key) {
   // the catalogue owns what the thing IS; the kit owns where it lands and how
   // many of it you get
   const merged = Object.assign({}, srd, kit);
-  // the kit's name wins. The catalogue is singular -- it sells one arrow --
-  // and a stack of twenty on a sheet reads better as "Arrows"
+  // the kit may rename what it grants, though most no longer do: the catalogue
+  // is singular throughout and a stack carries its count in `qty`
   merged.name = kit.name || srd.name;
   // and the catalogue's description wins where it has one -- the kit's own text
   // is the fallback for the many catalogue rows that carry none

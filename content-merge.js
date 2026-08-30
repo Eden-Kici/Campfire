@@ -53,6 +53,16 @@ function subclassChoiceLevel(className) {
    in Add Item. Weapons, armour, tools, gear and magic items are five tables in
    the catalogue because that is how the SRD prints them -- but nobody adding a
    longsword to a backpack is thinking about which table it came from. */
+function srdInventoryItems() {
+  return [].concat(
+    typeof SRD_WEAPONS !== "undefined" ? SRD_WEAPONS : [],
+    typeof SRD_ARMOUR !== "undefined" ? SRD_ARMOUR : [],
+    typeof SRD_TOOLS !== "undefined" ? SRD_TOOLS : [],
+    typeof SRD_GEAR !== "undefined" ? SRD_GEAR : [],
+    typeof SRD_MAGIC_ITEMS !== "undefined" ? SRD_MAGIC_ITEMS : []
+  );
+}
+
 function allInventoryItems() {
   const catalogue = [].concat(
     typeof SRD_WEAPONS !== "undefined" ? SRD_WEAPONS : [],

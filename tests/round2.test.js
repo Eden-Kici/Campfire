@@ -149,7 +149,7 @@ module.exports = function (suite) {
 
   suite.runs("but the kit still owns where it lands and how many", () => {
     const arrows = app.kitItemTemplate("arrows");
-    suite.is("a stack of twenty reads as Arrows, not the catalogue's singular Arrow", arrows.name, "Arrows");
+    suite.is("a stack of twenty is twenty of the catalogue's Arrow", arrows.name, "Arrow");
     suite.ok("and the count is a quantity", arrows.qty > 1, JSON.stringify(arrows.qty));
     suite.ok("with a category to land in", !!arrows.category, "no category");
   });

@@ -518,7 +518,7 @@ const STARTING_KIT = {
 /* The items the kits and backgrounds hand out. Names, weights, damage, AC and
    properties are the same values as the fuller catalogue in srd-equipment.js --
    the two tables had drifted (chain mail had lost its Strength requirement and
-   Stealth note, the bows drew from "Quiver" where the catalogue says "Arrows",
+   Stealth note, the bows drew from "Quiver" where the catalogue says "Arrow",
    leather armour was "Leather Armour" here and "Leather" there), and a starting
    longsword that isn't the catalogue's longsword is a bug waiting to be found
    by a player.
@@ -610,17 +610,17 @@ const KIT_ITEMS = {
                  description: "A weighted throwing dart, thrown with Dexterity." },
   shortbow:    { srd: "Shortbow", name: "Shortbow", category: "Equipped", weight: 2, isWeapon: true, attackAbility: "DEX",
                  proficiencyRequired: "Simple", magicBonus: 0, weaponType: "ranged", range: "80/320 ft",
-                 properties: ["Ammunition", "Two-Handed"], ammunition: "Arrows",
+                 properties: ["Ammunition", "Two-Handed"], ammunition: "Arrow",
                  damage: [{ dice: "1d6", type: "Piercing", ability: "DEX" }],
                  description: "A short two-handed bow. Spends an arrow per shot." },
   longbow:     { srd: "Longbow", name: "Longbow", category: "Equipped", weight: 2, isWeapon: true, attackAbility: "DEX",
                  proficiencyRequired: "Martial", magicBonus: 0, weaponType: "ranged", range: "150/600 ft",
-                 properties: ["Ammunition", "Heavy", "Two-Handed"], ammunition: "Arrows",
+                 properties: ["Ammunition", "Heavy", "Two-Handed"], ammunition: "Arrow",
                  damage: [{ dice: "1d8", type: "Piercing", ability: "DEX" }],
                  description: "A tall two-handed bow reaching 600 feet. Spends an arrow per shot." },
   lightcrossbow:{ srd: "Crossbow, Light", name: "Crossbow, Light", category: "Equipped", weight: 5, isWeapon: true, attackAbility: "DEX",
                  proficiencyRequired: "Simple", magicBonus: 0, weaponType: "ranged", range: "80/320 ft",
-                 properties: ["Ammunition", "Loading", "Two-Handed"], ammunition: "Crossbow Bolts",
+                 properties: ["Ammunition", "Loading", "Two-Handed"], ammunition: "Crossbow Bolt",
                  damage: [{ dice: "1d8", type: "Piercing", ability: "DEX" }],
                  description: "A two-handed crossbow. One shot per action, however many attacks you have." },
 
@@ -629,15 +629,15 @@ const KIT_ITEMS = {
      40 loose plus a full quiver of 20 on top. The quiver arrives empty and the
      player's first Refill moves arrows into it; putting the 20 in both places
      is what produced 60 in the first place. */
-  arrows:      { srd: "Arrow", name: "Arrows", category: "Carrying", weight: 0.05, qty: 20,
+  arrows:      { srd: "Arrow", name: "Arrow", category: "Carrying", weight: 0.05, qty: 20,
                  description: "Ammunition for a bow.",
                  resource: { max: 0, recharge: { on: "none", amount: "all" } } },
-  bolts:       { srd: "Crossbow Bolt", name: "Crossbow Bolts", category: "Carrying", weight: 0.075, qty: 20,
+  bolts:       { srd: "Crossbow Bolt", name: "Crossbow Bolt", category: "Carrying", weight: 0.075, qty: 20,
                  description: "Ammunition for a crossbow.",
                  resource: { max: 0, recharge: { on: "none", amount: "all" } } },
   quiver:      { srd: "Quiver", name: "Quiver", category: "Worn", weight: 1,
                  description: "Holds up to 20 arrows within easy reach. Refill draws from your arrow stack.",
-                 resource: { max: 20, loaded: 0, refillFrom: "Arrows", recharge: { on: "none", amount: "all" } } },
+                 resource: { max: 20, loaded: 0, refillFrom: "Arrow", recharge: { on: "none", amount: "all" } } },
 
   /* ---------- equipment packs ---------- */
   burglar:     { srd: "Burglar's Pack", name: "Burglar's Pack", category: "Carrying", weight: 0,

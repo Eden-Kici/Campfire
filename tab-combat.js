@@ -743,7 +743,8 @@ function openAddEffectModal() {
 
   openModal("full", `
     <div class="modal-heading">Add Effect</div>
-    ${comboFieldHtml("effect-name", "Name", "e.g. Bless, Prone, Hexed")}
+    ${textFieldHtml("effect-name", "Name", "", { placeholder: "e.g. Bless, Prone, Hexed" })}
+    ${searchListHtml("effect-name-results")}
 
     <div class="field-row">
       ${selectFieldHtml("effect-duration-type", "Duration", [
@@ -769,7 +770,7 @@ function openAddEffectModal() {
   `);
   guardModalEdits();
 
-  wireCombo("effect-name", ALL_CONDITIONS);
+  wireSearchList("effect-name", "effect-name-results", () => ALL_CONDITIONS);
   wireSelect("effect-duration-type");
 
   const durationTypeSelect = document.getElementById("effect-duration-type");

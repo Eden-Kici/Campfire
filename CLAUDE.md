@@ -129,12 +129,18 @@ These are load-bearing and easy to break:
   Explorer's Pack is 59 lb, not 0. Packs never merge (`canMergeStacks` refuses them: two packs hold
   different things, and a stack of 2 would strand one lot of contents), deleting one takes its
   contents with it, and giving one hands over everything inside.
-- **The catalogue sells one of a thing.** Ammunition used to carry its bundle in the name — "Arrows
-  (20)" — which made the row unusable for anything but buying exactly twenty, and left a stack of
-  sixty still calling itself a stack of twenty. Names are singular, `qty` is 1, weight is per unit,
-  and the bundle survives only in the price string ("1 gp per 20"). `KIT_ITEMS` still overrides the
-  name to a plural for the stack it grants, because "Arrows ×20" on a sheet reads better than
-  "Arrow ×20".
+- **The catalogue sells one of a thing, and so does everything else.** Ammunition used to carry its
+  bundle in the name — "Arrows (20)" — which made the row unusable for anything but buying exactly
+  twenty. Names are singular, `qty` is 1, weight is per unit, and the bundle survives only in the
+  price string ("1 gp per 20"). The plural is gone from the kits, the demo character and every
+  weapon's `ammunition` too: a stack of sixty is "Arrow ×60". That is not cosmetic — `itemSource()`
+  matches by name, so a stack called "Arrows" matched no catalogue row and reported itself homebrew.
+- **The demo character's kit is built from real catalogue rows**, carrying the same rarity,
+  attunement and descriptions. It used to hold near-misses, which was invisible until source tags
+  existed and then made half the demo sheet claim to be homebrew. Two catalogue rows were the ones
+  actually wrong and were fixed: Chain Shirt had no description, and Cloak of Protection described a
+  +1 to AC in prose while carrying no `acBonus` at all — an item that read correctly and did
+  nothing.
 - **Add Item searches the catalogue** (`allInventoryItems()` in content-merge.js — five SRD tables
   plus your own, yours first). Picking a row fills the whole form. If you then change anything, the
   item is saved with "(Custom)" appended *and kept in your custom content for good*, so the next
@@ -145,9 +151,19 @@ These are load-bearing and easy to break:
   excluded — buying three is not inventing a new thing, and where it sits on your sheet is where you
   keep it rather than what it is. `stackSignature()` already ignores both, so it does the comparing.
   A variant **keeps the name it came from** and carries a `CC` tag instead of a "(Custom)" suffix,
-  which made every variation read like a different weapon. That means your content is matched by
-  shape rather than by name: `contentShape()` strips the catalogue-only bookkeeping (`official`,
-  `type`, `cost`, `contents`) so a row on a sheet can be recognised as one of yours at all.
+  which made every variation read like a different weapon.
+- **`itemSource()` works out where an item came from rather than remembering.** A row matching a
+  catalogue entry of the same name *is* that entry; one that doesn't is yours. Nothing is stamped on
+  an item when it is created, which is exactly what lets the tag beside the Name field appear the
+  moment you change a preset and vanish again when you undo it (`wireLiveSourceTag`).
+  `contentShape()` decides what "the same" means: it strips the catalogue's bookkeeping (`official`,
+  `type`, `cost`, `contents`), the decisions you make about *your copy* rather than about the thing
+  (tracking, container-ness, off-hand, a kit's starting loadout) and empty values, because a blank
+  box and a field that was never there say the same thing — without that last one, every item read
+  as modified the instant its editor opened.
+- **`settings.showSourceTags` turns on SRD and 3PP tags.** CC always shows: knowing a thing is not
+  official content matters whether or not you asked. Tagging every row "SRD" on a sheet where nearly
+  everything is would be noise, so that one is opt-in.
 - **The Name field is the search field.** One box: typing a name searches the catalogue, picking a
   result fills the form and leaves the name where you were already looking. Two boxes asked the
   player to understand the difference before they had done anything.
@@ -337,6 +353,12 @@ first-ever launch does. Tutorial tests set `tutorialState` by hand instead.
 - No attribution ships anywhere in the app: every mention of CC-BY, the SRD and 5esrd.com is in a
   source comment. No LICENSE file, no credits screen. CC-BY requires attribution in the distributed
   work.
+
+- **One list pattern for "type a name, pick what matches"** — `searchListHtml` / `wireSearchList` in
+  ui.js, used by Add Item, the effect editor's Name field and a Condition modifier. It sits under the
+  field and pushes the form down rather than floating over it, because a dropdown is fine under a
+  mouse and a poor target for a thumb. Three different ways of picking a thing off a list is three
+  things to learn.
 
 ## Gestures on a phone
 

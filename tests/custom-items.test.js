@@ -3,7 +3,7 @@
 
 module.exports = function (suite) {
   const app = require("./harness").loadApp();
-  const { allInventoryItems, itemDiffersFromSource, isCustomContentItem,
+  const { allInventoryItems, itemDiffersFromSource, itemSource, itemSourceTagHtml,
           rememberCustomItem, contentShape, itemType } = app;
 
   suite.section("what the search looks through");
@@ -22,8 +22,10 @@ module.exports = function (suite) {
     withMine[0].name, "Zzz Test Blade");
 
   suite.section("what counts as changing it");
-  const base = { name: "Longsword", category: "Equipped", weight: 3, qty: 1, isWeapon: true,
-                 magicBonus: 0, damage: [{ dice: "1d8", type: "Slashing", ability: "STR" }] };
+  /* The real catalogue row, not a hand-written stand-in. A fixture that merely
+     resembles a Longsword matches nothing, and the whole point of itemSource is
+     that it compares against what is actually in the catalogue. */
+  const base = Object.assign({ qty: 1 }, allInventoryItems().find(i => i.name === "Longsword"));
   const like = (over) => Object.assign({}, base, over || {});
 
   suite.is("an item typed from scratch is never a variant",
@@ -68,7 +70,28 @@ module.exports = function (suite) {
     rememberCustomItem(like({ weight: 9, id: 78 })), true);
   suite.is("so now there are two", app.customContent.items.length, before + 2);
 
-  suite.section("knowing one on sight");
-  suite.is("a row matching your content is flagged", isCustomContentItem(like({ magicBonus: 1 })), true);
-  suite.is("a plain catalogue row is not", isCustomContentItem(like()), false);
+  suite.section("where a row came from, worked out rather than remembered");
+  suite.is("one matching your content is yours", itemSource(like({ magicBonus: 1 })), "CC");
+  suite.is("an untouched catalogue row is the SRD's", itemSource(like()), "SRD");
+  suite.is("a name nothing in the catalogue has is yours",
+    itemSource(like({ name: "Sigrid's Blade" })), "CC");
+  suite.is("and so is a preset you have changed",
+    itemSource(like({ weight: 99 })), "CC");
+
+  /* The decisions you make about your copy are not changes to the thing. */
+  suite.is("tracking a stack does not make it homebrew",
+    itemSource(like({ resource: { max: 0, recharge: { on: "none", amount: "all" } } })), "SRD");
+  suite.is("nor does turning it into a container", itemSource(like({ isContainer: true })), "SRD");
+  suite.is("nor marking it off-hand", itemSource(like({ offHand: true })), "SRD");
+  suite.is("nor stowing it somewhere else", itemSource(like({ category: "Camp Storage" })), "SRD");
+  suite.is("nor buying three", itemSource(like({ qty: 3 })), "SRD");
+
+  suite.section("which tags actually show");
+  app.settings.showSourceTags = false;
+  suite.ok("yours is always marked", /CC/.test(itemSourceTagHtml(like({ magicBonus: 1 }))));
+  suite.is("the SRD's is not, by default", itemSourceTagHtml(like()), "");
+  app.settings.showSourceTags = true;
+  suite.ok("until you ask for tags", /SRD/.test(itemSourceTagHtml(like())));
+  suite.ok("and yours still says CC", /CC/.test(itemSourceTagHtml(like({ magicBonus: 1 }))));
+  app.settings.showSourceTags = false;
 };

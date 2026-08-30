@@ -451,7 +451,13 @@ const SRD_MAGIC_ITEMS = [
   { name: "Cloak of Elvenkind", official: true, rarity: "Uncommon", attunement: true, weight: 0,
     description: "While you wear this cloak with its hood up, Wisdom (Perception) checks made to see you have disadvantage, and you have advantage on Dexterity (Stealth) checks made to hide, as the cloak's color shifts to camouflage you. Pulling the hood up or down requires an action." },
 
-  { name: "Cloak of Protection", official: true, rarity: "Uncommon", attunement: true, weight: 0,
+  /* The one entry in this table that carries mechanics rather than only prose.
+     A catalogue row saying "+1 bonus to AC" in a sentence and carrying no
+     acBonus gives you an item that reads correctly and does nothing, which is
+     worse than not having it. Weight is real here too: the table omits weights
+     and a cloak is not weightless. */
+  { name: "Cloak of Protection", official: true, rarity: "Uncommon", attunement: true, weight: 1,
+    acBonus: 1,
     description: "You gain a +1 bonus to AC and saving throws while you wear this cloak." },
 
   { name: "Cloak of the Bat", official: true, rarity: "Rare", attunement: true, weight: 0,

@@ -1246,3 +1246,13 @@ input, textarea, select, .note-body-field, .note-title-field {
   -webkit-user-select: text;
   user-select: text;
 }
+
+/* A source tag beside a field's label, rather than under it: the label row has
+   the space and the tag belongs to the name, not to the box. */
+.field label .res-tag { float: right; margin-top: -1px; }
+
+/* The pick-from-a-list panel, shared by Add Item, the effect editor's Name and
+   a Condition modifier. Bounded so a long list scrolls rather than pushing the
+   rest of the form off the screen. */
+.search-list { max-height: 220px; overflow-y: auto; }
+.search-list:not(:empty) { margin: -2px 0 10px; }

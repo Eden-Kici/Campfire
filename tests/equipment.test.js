@@ -40,7 +40,7 @@ module.exports = function (suite) {
   const names = fighter.inventory.map(i => i.name);
   suite.ok("has armour", names.includes("Leather"));
   suite.ok("has a bow", names.includes("Longbow"));
-  suite.ok("has arrows", names.includes("Arrows"));
+  suite.ok("has arrows", names.includes("Arrow"));
   suite.ok("has a sword", names.includes("Longsword"));
   // the SRD fighter's option (b) is "leather armor, longbow, and 20 arrows" --
   // no quiver, so the arrows are a plain stack here rather than a container
@@ -58,10 +58,10 @@ module.exports = function (suite) {
   suite.is("the sword's to hit too", calculateAttack(app.character,
     fighter.inventory.find(i => i.name === "Longsword")).toHitTotal, 5);
   // KIT_ITEMS and SRD_EQUIPMENT disagreed about this: one said the bow spends
-  // from "Quiver", the other from "Arrows". They now both say Arrows.
+  // from "Quiver", the other from "Arrow". They now both say Arrow.
   suite.is("the bow is fed by the arrows", calculateAttack(app.character,
-    fighter.inventory.find(i => i.name === "Longbow")).ammunition.name, "Arrows");
-  suite.ok("arrows are a stack", resourceRows(app.character).some(r => r.name === "Arrows" && !r.container));
+    fighter.inventory.find(i => i.name === "Longbow")).ammunition.name, "Arrow");
+  suite.ok("arrows are a stack", resourceRows(app.character).some(r => r.name === "Arrow" && !r.container));
   suite.ok("weight is counted", calculateCarriedWeight(app.character).total > 0);
   suite.is("armour is classified as armour", itemType(fighter.inventory.find(i => i.name === "Leather")), "armour");
 
@@ -87,8 +87,8 @@ module.exports = function (suite) {
   suite.is("and the other branch still has them",
     rogueB.filter(i => i.name === "Dagger").length, 2);
   suite.is("arrows are one row with a quantity",
-    rogue.filter(i => i.name === "Arrows").length, 1);
-  suite.is("and that quantity is the SRD's twenty", rogue.find(i => i.name === "Arrows").qty, 20);
+    rogue.filter(i => i.name === "Arrow").length, 1);
+  suite.is("and that quantity is the SRD's twenty", rogue.find(i => i.name === "Arrow").qty, 20);
 
   suite.section("identifiers do not collide");
   const ids = rogue.map(i => i.id);

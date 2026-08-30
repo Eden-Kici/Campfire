@@ -10,7 +10,7 @@ module.exports = function (suite) {
 
   suite.section("what gets written");
   app.character.hp.current = 9;
-  app.character.inventory.find(i => i.name === "Arrows").qty = 7;
+  app.character.inventory.find(i => i.name === "Arrow").qty = 7;
   persistCharacters();
 
   const raw = app.localStorage.getItem(STORAGE_KEY);
@@ -32,7 +32,7 @@ module.exports = function (suite) {
   suite.is("recharge survived as an object", app.character.resources[0].recharge.on, "SR");
   suite.ok("effects survived grouped", Array.isArray(app.character.activeEffects[0].effects));
   suite.is("tracked item quantity survived",
-    app.character.inventory.find(i => i.name === "Arrows").qty, 7);
+    app.character.inventory.find(i => i.name === "Arrow").qty, 7);
   suite.ok("the container survived", resourceRows(app.character).some(r => r.container));
   suite.ok("category rules survived", app.character.categoryRules.Equipped.providesAttacks);
   suite.is("attacks still resolve", weaponList(app.character).length, 3);

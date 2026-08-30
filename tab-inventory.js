@@ -430,7 +430,7 @@ function itemRowHtml(item, cat, nested) {
     <div class="item-row${nested ? " item-nested" : ""}" data-item-view="${item.id}" data-item-id="${item.id}"
          ${container ? `data-container-row="${item.id}"` : ""} style="touch-action:pan-y;">
       <div style="flex:1;">
-        <div class="item-name">${container ? `<span class="pack-caret" data-container-toggle="${item.id}">${isOpen ? "\u25BE" : "\u25B8"}</span> ` : ""}${esc(item.name)}${item.qty > 1 ? " \u00D7" + item.qty : ""}${isCustomContentItem(item) ? ` <span class="res-tag" style="background:var(--control-raised);color:var(--accent-soft);">CC</span>` : ""}</div>
+        <div class="item-name">${container ? `<span class="pack-caret" data-container-toggle="${item.id}">${isOpen ? "\u25BE" : "\u25B8"}</span> ` : ""}${esc(item.name)}${item.qty > 1 ? " \u00D7" + item.qty : ""}${itemSourceTagHtml(item)}</div>
         ${(rule.appliesEffects && (item.acBonus || item.attackBonus)) ? `<div class="item-effect">${item.acBonus ? formatModifier(item.acBonus) + " AC " : ""}${item.attackBonus ? formatModifier(item.attackBonus) + " Attack " : ""}</div>` : ""}
         <div class="item-meta">${rule.countsWeight ? roundWeight(weight) + " lb" : "No weight"}${container ? " \u00b7 " + contents.length + (contents.length === 1 ? " item" : " items") : ""}${container && item.ignoresContentWeight ? " \u00b7 weightless" : ""}</div>
       </div>
@@ -454,7 +454,10 @@ function commonItemFieldsHtml(item, afterName) {
   item = item || {};
   const categories = Object.keys(character.categoryRules);
   return `
-    ${textFieldHtml("if-name", "Name", item.name, { placeholder: "e.g. Potion of Healing" })}
+    ${textFieldHtml("if-name", "Name", item.name, {
+      placeholder: "e.g. Potion of Healing",
+      labelExtra: `<span id="if-name-tag">${itemSourceTagHtml(item)}</span>`
+    })}
     ${afterName || ""}
     ${selectFieldHtml("if-category", "Category", categories, item.category || categories[0])}
     <div class="field-row">
@@ -656,6 +659,23 @@ function newItemFormState(item) {
 /* Everything the Add Item form is currently saying, as an item. Pulled out so
    the same call can build what gets saved and, at the moment a catalogue row is
    picked, what that row would have produced untouched. */
+/* Repaints the tag beside the Name field as the form changes, so changing a
+   preset marks it yours the moment you do it and undoing the change takes the
+   mark away again. `base` is whatever the item already carries that the form
+   has no field for -- tracking, container-ness -- so editing a tracked arrow
+   is not mistaken for inventing one. */
+function wireLiveSourceTag(state, base) {
+  const tag = document.getElementById("if-name-tag");
+  const modal = document.getElementById("modal-overlay");
+  if (!tag || !modal) return;
+  const refresh = () => {
+    tag.innerHTML = itemSourceTagHtml(Object.assign({}, base || {}, buildItemFromForm(state)));
+  };
+  modal.addEventListener("input", refresh);
+  modal.addEventListener("change", refresh);
+  refresh();
+}
+
 function buildItemFromForm(state) {
   const item = Object.assign({}, readCommonItemFields());
   const acBonus = parseInt(document.getElementById("if-ac").value) || 0;
@@ -706,20 +726,59 @@ function rememberCustomItem(item) {
    with it left means nothing on a sheet ever matches anything in your content. */
 function contentShape(entry) {
   const bones = Object.assign({}, entry);
+  // the catalogue's bookkeeping, which is not the item
   delete bones.official;
   delete bones.type;
   delete bones.cost;
   delete bones.contents;
+  /* And the decisions you make about your copy rather than about the thing:
+     tracking a stack, turning a barrel into a container, marking a weapon as
+     off-hand, or a kit deciding it starts equipped. Using half a quiver should
+     not turn it into homebrew. */
+  delete bones.resource;
+  delete bones.isContainer;
+  delete bones.ignoresContentWeight;
+  delete bones.offHand;
+  delete bones.isDefaultLoadout;
+  /* An empty box and a field that was never there say the same thing. The form
+     hands back "" for a description nobody typed, the catalogue simply has no
+     description, and without this every single item read as modified the
+     moment its editor was opened. */
+  Object.keys(bones).forEach(key => {
+    if (bones[key] === "" || bones[key] === null || bones[key] === undefined) delete bones[key];
+  });
   return stackSignature(bones);
 }
 
-/* Whether this row on the sheet is one of yours. Asked by shape rather than by
-   name, because a variant deliberately keeps the name of the catalogue row it
-   came from. */
-function isCustomContentItem(item) {
-  if (typeof customContent === "undefined" || !customContent.items) return false;
+/* Where an item came from, worked out from the item rather than recorded on
+   it. A row that matches a catalogue entry of the same name *is* that entry;
+   one that does not is yours, whether you built it from scratch or changed a
+   preset three sessions ago. Nothing has to be stamped on an item at the
+   moment it is created for this to keep being true later -- which is what lets
+   the tag appear and disappear live as you edit. */
+function itemSource(item) {
+  if (!item || !item.name) return null;
   const shape = contentShape(item);
-  return customContent.items.some(entry => contentShape(entry) === shape);
+  const mine = (typeof customContent !== "undefined" && customContent.items) || [];
+  if (mine.some(entry => entry.name === item.name && contentShape(entry) === shape)) return "CC";
+
+  const match = (typeof srdInventoryItems === "function" ? srdInventoryItems() : [])
+    .find(entry => entry.name === item.name && contentShape(entry) === shape);
+  if (!match) return "CC";
+  return match.official === false ? "3PP" : "SRD";
+}
+
+/* CC always shows: knowing a thing is not official content matters whether or
+   not you asked for tags. SRD and 3PP only show when you turn tags on, because
+   tagging every single row "SRD" is noise on a sheet where nearly everything
+   is. */
+function itemSourceTagHtml(item) {
+  const source = itemSource(item);
+  if (!source) return "";
+  const always = typeof settings !== "undefined" && settings.showSourceTags;
+  if (source !== "CC" && !always) return "";
+  const colour = source === "CC" ? "var(--accent-soft)" : "var(--text-dim)";
+  return ` <span class="res-tag" style="background:var(--control-raised);color:${colour};">${source}</span>`;
 }
 
 function itemSearchResultsHtml(matches) {
@@ -727,7 +786,7 @@ function itemSearchResultsHtml(matches) {
   return matches.map((entry, index) => `
     <div class="res-row" data-pick-item="${index}" style="cursor:pointer;">
       <div>
-        <div class="res-name">${esc(entry.name)}${entry.official === false ? ` <span class="res-tag" style="background:var(--control-raised);color:var(--accent-soft);">CC</span>` : ""}</div>
+        <div class="res-name">${esc(entry.name)}${itemSourceTagHtml(entry)}</div>
         <div class="atk-range">${esc(itemTypeLabel(itemType(entry)))}${entry.cost ? " \u00b7 " + esc(entry.cost) : ""}</div>
       </div>
       <span class="add-link">Use</span>
@@ -804,6 +863,7 @@ function openAddInventoryModal(presetCategory, presetType) {
 
     const clearPick = document.getElementById("item-clear-pick");
     if (clearPick) clearPick.addEventListener("click", startBlank);
+    wireLiveSourceTag(state, pickedSource ? { isContainer: pickedSource.isContainer } : null);
 
     // read back what the form is saying right now, before the player touches
     // it -- that is the thing "did you change it" gets measured against
@@ -1014,7 +1074,7 @@ function openItemDetailModal(itemId) {
 
   openModal("full", `
     <div class="modal-heading-row">
-      <div class="modal-heading">${esc(item.name)}</div>
+      <div class="modal-heading">${esc(item.name)}${itemSourceTagHtml(item)}</div>
       <button class="icon-btn-delete" id="detail-delete-trigger" title="Remove item">🗑</button>
     </div>
     ${item.description ? `<div class="effect-note">${esc(item.description)}</div>` : ""}
@@ -1158,6 +1218,7 @@ function openItemEditModal(itemId) {
   const typeFields = document.getElementById("type-fields");
   renderItemTypeFields(typeFields, state.type, item, state);
   wireItemTypeToggle(state, typeFields, item);
+  wireLiveSourceTag(state, item);
 
   document.getElementById("save-item-edit-button").addEventListener("click", () => {
     Object.assign(item, readCommonItemFields());

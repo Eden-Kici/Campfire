@@ -47,6 +47,9 @@ let settings = {
      skill without logging a die for it. On puts it back to resolving on the
      first tap, for tables that want the speed. */
   fastRolls: false,
+  /* Off, only your own content is marked. On, every item says where it came
+     from -- SRD, third-party, or yours. */
+  showSourceTags: false,
   /* Which relay the party talks through. Empty means the one the app ships
      with; a value here points at a different one, which is how a table on a
      laptop relay, or a second deployment, gets used without a code change. */
@@ -75,6 +78,8 @@ function openSettingsModal() {
       { hint: "Otherwise they appear only at 0 hit points" })}
     ${toggleLineHtml("setting-fast-rolls", "Fast Rolls", settings.fastRolls,
       { hint: "Roll on the first tap" })}
+    ${toggleLineHtml("setting-source-tags", "Show content source tags", settings.showSourceTags,
+      { hint: "Marks every item SRD, 3PP or CC. Your own content is always marked" })}
     ${toggleLineHtml("setting-stashed-money", "Track stashed coins", settings.trackStashedMoney,
       { hint: "A second purse for coin you aren't carrying" })}
     ${toggleLineHtml("setting-money-weight", "Coin counts toward weight", settings.moneyCountsWeight,
@@ -94,6 +99,7 @@ function openSettingsModal() {
   });
   settingToggle("setting-death-saves", "alwaysShowDeathSaves");
   settingToggle("setting-fast-rolls", "fastRolls");
+  settingToggle("setting-source-tags", "showSourceTags");
   settingToggle("setting-stashed-money", "trackStashedMoney");
   settingToggle("setting-money-weight", "moneyCountsWeight");
 }
