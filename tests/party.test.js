@@ -11,7 +11,9 @@ module.exports = function (suite) {
           wireNote, readNote, receivedNote, inboxSection, applySharedNote, removeSharedNote,
           readItem, wireItem, landingCategory, receivedItem, applyReceivedItem, equippedEffectItems,
           normaliseNoteSharing, notesSharedWith, sharePermissionFor, absentShares,
-          autoSharedNotes, enrolInAutoShares,
+          autoSharedNotes, enrolInAutoShares, canEditSharedNote,
+          stackSignature, canMergeStacks, mergeStacks, readPurse, purseLabel,
+          canAffordPurse, takeFromPurse, addToPurse, purseTotal,
           weaponList,
           PARTY_PROTOCOL_VERSION } = app;
 
@@ -174,6 +176,104 @@ module.exports = function (suite) {
   suite.section("who Note Share and item Give offer you");
   suite.is("everyone but yourself", partyMemberNames(members, "a1b2c3"), ["Tomas"]);
   suite.is("nobody at all when you are not in a party", partyMemberNames([], "a1b2c3"), []);
+
+  suite.section("merging two stacks of the same thing");
+  const arrows = (over) => Object.assign({ id: "a1-1", name: "Arrows", category: "Carrying",
+    weight: 0.05, qty: 20, resource: { max: 0, recharge: { on: "none", amount: "all" } } }, over || {});
+
+  suite.is("two identical stacks merge", canMergeStacks(arrows(), arrows({ id: "b2-9" })), true);
+  suite.is("a different quantity is still the same thing",
+    canMergeStacks(arrows({ qty: 3 }), arrows({ id: "b2-9", qty: 60 })), true);
+  suite.is("so is sitting in a different pocket",
+    canMergeStacks(arrows(), arrows({ id: "b2-9", category: "Camp Storage" })), true);
+  const oneStack = arrows();
+  suite.is("a stack will not merge with itself", canMergeStacks(oneStack, oneStack), false);
+
+  /* Name alone would be a quiet way to destroy a magic weapon. */
+  const sword = (over) => Object.assign({ id: "a1-2", name: "Longsword", qty: 1, magicBonus: 0,
+    isWeapon: true, damage: [{ dice: "1d8", type: "Slashing", ability: "STR" }] }, over || {});
+  suite.is("a +1 longsword does not merge into a plain one",
+    canMergeStacks(sword(), sword({ id: "b2-3", magicBonus: 1 })), false);
+  suite.is("but two identical longswords do",
+    canMergeStacks(sword(), sword({ id: "b2-3" })), true);
+  suite.is("a quiver with twenty in it is not a quiver with five in it",
+    canMergeStacks(
+      { name: "Quiver", qty: 1, resource: { max: 20, loaded: 20 } },
+      { name: "Quiver", qty: 1, resource: { max: 20, loaded: 5 } }), false);
+  suite.is("key order in the stored object doesn't fool it",
+    stackSignature({ name: "X", weight: 1, qty: 2 }), stackSignature({ qty: 9, weight: 1, name: "X" }));
+
+  const into = arrows({ qty: 3 });
+  mergeStacks(into, arrows({ id: "b2-9", qty: 5 }));
+  suite.is("merging adds the counts", into.qty, 8);
+
+  suite.section("sending coin");
+  suite.is("an empty purse is not an amount", readPurse({ gp: 0, sp: 0 }), null);
+  suite.is("nor is nothing at all", readPurse(null), null);
+  suite.is("only the denominations with something in them travel",
+    Object.keys(readPurse({ pp: 0, gp: 5, ep: 0, sp: 12, cp: 0 })).sort(), ["gp", "sp"]);
+  suite.is("an absurd amount is clamped", readPurse({ gp: 1e9 }).gp, 999999);
+  suite.is("a negative amount is not an amount", readPurse({ gp: -5 }), null);
+
+  /* Coin is never converted on the way. 340 silver is a legitimate way to
+     carry money and turning it into 34 gold is the app overruling the player. */
+  const purse = { pp: 0, gp: 42, ep: 0, sp: 15, cp: 8 };
+  suite.is("what you can afford", canAffordPurse(purse, { gp: 40, sp: 15 }), true);
+  suite.is("and what you cannot", canAffordPurse(purse, { gp: 43 }), false);
+  suite.is("nor by borrowing against another denomination",
+    canAffordPurse(purse, { sp: 20 }), false);
+
+  takeFromPurse(purse, { gp: 10, sp: 5 });
+  suite.is("paying out leaves the rest alone", JSON.stringify(purse),
+    JSON.stringify({ pp: 0, gp: 32, ep: 0, sp: 10, cp: 8 }));
+  addToPurse(purse, { gp: 10, sp: 5 });
+  suite.is("and it comes back exactly as it went", JSON.stringify(purse),
+    JSON.stringify({ pp: 0, gp: 42, ep: 0, sp: 15, cp: 8 }));
+  suite.is("silver stays silver", purseLabel({ sp: 340 }), "340 sp");
+  suite.is("and reads in the order coins are worth", purseLabel({ cp: 2, gp: 5, sp: 1 }), "5 gp, 1 sp, 2 cp");
+  suite.is("counting is by coin, not by value", purseTotal({ gp: 1, cp: 2 }), 3);
+
+  suite.section("an offer of coin");
+  const coinOffer = parsePartyMessage(partyMessage("item-offer", {
+    transferId: "a1-7", coin: { gp: 50 }, to: "d4e5f6", from: "a1b2c3", fromName: "Sigrid" }));
+  suite.is("reads back its coin", coinOffer.coin.gp, 50);
+  suite.is("and carries no item", coinOffer.item, null);
+  suite.is("an offer of neither goods nor coin is refused",
+    parsePartyMessage(partyMessage("item-offer", { transferId: "a1-7", to: "d4e5f6" })), null);
+
+  suite.section("editing someone else's note");
+  const owned = {
+    id: "a1b2c3-4", title: "Gold split", body: "412 total.",
+    sharing: { sharedByMe: true, continuous: true, sharedWith: [
+      { name: "Tomas", device: "d4e5f6", permission: "edit" },
+      { name: "Wren", device: "999zzz", permission: "view" }] }
+  };
+  suite.is("someone given edit may change it", canEditSharedNote(owned, "d4e5f6"), true);
+  suite.is("someone given view may not", canEditSharedNote(owned, "999zzz"), false);
+  suite.is("someone it was never shared with may not", canEditSharedNote(owned, "nobody"), false);
+  suite.is("and a note that isn't ours is not ours to be edited on",
+    canEditSharedNote({ id: "x-1", sharing: { sharedByMe: false, permission: "edit" } }, "d4e5f6"), false);
+  suite.is("nor is an unshared note", canEditSharedNote({ id: "x-1", sharing: null }, "d4e5f6"), false);
+
+  const editMsg = parsePartyMessage(partyMessage("note-edit", {
+    note: { id: "a1b2c3-4", title: "Gold split", body: "412, now 300." },
+    to: "a1b2c3", from: "d4e5f6", fromName: "Tomas" }));
+  suite.is("an edit message reads back its words", editMsg.note.body, "412, now 300.");
+  suite.is("and who it came from", editMsg.from, "d4e5f6");
+  suite.is("an edit with no note is refused",
+    parsePartyMessage(partyMessage("note-edit", { to: "a1b2c3", from: "d4e5f6" })), null);
+
+  suite.is("a received note remembers where to send edits back to",
+    receivedNote({ id: "x-1", title: "t", body: "b", createdAt: 1, updatedAt: 2 }, "Sigrid", "edit", "a1b2c3")
+      .sharing.sharedByDevice, "a1b2c3");
+
+  /* The editor on screen holds a reference to the note object it opened, so an
+     update has to change that object rather than swap in a new one. */
+  const holder = { noteSections: [{ id: 1, receiveFrom: true }], notes: [] };
+  const first = applySharedNote(holder, receivedNote({ id: "z-1", title: "A", body: "one", createdAt: 1, updatedAt: 1 }, "S", "edit", "a1"));
+  const second = applySharedNote(holder, receivedNote({ id: "z-1", title: "A", body: "two", createdAt: 1, updatedAt: 2 }, "S", "edit", "a1"));
+  suite.is("an update changes the note that was already there", first === second, true);
+  suite.is("with the new words in it", first.body, "two");
 
   suite.section("handing over an item");
   const bow = () => ({

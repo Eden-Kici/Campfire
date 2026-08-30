@@ -226,10 +226,13 @@ function parsePartyMessage(raw) {
   }
 
   if (msg.t === "item-offer") {
-    const item = readItem(msg.item);
-    if (!item || msg.transferId == null) return null;
+    if (msg.transferId == null) return null;
+    // an offer is either goods or coin, and has to be one of them
+    const item = msg.item ? readItem(msg.item) : null;
+    const coin = msg.coin ? readPurse(msg.coin) : null;
+    if (!item && !coin) return null;
     return {
-      t: "item-offer", item: item,
+      t: "item-offer", item: item, coin: coin,
       transferId: String(msg.transferId).slice(0, 40),
       to: typeof msg.to === "string" ? msg.to : "*",
       from: typeof msg.from === "string" ? msg.from : null,
@@ -255,7 +258,23 @@ function parsePartyMessage(raw) {
     return {
       t: "note", note: note,
       to: typeof msg.to === "string" ? msg.to : "*",
+      from: typeof msg.from === "string" ? msg.from : null,
       permission: msg.permission === "edit" ? "edit" : "view",
+      fromName: clampText(msg.fromName, 40, "Someone")
+    };
+  }
+
+  /* An edit travelling back up to the note's owner. Only the owner applies it,
+     and only after checking the sender was actually given edit rights -- then
+     the owner passes it on to everyone else. One hub, so two editors cannot
+     quietly diverge into two versions nobody reconciles. */
+  if (msg.t === "note-edit") {
+    const note = readNote(msg.note);
+    if (!note) return null;
+    return {
+      t: "note-edit", note: note,
+      to: typeof msg.to === "string" ? msg.to : "*",
+      from: typeof msg.from === "string" ? msg.from : null,
       fromName: clampText(msg.fromName, 40, "Someone")
     };
   }
@@ -402,6 +421,20 @@ function readItem(raw) {
   return item;
 }
 
+/* Coin travels denomination by denomination, never as a total. Converting it
+   to gold on the way and back again would hand someone 34 gold when they were
+   given 340 silver, which is not the same thing to carry or to spend. */
+function readPurse(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const purse = {};
+  let any = false;
+  COIN_TYPES.forEach(coin => {
+    const amount = clampWhole(raw[coin.key], 0, 999999) || 0;
+    if (amount > 0) { purse[coin.key] = amount; any = true; }
+  });
+  return any ? purse : null;
+}
+
 function wireItem(item) {
   // everything the far side is willing to read, and nothing else: `category`
   // and `isDefaultLoadout` are this sheet's arrangement, not the item
@@ -488,7 +521,7 @@ function readNote(raw) {
   };
 }
 
-function receivedNote(note, fromName, permission) {
+function receivedNote(note, fromName, permission, fromDevice) {
   return {
     id: note.id, sectionId: null,
     title: note.title, body: note.body,
@@ -496,10 +529,22 @@ function receivedNote(note, fromName, permission) {
     sharing: {
       sharedByMe: false,
       sharedByName: fromName || "Someone",
+      // where an edit has to be sent back to. Without it, "can edit" means
+      // you may type into your own copy and nobody ever sees it
+      sharedByDevice: fromDevice || null,
       // anything that isn't explicitly edit is view: the cautious direction
       permission: permission === "edit" ? "edit" : "view"
     }
   };
+}
+
+/* Whether an edit arriving from a given device is allowed to change this note.
+   The owner decides: an edit names a note by id, and ids travel, so without
+   this anyone in the room could rewrite a note they were only shown. */
+function canEditSharedNote(note, device) {
+  if (!note || !note.sharing || !note.sharing.sharedByMe) return false;
+  const share = (note.sharing.sharedWith || []).find(s => s.device === device);
+  return !!(share && share.permission === "edit");
 }
 
 /* Where an arriving note lands. A section flagged "receive shared notes here"
@@ -523,12 +568,19 @@ function applySharedNote(target, note) {
     target.notes.push(placed);
     return placed;
   }
-  /* An update to a note already here keeps whichever section the reader filed
-     it in. They moved it; that was a decision, and a later edit from the
-     sender is not a reason to overrule it. */
-  const kept = target.notes[at].sectionId;
-  target.notes[at] = Object.assign({}, note, { sectionId: kept });
-  return target.notes[at];
+  /* Updated in place rather than replaced. The note editor holds a reference
+     to the object it opened, so swapping in a new one would leave whoever is
+     reading it typing into an orphan.
+
+     The section is deliberately not touched: they moved it, that was a
+     decision, and a later edit from the sender is not a reason to overrule
+     it. */
+  const existing = target.notes[at];
+  existing.title = note.title;
+  existing.body = note.body;
+  existing.updatedAt = note.updatedAt;
+  existing.sharing = note.sharing;
+  return existing;
 }
 
 function removeSharedNote(target, id) {

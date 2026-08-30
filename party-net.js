@@ -159,7 +159,7 @@ function drainPendingPartyNotes() {
   const waiting = pendingIncomingNotes;
   pendingIncomingNotes = [];
   waiting.forEach(msg => {
-    applySharedNote(character, receivedNote(msg.note, msg.fromName, msg.permission));
+    applySharedNote(character, receivedNote(msg.note, msg.fromName, msg.permission, msg.from));
   });
   showToast(waiting.length === 1 ? "A shared note was waiting for you"
                                  : waiting.length + " shared notes were waiting for you");
@@ -251,9 +251,29 @@ function handlePartyMessage(raw) {
       return;
     }
     const known = (character.notes || []).some(n => sameId(n.id, msg.note.id));
-    const placed = applySharedNote(character, receivedNote(msg.note, msg.fromName, msg.permission));
+    const placed = applySharedNote(character, receivedNote(msg.note, msg.fromName, msg.permission, msg.from));
+    refreshOpenNoteEditor(placed);
     showToast(known ? msg.fromName + " updated \u201c" + (placed.title || "a note") + "\u201d"
                     : msg.fromName + " shared \u201c" + (placed.title || "a note") + "\u201d");
+    renderContent();
+    return;
+  }
+
+  if (msg.t === "note-edit") {
+    if (msg.to !== deviceId()) return;
+    const note = (character.notes || []).find(n => sameId(n.id, msg.note.id));
+    // silently ignored rather than answered: an edit naming a note we never
+    // shared with them, or shared read-only, is not a conversation to have
+    if (!canEditSharedNote(note, msg.from)) return;
+
+    note.title = msg.note.title;
+    note.body = msg.note.body;
+    note.updatedAt = msg.note.updatedAt;
+    // as the owner, pass it on to everyone else -- but not back to the person
+    // who is still typing it
+    partyResendNote(note, msg.from);
+    refreshOpenNoteEditor(note);
+    showToast(msg.fromName + " edited \u201c" + (note.title || "a note") + "\u201d");
     renderContent();
     return;
   }
@@ -285,7 +305,7 @@ function partyShareNote(note, recipients) {
   const fromName = myPartyName();
   let sent = 0;
   (recipients || []).forEach(r => {
-    if (partySend("note", { note: wireNote(note), to: r.device, permission: r.permission, fromName: fromName })) sent += 1;
+    if (partySend("note", { note: wireNote(note), to: r.device, from: deviceId(), permission: r.permission, fromName: fromName })) sent += 1;
   });
   return sent;
 }
@@ -298,9 +318,35 @@ function partyUnshareNote(noteId, devices) {
 /* Re-sends a note that is shared continuously, to everyone it is shared with.
    Called from the editor's save, so "keep updated for everyone" means what it
    says instead of being a snapshot with a friendlier label. */
-function partyResendNote(note) {
+function partyResendNote(note, exceptDevice) {
   if (!note.sharing || !note.sharing.sharedByMe || !note.sharing.continuous) return 0;
-  return partyShareNote(note, note.sharing.sharedWith.filter(r => r.device));
+  return partyShareNote(note, note.sharing.sharedWith.filter(r => r.device && r.device !== exceptDevice));
+}
+
+/* An edit to somebody else's note goes to them, not to the room. They own it,
+   they are the ones who can check you were actually given edit rights, and
+   they pass it on to everyone else. One hub, so two people editing cannot
+   quietly diverge into two versions that nobody ever reconciles. */
+let noteEditTimer = null;
+function partyPushNoteEditSoon(note) {
+  const share = note.sharing;
+  if (!share || share.sharedByMe) return;
+  if (share.permission !== "edit" || !share.sharedByDevice) return;
+  clearTimeout(noteEditTimer);
+  noteEditTimer = setTimeout(() => {
+    partySend("note-edit", {
+      note: wireNote(note), to: share.sharedByDevice,
+      from: deviceId(), fromName: myPartyName()
+    });
+  }, 700);
+}
+
+/* One call for the note editor, because from in there it is the same act:
+   you typed, and whoever should see that should see it. */
+function partyPropagateNoteEdit(note) {
+  if (!note.sharing) return;
+  if (note.sharing.sharedByMe) partyResendNoteSoon(note);
+  else partyPushNoteEditSoon(note);
 }
 
 /* The note editor commits on every keystroke, which is right for saving and
@@ -353,9 +399,30 @@ function partyGiveItem(item, qty, recipient) {
   return transferId;
 }
 
+function partyGiveCoin(amount, recipient) {
+  const transferId = makeId(character.inventory);
+  const ok = partySend("item-offer", {
+    transferId: transferId,
+    coin: amount,
+    to: recipient.device,
+    from: deviceId(),
+    fromName: myPartyName()
+  });
+  if (!ok) return null;
+
+  pendingGives[transferId] = {
+    coin: JSON.parse(JSON.stringify(amount)),
+    toName: recipient.name,
+    status: "waiting",
+    timer: setTimeout(() => giveWentUnanswered(transferId), GIVE_ANSWER_TIMEOUT)
+  };
+  return transferId;
+}
+
 /* Back in the bag: onto the original stack if it survived, as its own row if
-   the whole thing was handed over. */
+   the whole thing was handed over. Coin simply goes back in the purse. */
 function returnGivenItem(pending) {
+  if (pending.coin) { addToPurse(character.purse, pending.coin); renderContent(); return; }
   const stack = character.inventory.find(i => sameId(i.id, pending.item.id));
   if (stack) stack.qty = (stack.qty || 0) + pending.qty;
   else character.inventory.push(Object.assign({}, pending.item, { qty: pending.qty }));
@@ -385,7 +452,7 @@ function partyResendNotesTo(device, theirName) {
   let sent = 0;
   notesSharedWith(character, device).forEach(note => {
     const permission = sharePermissionFor(note, device);
-    if (partySend("note", { note: wireNote(note), to: device, permission: permission, fromName: fromName })) sent += 1;
+    if (partySend("note", { note: wireNote(note), to: device, from: deviceId(), permission: permission, fromName: fromName })) sent += 1;
   });
   return sent;
 }

@@ -35,6 +35,8 @@ function moneyRowHtml() {
           <span class="money-total">${formatGold(moneyInGold(character.stash))} gp</span>
         </div>
         <div class="coin-row">${coinCellsHtml(character.stash, "stash")}</div>` : ""}
+      ${(typeof party !== "undefined" && party.status !== "none" && partyMemberList(party.members, deviceId()).length)
+        ? `<button class="add-link" id="send-money-button" style="margin-top:10px;">Send Money</button>` : ""}
     </div>`;
 }
 
@@ -197,11 +199,59 @@ function wireSectionDragging() {
   });
 }
 
+/* The row the finger is actually over, ignoring the one being dragged.
+   elementFromPoint is no use here: the dragged row moves with the pointer and
+   would answer every time. */
+function itemRowUnder(e, exclude) {
+  return Array.from(document.querySelectorAll(".item-row")).filter(r => r !== exclude).find(r => {
+    const box = r.getBoundingClientRect();
+    return e.clientY >= box.top && e.clientY <= box.bottom;
+  }) || null;
+}
+
 function wireItemDragging() {
   document.querySelectorAll(".item-row").forEach(row => {
+    let dragged = null;
+    let mergeTarget = null;
+
+    const clearMergeMarks = () => {
+      document.querySelectorAll(".merge-ready, .merge-hover").forEach(r =>
+        r.classList.remove("merge-ready", "merge-hover"));
+      mergeTarget = null;
+    };
+
     attachHoldDrag(row, {
-      onStart: () => row.classList.add("dragging"),
+      onStart: () => {
+        row.classList.add("dragging");
+        dragged = character.inventory.find(i => sameId(i.id, row.dataset.itemId));
+        /* Lit up before the finger moves, so which piles this one can join is
+           something you are shown rather than something you find out by
+           dropping it somewhere and seeing what happened. */
+        document.querySelectorAll(".item-row").forEach(other => {
+          if (other === row) return;
+          const item = character.inventory.find(i => sameId(i.id, other.dataset.itemId));
+          if (canMergeStacks(dragged, item)) other.classList.add("merge-ready");
+        });
+      },
       onMove: (e) => {
+        /* Over the middle of a matching row means merge, and the row is left
+           where it is. The outer quarters still reorder, so dropping a stack
+           between two others is unaffected. */
+        const over = itemRowUnder(e, row);
+        if (over && over.classList.contains("merge-ready")) {
+          const box = over.getBoundingClientRect();
+          const inMiddle = e.clientY > box.top + box.height * 0.25 && e.clientY < box.bottom - box.height * 0.25;
+          if (inMiddle) {
+            if (mergeTarget !== over) {
+              if (mergeTarget) mergeTarget.classList.remove("merge-hover");
+              mergeTarget = over;
+              over.classList.add("merge-hover");
+            }
+            return;
+          }
+        }
+        if (mergeTarget) { mergeTarget.classList.remove("merge-hover"); mergeTarget = null; }
+
         const bodies = Array.from(document.querySelectorAll("[data-cat-body]"));
         let targetBody = null;
         for (const b of bodies) {
@@ -226,6 +276,20 @@ function wireItemDragging() {
       onEnd: () => {
         row.classList.remove("dragging");
         suppressInvClickUntil = Date.now() + 300;
+
+        if (mergeTarget) {
+          const into = character.inventory.find(i => sameId(i.id, mergeTarget.dataset.itemId));
+          clearMergeMarks();
+          if (into && dragged) {
+            mergeStacks(into, dragged);
+            character.inventory = character.inventory.filter(i => i !== dragged);
+            showToast(into.qty + " " + into.name);
+            renderContent();
+            return;
+          }
+        }
+        clearMergeMarks();
+
         const newInventory = [];
         document.querySelectorAll("[data-cat-body]").forEach(body => {
           const cat = body.dataset.catBody;
@@ -243,6 +307,8 @@ function wireItemDragging() {
 
 function wireInventoryTab() {
   document.getElementById("add-inventory-button").addEventListener("click", () => openAddInventoryModal());
+  const sendMoneyButton = document.getElementById("send-money-button");
+  if (sendMoneyButton) sendMoneyButton.addEventListener("click", openSendMoneyModal);
 
   document.querySelectorAll("[data-coin-edit]").forEach(cell => {
     cell.addEventListener("click", () => {
@@ -923,12 +989,21 @@ function partyRosterForGiving() {
 }
 
 function openGiveToModal(item, qty) {
+  openRecipientPicker("Give to", recipient => applyGive(item, qty, recipient));
+}
+
+function openSendCoinToModal(amount) {
+  openRecipientPicker("Send to", recipient => applyGiveCoin(amount, recipient));
+}
+
+function openRecipientPicker(heading, onPick) {
   const roster = partyRosterForGiving();
   let selected = null;
 
   openModal("full", `
-    <div class="modal-heading">Give to</div>
+    <div class="modal-heading">${esc(heading)}</div>
     <div id="give-to-list">
+      ${roster.length ? "" : `<div class="empty-hint">Nobody else is in the party.</div>`}
       ${roster.map((m, i) => `
         <div class="recipient-row" data-give-to="${i}">
           <div class="recipient-left">
@@ -957,8 +1032,44 @@ function openGiveToModal(item, qty) {
 
   document.getElementById("give-to-confirm").addEventListener("click", () => {
     if (selected === null) return;
-    applyGive(item, qty, roster[selected]);
+    onPick(roster[selected]);
   });
+}
+
+/* Coin is picked denomination by denomination rather than as a total, because
+   that is how it is carried. Handing over 340 silver and having it land as 34
+   gold would be the app deciding something about the player's purse that the
+   player did not. */
+function openSendMoneyModal() {
+  openModal("sheet", `
+    <div class="modal-heading">Send Money</div>
+    <div class="breakdown-source" style="margin-bottom:12px;">Nothing is converted on the way.</div>
+    ${COIN_TYPES.map(coin => numberFieldHtml("send-coin-" + coin.key, coin.name,
+      0, { min: 0, max: coinCount(character.purse, coin.key) })).join("")}
+    <button class="btn-primary" id="send-money-next">Choose a Player</button>
+    <button class="btn-secondary" id="send-money-cancel">Cancel</button>
+  `);
+
+  document.getElementById("send-money-cancel").addEventListener("click", closeModal);
+  document.getElementById("send-money-next").addEventListener("click", () => {
+    const amount = {};
+    COIN_TYPES.forEach(coin => {
+      const value = parseInt(document.getElementById("send-coin-" + coin.key).value) || 0;
+      if (value > 0) amount[coin.key] = value;
+    });
+    if (!purseTotal(amount)) { showToast("Enter an amount"); return; }
+    if (!canAffordPurse(character.purse, amount)) { showToast("You don't have that much"); return; }
+    openSendCoinToModal(amount);
+  });
+}
+
+function applyGiveCoin(amount, recipient) {
+  const transferId = partyGiveCoin(amount, recipient);
+  if (!transferId) { showToast("Not connected \u2014 nothing was sent"); return; }
+  takeFromPurse(character.purse, amount);
+  closeModal();
+  renderContent();
+  showGiveStatusModal(transferId);
 }
 
 /* A give is an offer, not a delivery. The item leaves the bag as soon as the
@@ -989,7 +1100,7 @@ function itemAmountLabel(name, qty) {
 function showGiveStatusModal(transferId) {
   const pending = pendingGives[transferId];
   if (!pending) return;
-  const what = itemAmountLabel(pending.item.name, pending.qty);
+  const what = pending.coin ? purseLabel(pending.coin) : itemAmountLabel(pending.item.name, pending.qty);
   const waiting = pending.status === "waiting";
 
   let line;
@@ -998,8 +1109,11 @@ function showGiveStatusModal(transferId) {
   else if (pending.status === "declined") {
     line = esc(pending.toName) + " declined."
       + (pending.reason ? " (" + esc(pending.reason) + ")" : "")
-      + " It's back in your bag.";
-  } else line = "No answer from " + esc(pending.toName) + ". It's back in your bag.";
+      + (pending.coin ? " It's back in your purse." : " It's back in your bag.");
+  } else {
+    line = "No answer from " + esc(pending.toName)
+      + (pending.coin ? ". It's back in your purse." : ". It's back in your bag.");
+  }
 
   openModal("center", `
     <div class="breakdown-title">Sending ${esc(what)}</div>
@@ -1018,11 +1132,11 @@ function showGiveStatusModal(transferId) {
 /* An item arriving uninvited is a change to someone's character that they did
    not make, so it is asked rather than done. */
 function openIncomingItemModal(offer) {
-  const what = itemAmountLabel(offer.item.name, offer.item.qty);
+  const what = offer.coin ? purseLabel(offer.coin) : itemAmountLabel(offer.item.name, offer.item.qty);
   openModal("center", `
     <div class="breakdown-title">${esc(offer.fromName)} wants to give you</div>
     <div class="res-row"><div class="res-name">${esc(what)}</div></div>
-    ${offer.item.description ? `<div class="effect-note">${esc(offer.item.description)}</div>` : ""}
+    ${(offer.item && offer.item.description) ? `<div class="effect-note">${esc(offer.item.description)}</div>` : ""}
     <button class="btn-primary" id="offer-accept-button" style="margin-top:12px;">Accept</button>
     <button class="btn-secondary" id="offer-decline-button">Decline</button>
   `);
@@ -1037,7 +1151,8 @@ function respondToOffer(accepted) {
   if (!offer) { closeModal(); return; }
 
   let missing = [];
-  if (accepted) {
+  if (accepted && offer.coin) addToPurse(character.purse, offer.coin);
+  if (accepted && offer.item) {
     const landed = receivedItem(offer.item, character, offer.transferId);
     applyReceivedItem(character, landed.item);
     missing = landed.missing;
@@ -1048,7 +1163,7 @@ function respondToOffer(accepted) {
   closeModal();
   if (!accepted) return;
 
-  const what = itemAmountLabel(offer.item.name, offer.item.qty);
+  const what = offer.coin ? purseLabel(offer.coin) : itemAmountLabel(offer.item.name, offer.item.qty);
   showToast(missing.length
     ? "Took " + what + " \u2014 no " + missing.join(" or ") + " here, so it arrived unlinked"
     : "Took " + what);

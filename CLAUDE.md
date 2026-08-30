@@ -210,6 +210,20 @@ first-ever launch does. Tutorial tests set `tutorialState` by hand instead.
   they chose to put it on. `ammunition` and `resource.refillFrom` are name lookups into the holder's
   sheet, so they are cut when the receiver has no match, and the receiver is told which link went.
   `isDefaultLoadout` and `category` are the sender's arrangement and never travel.
+- **Editing works both ways.** A reader given `edit` sends their change to the note's *owner*
+  (`note-edit`, addressed with `sharing.sharedByDevice`, which is why a received note records it),
+  and the owner checks `canEditSharedNote()` before applying and passing it on to everyone else —
+  skipping whoever sent it, so nobody's typing gets echoed back at them. One hub, so two editors
+  cannot quietly diverge into two versions nobody reconciles. An edit naming a note that was never
+  shared with that device, or shared read-only, is dropped without an answer.
+- **`applySharedNote()` updates in place rather than replacing.** The note editor holds a reference
+  to the object it opened, so swapping in a new one leaves whoever is reading it typing into an
+  orphan. `refreshOpenNoteEditor()` then repaints the open fields, skipping whichever one has the
+  cursor.
+- **Coin can be handed over too**, through the same offer machinery — an `item-offer` carries either
+  an `item` or a `coin` purse, and must carry one of them. Coin moves denomination by denomination
+  and is never converted: 340 silver arrives as 340 silver, because turning it into 34 gold is the
+  app overruling the player about what is in their own purse.
 - **Giving asks first.** An item arriving uninvited is a change to someone's character that they did
   not make, so a give is an *offer*: `item-offer` out, an accept/decline prompt on the far side, and
   `item-reply` back. The giver watches a status window they may close — it reopens by itself when
@@ -235,8 +249,12 @@ first-ever launch does. Tutorial tests set `tutorialState` by hand instead.
 - **No user identity.** There is a device id now, but it identifies an *installation*, not a
   person: reinstall and you are someone new, and `settings.username` is "Adventurer" on every fresh
   install.
-- A given item never stacks with one the receiver already has: 20 arrows given twice is two rows of
-  20, not one of 40. Predictable, and it keeps repeated deliveries idempotent, but it is not tidy.
+- A given item never stacks *automatically* with one the receiver already has, which keeps repeated
+  deliveries idempotent. **Merging is a drag instead**: hold a stack and every pile it could join is
+  outlined, the one under the finger fills in, and dropping there combines them. What counts as "the
+  same thing" is `stackSignature()` — the whole item apart from id, quantity and category — because
+  name alone would fold a +1 longsword into a plain one and destroy the magic weapon. The outer
+  quarters of a row still reorder, so dropping a stack *between* two others is unaffected.
 - A give is answered, not guaranteed. If the reply is lost in flight the giver gets the item back
   while the receiver keeps it too, which duplicates rather than destroys — the safer of the two
   directions, and the reason it was built that way round.

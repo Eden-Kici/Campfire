@@ -331,9 +331,25 @@ function openEditSectionModal(sectionId) {
   });
 }
 
+let openNoteEditorId = null;
+
+/* An edit arriving for the note that is open on screen right now. The fields
+   hold their own copy of the text, so updating the data behind them is not
+   enough -- but overwriting what someone is in the middle of typing would be
+   worse, so whichever field has the cursor is left alone. */
+function refreshOpenNoteEditor(note) {
+  if (!note || openNoteEditorId === null || !sameId(openNoteEditorId, note.id)) return;
+  const title = document.getElementById("note-title-input");
+  const body = document.getElementById("note-body-input");
+  if (!title || !body) return;
+  if (document.activeElement !== title) title.value = note.title;
+  if (document.activeElement !== body) body.value = note.body;
+}
+
 function openNoteEditorModal(noteId) {
   const note = character.notes.find(n => sameId(n.id, noteId));
   noteId = note ? note.id : noteId;
+  openNoteEditorId = noteId;
   const section = character.noteSections.find(s => s.id === note.sectionId);
   const isReadOnly = !!(note.sharing && !note.sharing.sharedByMe && note.sharing.permission === "view");
 
@@ -365,7 +381,7 @@ function openNoteEditorModal(noteId) {
     note.title = document.getElementById("note-title-input").value;
     note.body = document.getElementById("note-body-input").value;
     note.updatedAt = Date.now();
-    partyResendNoteSoon(note);   // debounced; no-op unless shared continuously
+    partyPropagateNoteEdit(note);   // to the room if it's ours, to the owner if it isn't
   }
   if (!isReadOnly) {
     document.getElementById("note-title-input").addEventListener("input", commit);

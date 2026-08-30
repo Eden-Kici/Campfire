@@ -182,10 +182,16 @@ another player's sheet, note sharing with per-person view/edit, and item giving 
 acknowledgement so a gift nobody receives comes back. All verified with two browsers against a local
 relay; the roster and effect push have also been run on the two phones against the deployed relay.
 
-Since then, sharing became a **standing arrangement** — kept by device, re-sent whenever that device
-rejoins, with auto-share sections enrolling whoever arrives — and giving became an **offer** the
-receiver accepts or declines, with the giver watching a window they can close and which reopens with
-the answer. **None of that has been run on the phones yet.**
+Since then: sharing became a **standing arrangement** — kept by device, re-sent whenever that device
+rejoins, with auto-share sections enrolling whoever arrives. Giving became an **offer** the receiver
+accepts or declines, with the giver watching a window they can close and which reopens with the
+answer. **Coin** can be sent the same way, denomination by denomination. A reader with edit rights
+can now **push their edit back** to the note's owner, who checks the permission and passes it on.
+And two stacks of the same thing **merge by dragging one onto the other**, with the piles it can
+join outlined while you drag.
+
+Standing shares, the offer flow and item giving have been run on the phones. **Money, stack merging
+and edit-back have only been run in two browsers against a local relay.**
 
 1. Push, then open the app on both phones. Host on one, join on the other with the four-character
    code. Watch a hit-point change on one appear on the other.

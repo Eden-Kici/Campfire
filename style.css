@@ -1194,3 +1194,18 @@ body {
    layout sideways mid-tap. 16px is the threshold, not a design choice. */
 .field input, .field select, .field textarea,
 input[type="text"], input[type="number"], textarea { font-size: 16px; }
+
+/* Two stacks of the same thing can become one. While a stack is being dragged,
+   every pile it could join is outlined, and the one under the finger fills in
+   -- so merging is something you are offered rather than something you
+   discover by dropping and hoping. */
+.item-row.merge-ready {
+  outline: 1px dashed var(--accent-soft);
+  outline-offset: -3px;
+}
+
+.item-row.merge-hover {
+  outline: 2px solid var(--accent);
+  outline-offset: -3px;
+  background: var(--control-raised);
+}

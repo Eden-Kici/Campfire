@@ -1029,6 +1029,44 @@ function calculatePassivePerception(character) {
   return { total, sources };
 }
 
+/* ---------- stacks ----------
+
+   Two piles of the same thing should be one pile, and after an item crosses
+   from another phone they are not: three arrows and five arrows sit as two
+   rows. Merging them is a drag, not something the app does behind the
+   player's back, because splitting a stack deliberately is also a thing
+   people do.
+
+   What counts as "the same thing" is the whole item apart from the three
+   fields that describe this particular pile of it. Name alone is not enough:
+   a +1 longsword and a plain one are both called Longsword, and quietly
+   folding one into the other would destroy the magic weapon. */
+function stackSignature(item) {
+  const skip = { id: true, qty: true, category: true };
+  const canonical = (value) => {
+    if (Array.isArray(value)) return value.map(canonical);
+    if (value && typeof value === "object") {
+      const out = {};
+      Object.keys(value).sort().forEach(key => { out[key] = canonical(value[key]); });
+      return out;
+    }
+    return value;
+  };
+  const bones = {};
+  Object.keys(item).sort().forEach(key => { if (!skip[key]) bones[key] = canonical(item[key]); });
+  return JSON.stringify(bones);
+}
+
+function canMergeStacks(a, b) {
+  if (!a || !b || a === b) return false;
+  return stackSignature(a) === stackSignature(b);
+}
+
+function mergeStacks(into, from) {
+  into.qty = (into.qty || 1) + (from.qty || 1);
+  return into;
+}
+
 /* ---------- money ----------
 
    Coin is its own thing, not an inventory item. Four denominations, two
@@ -1054,6 +1092,36 @@ const COIN_TYPES = [
 
 // 50 coins to the pound, regardless of denomination
 const COINS_PER_POUND = 50;
+
+function purseTotal(purse) {
+  return COIN_TYPES.reduce((sum, coin) => sum + ((purse && purse[coin.key]) || 0), 0);
+}
+
+// "12 gp, 3 sp" -- only the denominations that are actually in there
+function purseLabel(purse) {
+  return COIN_TYPES
+    .filter(coin => (purse && purse[coin.key]) > 0)
+    .map(coin => purse[coin.key] + " " + coin.label.toLowerCase())
+    .join(", ");
+}
+
+function canAffordPurse(purse, amount) {
+  return COIN_TYPES.every(coin => ((purse && purse[coin.key]) || 0) >= ((amount && amount[coin.key]) || 0));
+}
+
+/* Coin moves denomination by denomination and is never converted on the way.
+   340 silver is a legitimate way to carry money, and turning it into 34 gold
+   because that is tidier would be the app overruling the player about what is
+   in their own purse. */
+function takeFromPurse(purse, amount) {
+  COIN_TYPES.forEach(coin => { purse[coin.key] = (purse[coin.key] || 0) - ((amount && amount[coin.key]) || 0); });
+  return purse;
+}
+
+function addToPurse(purse, amount) {
+  COIN_TYPES.forEach(coin => { purse[coin.key] = (purse[coin.key] || 0) + ((amount && amount[coin.key]) || 0); });
+  return purse;
+}
 
 function emptyPurse() {
   const purse = {};
