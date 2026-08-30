@@ -321,7 +321,6 @@ let character = {
   ],
 
   // mock party roster for the sharing UI -- no real accounts/network yet
-  partyMembers: ["Aldric (GM)", "Mira Stonehallow", "Tomas Blackwell", "Wren Ashby"],
 
   // receiveFrom: at most one section should have this true at a time (see UI logic in app.js)
   noteSections: [

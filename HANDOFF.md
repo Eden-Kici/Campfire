@@ -172,19 +172,30 @@ fixed list" (review items 7, 8, 9). Worth doing when touching that area.
 
 ## 7. Immediate to-do
 
-1. **Push and deploy.** Repo: `https://github.com/Eden-Kici/Campfire` (empty, so the first push is
-   clean). Work lives in `H:\Files\Code\Campfire-Player-Demo`, which holds the history.
-   `push-campfire.bat` on the Desktop does the commit and push; `DEPLOY.md` has the rest, including
-   the Pages toggle and the Add-to-Home-Screen steps. Address will be
-   `https://eden-kici.github.io/Campfire/`.
-2. Install on both iPhones via **Safari** (not Chrome — other browsers add a bookmark instead), and
-   confirm it runs in Aeroplane Mode. That is the test that proves it is installed rather than saved.
-3. Build the party (§4).
+Items 1 and 2 of the original list are **done**: the repo is live at
+`https://eden-kici.github.io/Campfire/` and both iPhones are installed and confirmed in Aeroplane
+Mode.
+
+The party (§4) is **built, and its thin slice is complete** — device identity, host and join by room
+code, a live roster honouring the host's visibility settings, and pushing an effect group onto
+another player's sheet. All of it verified with two browsers against a local relay. It has **not yet
+been run on the two phones against the deployed relay**, and that is the next thing.
+
+1. Push, then open the app on both phones. Host on one, join on the other with the four-character
+   code. Watch a hit-point change on one appear on the other.
+2. The relay lives at `https://campfire-relay.onrender.com`; `relay/README.md` has the deploy steps
+   and the settings that were used. **Free instances sleep after fifteen minutes**, so open that URL
+   in a browser a minute before demoing and wait for `campfire relay ok`.
+3. Still outstanding, deliberately left last: **no attribution ships in the app.** No LICENSE file,
+   no credits screen, while CC-BY requires attribution in the distributed work and the repo is now
+   public. Ten minutes, and an examiner asking where the content came from is a question worth a
+   good answer.
 
 **A bridge quirk worth knowing:** this repo is reached over a mount that forbids deleting files, and
 git cannot work under that — it creates `.git/index.lock` and `HEAD.lock` and then cannot remove
 them, so every commit fails halfway. Run git from a normal Windows terminal instead. If a
-`.lock` file is ever stuck, moving it aside is enough; there are some in
+`.lock` file is ever stuck, **moving it aside works even though deleting does not** (`mv` is
+permitted, `rm` is not), which is the practical way to unstick it from this side; there are some in
 `_to_delete/stale-git-locks/`, and ~192 `tmp_obj_*` files in `.git/objects` that `git gc` will
 clear. None of it affects the working tree.
 

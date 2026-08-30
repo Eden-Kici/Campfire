@@ -109,7 +109,7 @@ function createNote(sectionId) {
   if (section.autoShare) {
     note.sharing = {
       sharedByMe: true, continuous: true,
-      sharedWith: character.partyMembers.map(m => ({ name: m, permission: "edit" }))
+      sharedWith: partyMemberNames(party.members, deviceId()).map(m => ({ name: m, permission: "edit" }))
     };
   }
   character.notes.push(note);
@@ -219,7 +219,7 @@ function maybeSyncNoteSharingToSection(note, targetSection) {
       onConfirm: () => {
         note.sharing = {
           sharedByMe: true, continuous: true,
-          sharedWith: character.partyMembers.map(m => ({ name: m, permission: "edit" }))
+          sharedWith: partyMemberNames(party.members, deviceId()).map(m => ({ name: m, permission: "edit" }))
         };
         renderContent();
       }
@@ -436,7 +436,7 @@ function openShareModal(noteId) {
     ${toggleLineHtml("sw-continuous", "Keep updated for everyone (continuous)", continuous)}
     ${fieldLabelHtml("Party", { style: "margin-top:14px;" })}
     <div id="share-member-list">
-      ${character.partyMembers.map(m => {
+      ${partyMemberNames(party.members, deviceId()).map(m => {
         const perm = existing[m] || "off";
         const label = perm === "off" ? "Not shared" : (perm === "edit" ? "Can Edit" : "Can View");
         return `

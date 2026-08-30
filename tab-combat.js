@@ -857,6 +857,47 @@ function exhaustionBlockHtml(group) {
     <div class="menu-note">A long rest removes one level.</div>`;
 }
 
+/* Handing an effect to someone else's sheet.
+
+   The wording matters and took a moment to get right: you are not giving away
+   your Bless, you are putting the person inside it. Your own group keeps its
+   concentration; theirs arrives without any, because the rules hang
+   concentration on the caster and breaking the target's own concentration by
+   blessing them would be plainly wrong. */
+function openSendEffectModal(group) {
+  const recipients = party.members.filter(m => !m.you);
+  openModal("full", `
+    <div class="modal-heading">Send ${esc(effectGroupLabel(group))}</div>
+    <div class="breakdown-source" style="margin-bottom:10px;">Lands on their sheet straight away. You keep concentration, they don't take it on.</div>
+    <div id="send-effect-list">
+      ${recipients.map((m, i) => `
+        <div class="recipient-row" data-send-to="${i}">
+          <div class="recipient-left">
+            <div class="char-avatar">${esc(m.name.trim().charAt(0).toUpperCase())}</div>
+            <div>
+              <div class="recipient-name">${esc(m.name)}</div>
+              <div class="recipient-role">${m.owner ? "Host" : "Player"}</div>
+            </div>
+          </div>
+        </div>
+      `).join("")}
+    </div>
+    <button class="btn-secondary" id="send-effect-cancel">Cancel</button>
+  `);
+
+  const modal = document.getElementById("modal-overlay");
+  modal.querySelectorAll("[data-send-to]").forEach(row => {
+    row.addEventListener("click", () => {
+      const target = recipients[parseInt(row.dataset.sendTo)];
+      const sent = partyPushEffect(group, target.device);
+      closeModal();
+      showToast(sent ? "Sent " + effectGroupLabel(group) + " to " + target.name
+                     : "Not connected \u2014 nothing sent");
+    });
+  });
+  modal.querySelector("#send-effect-cancel").addEventListener("click", closeModal);
+}
+
 function openEffectDetailModal(effectId) {
   const group = character.activeEffects.find(e => e.id == effectId);
   const modifiers = group.effects || [];
@@ -870,6 +911,8 @@ function openEffectDetailModal(effectId) {
       <div class="breakdown-subhead">Modifiers</div>
       ${modifiers.map(e => `<div class="breakdown-row"><span>${esc(e.category)}</span><span>${esc(effectSummaryLabel(e, totalLevel(character)))}</span></div>`).join("")}
     ` : `<div class="empty-hint">No mechanical effect — this is a reminder only.</div>`}
+    ${partyMemberNames(party.members, deviceId()).length
+      ? `<button class="btn-secondary" id="send-effect-button">Send to a Player</button>` : ""}
     <button class="btn-primary btn-danger" id="remove-effect-button">Remove Effect</button>
   `);
   /* The Combat tab draws an exhaustion stepper of its own, so these lookups
@@ -877,6 +920,9 @@ function openEffectDetailModal(effectId) {
      second time on every chip you opened, and closeModal doesn't re-render, so
      the extra listeners piled up. */
   const modal = document.getElementById("modal-overlay");
+
+  const sendButton = modal.querySelector("#send-effect-button");
+  if (sendButton) sendButton.addEventListener("click", () => openSendEffectModal(group));
 
   modal.querySelector("#remove-effect-button").addEventListener("click", () => {
     const group = character.activeEffects.find(e => e.id == effectId);

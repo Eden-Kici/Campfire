@@ -1313,7 +1313,6 @@ function buildCharacterFromCreator() {
     maxPreparedByClass: {},
     spells: [],
 
-    partyMembers: [],
     noteSections: [{ id: 1, name: "Session Notes", autoShare: false, receiveFrom: true }],
     notes: []
   };

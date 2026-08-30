@@ -31,6 +31,7 @@ function renderContent() {
   // every mutation in the app ends in a re-render, so saving here catches all
   // of them without hunting individual call sites
   persistCharacters();
+  announceMyPartyState();    // hit points and character switches reach the table from here
   renderTutorialOverlay();   // keeps the tabs/actions phases in sync with whichever tab is now active
 }
 

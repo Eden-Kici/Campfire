@@ -47,7 +47,7 @@ Order: identity primitives (`identity.js`, which declares nothing but `makeId`/`
 and depends on nothing) → reference data (`srd-*.js`, now several files — races, classes, equipment, magic items and
 two halves of the spell list, split to stay under the `structure` suite's 1,500-line cap) →
 character data → shared machinery (`dice-history`, `roll`, `ui`, `theme`, `characters`, `tutorial`,
-`creator`, `party`, `content`, `rests`, `choices`, `help`) → one file per tab → `app.js`, which is
+`creator`, `party-protocol`, `party-net`, `party`, `content`, `rests`, `choices`, `help`) → one file per tab → `app.js`, which is
 ~50 lines of tab switching and boot.
 
 All top-level `function` and `const` declarations share one global scope. Two files declaring the
@@ -166,15 +166,26 @@ first-ever launch does. Tutorial tests set `tutorialState` by hand instead.
   and 5thsrd.org. Third-party entries carry `official: false` and render a 3PP tag. `KIT_ITEMS`
   entries mostly carry an `srd:` link naming a row in the equipment catalogue and inherit its facts;
   only seven background trinkets with no catalogue row keep their own fields.
-- **Faked — and there are three fakes, on two unrelated rosters:**
-  1. the **party finder** (`FAKE_PARTIES` in `party.js`, no networking anywhere in the app — joining
-     one is a `setTimeout`);
-  2. **note sharing** (`tab-notes.js`), which is *not* built on the party finder — it reads
-     `character.partyMembers`, a hardcoded array of four name strings that only the demo character
-     has. `creator.js` gives every created character `partyMembers: []`, so Share is empty on any
-     character you make;
-  3. **item giving** (`partyRosterForGiving` in `tab-inventory.js`), which reads that same array and
-     regex-parses the GM out of it. `applyGive` deletes the item and toasts; nothing receives it.
+- **The party is real, and two of the three old fakes are gone.** The work splits three ways:
+  `party-protocol.js` is every rule as pure functions (roster merge, visibility, validating what
+  arrives) and is covered by the `party` suite; `party-net.js` is the socket and nothing else;
+  `party.js` is only screens. Phones meet in a room on a relay (`relay/`, deployed separately) that
+  reads nothing it forwards, so every decision stays testable in the app.
+  **Discovery is gone for good, and not for want of trying:** a web page cannot see what else is on
+  the wifi, and a phone's browser cannot accept an incoming connection, so "parties near you" is
+  something this app is structurally unable to offer. A typed four-character room code replaces it.
+  The host passcode went too — the relay cannot enforce a second secret it deliberately never reads,
+  so the room code is the only one, and one secret that works beats two where one is a prop.
+  The relay is hosted rather than run on a laptop because a page served over HTTPS is not permitted
+  to open a `ws://` connection to a local address; that throws at construction, before any network
+  attempt.
+- **What is still faked is the transfer, not the roster.** Both of these now offer the people
+  actually in the room, via `partyMemberNames(party.members, deviceId())`:
+  1. **note sharing** (`tab-notes.js`) writes `note.sharing` locally and sends nothing;
+  2. **item giving** (`partyRosterForGiving` in `tab-inventory.js`) still ends in `applyGive`
+     deleting the item and toasting, with nothing on the other end to receive it.
+  Each roster row now carries a real `device` to address, so either one is a message type away
+  rather than a rewrite.
 - Persistence carries `SCHEMA_VERSION` and **sets aside** an older save under `campfire.characters.vN`
   rather than loading it. It used to merely refuse it — and then the first render's
   `persistCharacters()` wrote the demo character straight over it, so a schema bump silently deleted

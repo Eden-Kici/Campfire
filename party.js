@@ -1,45 +1,22 @@
 /* ============================================================
-   PARTY FINDER (POC — fake discovery, no real networking)
-   ============================================================ */
+   PARTY
+   ============================================================
 
-// Each fake party sets its own visibility combo, so hosting's three controls
-// -- show classes, show levels, how hit points read -- all have somewhere to
-// be seen in the demo, not just in a form nobody submits.
-const FAKE_PARTIES = [
-  {
-    name: "The Rusty Blades", gm: "Mara", cap: 6,
-    settings: { showClasses: true, showLevels: true, hpDisplay: "stats" },
-    members: [
-      { name: "Borin Ashfall", classNames: "Fighter", level: 5, hp: 32, maxHp: 40 },
-      { name: "Kira Dawnstrike", classNames: "Cleric", level: 5, hp: 38, maxHp: 38 },
-      // one custom build in the pool, so the visibility toggle has something to
-      // hide -- this party leaves it off, Ashenvale turns it on
-      { name: "Thistle Nix", classNames: "Rogue", level: 4, hp: 12, maxHp: 30, customBuild: true }
-    ]
-  },
-  {
-    name: "Ashenvale Company", gm: "Tom\u00e1s", cap: 8,
-    settings: { showClasses: true, showLevels: false, hpDisplay: "estimate", showCustom: true },
-    members: [
-      { name: "Corvin Blackwood", classNames: "Paladin", level: 6, hp: 5, maxHp: 44 },
-      { name: "Wren Ashby", classNames: "Ranger", level: 6, hp: 40, maxHp: 40 },
-      { name: "Petra Voss", classNames: "Wizard", level: 5, hp: 18, maxHp: 18 },
-      { name: "Odalys Marrow", classNames: "Barbarian", level: 6, hp: 0, maxHp: 50, customBuild: true, deathSaves: { successes: 1, failures: 1 } },
-      { name: "Finch Talbot", classNames: "Bard", level: 5, hp: 22, maxHp: 22 }
-    ]
-  },
-  {
-    // the one locked party in the fake pool, so the PIN gate has something to
-    // exercise. "0000" is a stand-in for whatever the GM actually set. It's
-    // also the most private table -- classes, levels and HP all hidden.
-    name: "Order of the Ember", gm: null, cap: 4, locked: true, pin: "0000",
-    settings: { showClasses: false, showLevels: false, hpDisplay: "hide" },
-    members: [
-      { name: "Vex Emberhand", owner: true, classNames: "Warlock", level: 7, hp: 30, maxHp: 46 },
-      { name: "Nyla Stormcaller", classNames: "Sorcerer", level: 6, hp: 21, maxHp: 34 }
-    ]
-  }
-];
+   The screens. What a message means is in party-protocol.js, the socket is in
+   party-net.js, and this file is only what a player looks at.
+
+   There used to be three invented parties in here and a fake scan that took
+   1.1 seconds. Discovery is gone with them, and not because it was hard: a web
+   page cannot see what else is on the wifi, and a phone's browser cannot
+   accept an incoming connection, so "parties near you" is a thing this app is
+   structurally unable to offer. A room code typed from one screen into another
+   is what replaces it.
+
+   The passcode went too. With a real relay the room code IS the secret, and a
+   second passcode on top of it would be theatre: the relay deliberately does
+   not read messages, so it cannot enforce one, and any client is free to
+   ignore it. Better to have one secret that actually works than two where one
+   is a prop. */
 
 function defaultPartySettings() {
   return { showClasses: true, showLevels: true, hpDisplay: "stats", showCustom: false };
@@ -56,9 +33,8 @@ function canSeeCustomBuilds() {
   return !!(party.settings && party.settings.showCustom);
 }
 
-let party = { status: "none", name: null, gm: null, code: null, cap: null, settings: null, members: [] };
+let party = { status: "none", name: null, code: null, cap: null, settings: null, members: [] };
 let partyModalScreen = "landing";
-let partyConnectingTo = null;
 
 // host-form is rebuilt from scratch every time it's opened, so these hold the
 // toggle state between redraws the same way the resource and item forms do --
@@ -76,9 +52,10 @@ function myPartyIdentity(extra) {
   const onSheet = currentScreen === "sheet";
   const base = {
     you: true,                                  // marks which roster entry is yours, so it can be found again later
+    device: deviceId(),                         // and this is what every other phone knows us by
     name: onSheet ? character.name : settings.username,
     subtext: onSheet ? settings.username : null,
-    pic: onSheet ? character.profilePic : null
+    pic: onSheet ? character.profilePic : null  // local only; never sent, see ROSTER_WIRE_FIELDS
   };
   // there's no character to report class, level or HP for until one is open
   if (onSheet) {
@@ -87,8 +64,8 @@ function myPartyIdentity(extra) {
     base.hp = character.hp.current;
     base.maxHp = calculateMaxHP(character).total;
     base.deathSaves = character.deathSaves;
-    // carried on the roster entry rather than looked up, because a real build
-    // sends this over the wire and the other phones have no sheet to consult
+    // carried on the roster entry rather than looked up, because the other
+    // phones have no sheet of ours to consult
     base.customBuild = !!character.customBuild;
   }
   return Object.assign(base, extra || {});
@@ -126,144 +103,141 @@ function partyMemberDetailLine(m) {
   return parts.join(" · ");
 }
 
-/* Your roster entry is a snapshot taken at join/host time, so picking a
-   character (or switching to a different one) afterwards would otherwise
-   leave you stuck showing whoever -- or whatever -- you were before. Called
-   any time the active screen or character changes; a no-op if you're not in
-   a party. */
+/* Your roster entry is a snapshot, so picking a character (or switching to a
+   different one) afterwards would otherwise leave you stuck showing whoever --
+   or whatever -- you were before. Called any time the active screen or
+   character changes, and again from renderContent for everything else; a
+   no-op if you're not in a party. */
 function refreshMyPartyIdentity() {
   if (party.status === "none") return;
   const index = party.members.findIndex(m => m.you);
   if (index === -1) return;
   party.members[index] = myPartyIdentity({ owner: party.members[index].owner });
+  partyAnnounceMe();
   redrawPartyModal();
+}
+
+/* The network half of refreshMyPartyIdentity, with no redraw in it, so
+   renderContent can call it on every mutation without repainting a modal.
+   partyAnnounceMe already drops anything that hasn't changed. */
+function announceMyPartyState() {
+  if (party.status === "none") return;
+  const index = party.members.findIndex(m => m.you);
+  if (index === -1) return;
+  party.members[index] = myPartyIdentity({ owner: party.members[index].owner });
+  partyAnnounceMe();
 }
 
 function partyStatusLine() {
-  const seats = party.members.length + "/" + (party.cap || "\u2014");
-  if (party.status === "hosting") return `Hosting \u00b7 ${party.code ? "Code " + esc(party.code) : "Open"} \u00b7 ${seats} players`;
-  return `Connected \u00b7 ${party.gm ? "GM " + esc(party.gm) : "No GM"} \u00b7 ${seats} players`;
-}
-
-function beginConnectingTo(targetParty) {
-  partyConnectingTo = targetParty;
-  partyModalScreen = "connecting";
-  redrawPartyModal();
-  setTimeout(() => {
-    party = {
-      status: "connected", name: targetParty.name, gm: targetParty.gm, code: null,
-      cap: targetParty.cap || null, settings: targetParty.settings || defaultPartySettings(),
-      members: [...targetParty.members, myPartyIdentity()]
-    };
-    partyModalScreen = "landing";
-    renderSelectorScreen();
-    redrawPartyModal();
-    showToast("Connected to " + party.name);
-  }, 1200);
+  const net = partyNetStatusLine();
+  if (net) return net;
+  const seats = party.members.length + (party.cap ? "/" + party.cap : "") + " player" + (party.members.length === 1 ? "" : "s");
+  return (party.status === "hosting" ? "Hosting" : "Connected") + " · " + seats;
 }
 
 function openPartyFinder() {
   partyModalScreen = "landing";
-  openModal("sheet", "");
+  openModal("sheet", '<div data-party-modal="1"></div>');
   redrawPartyModal();
 }
 
+/* Both renderContent and an inbound message reach this, and either can fire
+   while the player has some entirely different modal open -- so it repaints
+   only when what's on screen is actually ours. */
 function redrawPartyModal() {
   const box = document.querySelector("#modal-overlay .modal-content");
-  if (!box) return;
+  if (!box || !box.querySelector("[data-party-modal]")) return;
   box.innerHTML = partyModalHtml();
   wirePartyModal();
 }
 
+function leaveParty() {
+  partyAnnounceLeaving();
+  partyCloseSocket();
+  party = { status: "none", name: null, code: null, cap: null, settings: null, members: [] };
+  partyLastAnnounced = null;
+  renderSelectorScreen();
+  redrawPartyModal();
+  if (currentScreen === "sheet") renderContent();
+  showToast("Left the party");
+}
+
+/* ---------- markup ---------- */
+
 function partyModalHtml() {
-  if (partyModalScreen === "landing") {
-    if (party.status !== "none") {
+  return `<div data-party-modal="1">${partyModalBodyHtml()}</div>`;
+}
+
+function partyModalBodyHtml() {
+  if (partyModalScreen === "landing" && party.status !== "none") return partyRosterHtml();
+  if (partyModalScreen === "landing") return partyStartHtml();
+  if (partyModalScreen === "join-form") return partyJoinFormHtml();
+  return partyHostFormHtml();
+}
+
+function partyStartHtml() {
+  return `
+    <div class="modal-heading">Party</div>
+    <div class="breakdown-source" style="margin-bottom:14px;">Connect with your table.</div>
+    <button class="btn-primary" id="join-party-button" style="margin-bottom:8px;">Join a Party</button>
+    <button class="btn-secondary" id="host-party-button">Host a Party</button>
+  `;
+}
+
+function partyRosterHtml() {
+  return `
+    <div class="modal-heading">Party</div>
+    <div class="res-row">
+      <div>
+        <div class="res-name">${esc(party.name || "Party")}</div>
+        <div class="atk-range">${esc(partyStatusLine())}</div>
+      </div>
+    </div>
+    ${party.code ? `
+      <div class="breakdown-subhead">Room Code</div>
+      <div class="res-row">
+        <div class="res-name" style="letter-spacing:4px;font-size:22px;">${esc(party.code)}</div>
+        <span class="atk-range">Others type this to join</span>
+      </div>` : ""}
+    <div class="breakdown-subhead">Members</div>
+    ${party.members.map(m => {
+      const detail = partyMemberDetailLine(m);
       return `
-        <div class="modal-heading">Party</div>
-        <div class="res-row">
+      <div class="member-row">
+        <div class="recipient-left">
+          <div class="char-avatar">${m.pic ? `<img src="${esc(m.pic)}" alt="">` : esc(m.name.trim().charAt(0).toUpperCase())}</div>
           <div>
-            <div class="res-name">${esc(party.name)}</div>
-            <div class="atk-range">${partyStatusLine()}</div>
+            <div class="res-name">${esc(m.name)}${m.you ? " (you)" : ""}</div>
+            ${m.subtext ? `<div class="atk-range">(${esc(m.subtext)})</div>` : ""}
+            ${detail ? `<div class="atk-range">${esc(detail)}</div>` : ""}
           </div>
         </div>
-        <div class="breakdown-subhead">Members</div>
-        ${party.members.map(m => {
-          const detail = partyMemberDetailLine(m);
-          return `
-          <div class="member-row">
-            <div class="recipient-left">
-              <div class="char-avatar">${m.pic ? `<img src="${esc(m.pic)}" alt="">` : m.name.trim().charAt(0).toUpperCase()}</div>
-              <div>
-                <div class="res-name">${esc(m.name)}</div>
-                ${m.subtext ? `<div class="atk-range">(${esc(m.subtext)})</div>` : ""}
-                ${detail ? `<div class="atk-range">${esc(detail)}</div>` : ""}
-              </div>
-            </div>
-            ${m.owner ? `<span class="res-tag" style="background:var(--accent);color:var(--accent-ink);">OWNER</span>` : ""}
-          </div>
-        `;
-        }).join("")}
-        <button class="btn-primary btn-danger" id="leave-party-button" style="margin-top:10px;">${party.status === "hosting" ? "Stop Hosting" : "Leave Party"}</button>
-        <button class="btn-secondary" id="party-done-button">Done</button>
-      `;
-    }
-    return `
-      <div class="modal-heading">Party</div>
-      <div class="breakdown-source" style="margin-bottom:14px;">Connect with your table.</div>
-      <button class="btn-primary" id="join-party-button" style="margin-bottom:8px;">Join a Party</button>
-      <button class="btn-secondary" id="host-party-button">Host a Party</button>
+        ${m.owner ? `<span class="res-tag" style="background:var(--accent);color:var(--accent-ink);">HOST</span>` : ""}
+      </div>
     `;
-  }
+    }).join("")}
+    <button class="btn-primary btn-danger" id="leave-party-button" style="margin-top:10px;">${party.status === "hosting" ? "Stop Hosting" : "Leave Party"}</button>
+    <button class="btn-secondary" id="party-done-button">Done</button>
+  `;
+}
 
-  if (partyModalScreen === "searching") {
-    return `
-      <div class="modal-heading">Join a Party</div>
-      <div class="empty-hint" style="padding:50px 20px;">Searching for parties on your network\u2026</div>
-    `;
-  }
+function partyJoinFormHtml() {
+  return `
+    <div class="modal-heading">Join a Party</div>
+    <div class="breakdown-source" style="margin-bottom:14px;">Ask the host for their four-character room code.</div>
+    ${textFieldHtml("join-code-input", "Room Code", "",
+      { placeholder: "e.g. KT4M", maxlength: 4, autocapitalize: "characters" })}
+    <button class="btn-primary" id="join-code-button">Join</button>
+    <button class="btn-secondary" id="party-back-button">Back</button>
+  `;
+}
 
-  if (partyModalScreen === "join-list") {
-    return `
-      <div class="modal-heading">Join a Party</div>
-      <div class="breakdown-source" style="margin-bottom:10px;">${FAKE_PARTIES.length} parties found nearby</div>
-      ${FAKE_PARTIES.map(p => `
-        <div class="res-row" data-join-party="${esc(p.name)}" style="cursor:pointer;">
-          <div>
-            <div class="res-name">${p.locked ? "\uD83D\uDD12 " : ""}${esc(p.name)}</div>
-            <div class="atk-range">${p.gm ? `GM ${esc(p.gm)} \u00B7 ` : ""}${p.members.length}${p.cap ? "/" + p.cap : ""} player${p.members.length === 1 ? "" : "s"}</div>
-          </div>
-          <span class="add-link">Join</span>
-        </div>
-      `).join("")}
-      <button class="btn-secondary" id="party-back-button" style="margin-top:6px;">Back</button>
-    `;
-  }
-
-  if (partyModalScreen === "pin-entry") {
-    return `
-      <div class="modal-heading">${esc(partyConnectingTo.name)}</div>
-      <div class="breakdown-source" style="margin-bottom:14px;">\uD83D\uDD12 This party is locked. Enter the passcode to join.</div>
-      ${textFieldHtml("party-pin-input", "Passcode", "", { placeholder: "0000", maxlength: 4, inputmode: "numeric" })}
-      <button class="btn-primary" id="party-pin-join-button">Join</button>
-      <button class="btn-secondary" id="party-back-button">Back</button>
-    `;
-  }
-
-  if (partyModalScreen === "connecting") {
-    return `
-      <div class="modal-heading">Join a Party</div>
-      <div class="empty-hint" style="padding:50px 20px;">Connecting to ${esc(partyConnectingTo.name)}\u2026</div>
-    `;
-  }
-
-  // host-form
+function partyHostFormHtml() {
   return `
     <div class="modal-heading">Host a Party</div>
     ${textFieldHtml("host-party-name-input", "Party Name", "",
       { placeholder: "e.g. The Rusty Blades", style: "margin-top:10px;" })}
-    ${numberFieldHtml("host-party-cap-input", "Player Cap", 6, { min: 1, max: 20 })}
-    ${textFieldHtml("host-party-pin-input", "Passcode", "",
-      { placeholder: "Optional — leave blank for an open party", maxlength: 4, inputmode: "numeric" })}
+    ${numberFieldHtml("host-party-cap-input", "Player Cap", 6, { min: 1, max: 8 })}
 
     <div class="breakdown-subhead">What the party sees</div>
     ${toggleLineHtml("host-show-classes-switch", "Show Classes", hostFormShowClasses)}
@@ -281,24 +255,19 @@ function partyModalHtml() {
   `;
 }
 
+/* ---------- wiring ---------- */
+
 function wirePartyModal() {
+  if (partyModalScreen === "landing" && party.status !== "none") {
+    document.getElementById("leave-party-button").addEventListener("click", leaveParty);
+    document.getElementById("party-done-button").addEventListener("click", closeModal);
+    return;
+  }
+
   if (partyModalScreen === "landing") {
-    if (party.status !== "none") {
-      document.getElementById("leave-party-button").addEventListener("click", () => {
-        party = { status: "none", name: null, gm: null, code: null, cap: null, settings: null, members: [] };
-        renderSelectorScreen();
-        redrawPartyModal();
-        showToast("Left the party");
-      });
-      document.getElementById("party-done-button").addEventListener("click", closeModal);
-      return;
-    }
     document.getElementById("join-party-button").addEventListener("click", () => {
-      partyModalScreen = "searching";
+      partyModalScreen = "join-form";
       redrawPartyModal();
-      setTimeout(() => {
-        if (partyModalScreen === "searching") { partyModalScreen = "join-list"; redrawPartyModal(); }
-      }, 1100);
     });
     document.getElementById("host-party-button").addEventListener("click", () => {
       partyModalScreen = "host-form";
@@ -310,18 +279,12 @@ function wirePartyModal() {
     return;
   }
 
-  if (partyModalScreen === "join-list") {
-    document.querySelectorAll("[data-join-party]").forEach(row => {
-      row.addEventListener("click", () => {
-        const target = FAKE_PARTIES.find(p => p.name === row.dataset.joinParty);
-        if (target.locked) {
-          partyConnectingTo = target;
-          partyModalScreen = "pin-entry";
-          redrawPartyModal();
-          return;
-        }
-        beginConnectingTo(target);
-      });
+  if (partyModalScreen === "join-form") {
+    document.getElementById("join-code-button").addEventListener("click", () => {
+      const typed = document.getElementById("join-code-input").value;
+      const code = normaliseRoomCode(typed);
+      if (!isRoomCode(code)) { showToast("That isn't a room code"); return; }
+      joinPartyByCode(code);
     });
     document.getElementById("party-back-button").addEventListener("click", () => {
       partyModalScreen = "landing"; redrawPartyModal();
@@ -329,52 +292,56 @@ function wirePartyModal() {
     return;
   }
 
-  if (partyModalScreen === "pin-entry") {
-    document.getElementById("party-pin-join-button").addEventListener("click", () => {
-      const entered = document.getElementById("party-pin-input").value.trim();
-      if (entered !== partyConnectingTo.pin) { showToast("Incorrect passcode"); return; }
-      beginConnectingTo(partyConnectingTo);
-    });
-    document.getElementById("party-back-button").addEventListener("click", () => {
-      partyModalScreen = "join-list"; redrawPartyModal();
-    });
-    return;
-  }
+  // host-form
+  wireSelect("host-hp-display-input");
+  document.getElementById("host-show-classes-switch").addEventListener("click", (e) => {
+    hostFormShowClasses = !hostFormShowClasses;
+    e.currentTarget.classList.toggle("on", hostFormShowClasses);
+  });
+  document.getElementById("host-show-levels-switch").addEventListener("click", (e) => {
+    hostFormShowLevels = !hostFormShowLevels;
+    e.currentTarget.classList.toggle("on", hostFormShowLevels);
+  });
+  document.getElementById("host-show-custom-switch").addEventListener("click", (e) => {
+    hostFormShowCustom = !hostFormShowCustom;
+    e.currentTarget.classList.toggle("on", hostFormShowCustom);
+  });
+  document.getElementById("start-hosting-button").addEventListener("click", () => {
+    const name = document.getElementById("host-party-name-input").value.trim();
+    if (!name) { showToast("Enter a party name"); return; }
+    const cap = Math.max(1, Math.min(8, parseInt(document.getElementById("host-party-cap-input").value) || 6));
+    startHosting(name, cap, document.getElementById("host-hp-display-input").value);
+  });
+  document.getElementById("party-back-button").addEventListener("click", () => {
+    partyModalScreen = "landing"; redrawPartyModal();
+  });
+}
 
-  if (partyModalScreen === "host-form") {
-    wireSelect("host-hp-display-input");
-    document.getElementById("host-show-classes-switch").addEventListener("click", (e) => {
-      hostFormShowClasses = !hostFormShowClasses;
-      e.currentTarget.classList.toggle("on", hostFormShowClasses);
-    });
-    document.getElementById("host-show-levels-switch").addEventListener("click", (e) => {
-      hostFormShowLevels = !hostFormShowLevels;
-      e.currentTarget.classList.toggle("on", hostFormShowLevels);
-    });
-    document.getElementById("host-show-custom-switch").addEventListener("click", (e) => {
-      hostFormShowCustom = !hostFormShowCustom;
-      e.currentTarget.classList.toggle("on", hostFormShowCustom);
-    });
-    document.getElementById("start-hosting-button").addEventListener("click", () => {
-      const name = document.getElementById("host-party-name-input").value.trim();
-      if (!name) { showToast("Enter a party name"); return; }
-      const cap = Math.max(1, parseInt(document.getElementById("host-party-cap-input").value) || 6);
-      const pin = document.getElementById("host-party-pin-input").value.trim();
-      if (pin && !/^\d{4}$/.test(pin)) { showToast("Passcode must be 4 digits"); return; }
-      const hpDisplay = document.getElementById("host-hp-display-input").value;
-      party = {
-        status: "hosting", name, gm: null, code: pin || null, cap,
-        settings: { showClasses: hostFormShowClasses, showLevels: hostFormShowLevels, hpDisplay, showCustom: hostFormShowCustom },
-        members: [myPartyIdentity({ owner: true })]
-      };
-      partyModalScreen = "landing";
-      renderSelectorScreen();
-      redrawPartyModal();
-      showToast("Hosting started");
-    });
-    document.getElementById("party-back-button").addEventListener("click", () => {
-      partyModalScreen = "landing"; redrawPartyModal();
-    });
-    return;
-  }
+function startHosting(name, cap, hpDisplay) {
+  const code = makeRoomCode();
+  party = {
+    status: "hosting", name: name, code: code, cap: cap,
+    settings: { showClasses: hostFormShowClasses, showLevels: hostFormShowLevels, hpDisplay: hpDisplay, showCustom: hostFormShowCustom },
+    members: [myPartyIdentity({ owner: true })]
+  };
+  partyModalScreen = "landing";
+  partyConnect(code);
+  renderSelectorScreen();
+  redrawPartyModal();
+  if (currentScreen === "sheet") renderContent();
+}
+
+/* The name and the visibility rules are the host's to set, so a joiner starts
+   with placeholders and adopts the real ones from the host's first message. */
+function joinPartyByCode(code) {
+  party = {
+    status: "connected", name: "Party " + code, code: code, cap: null,
+    settings: defaultPartySettings(),
+    members: [myPartyIdentity()]
+  };
+  partyModalScreen = "landing";
+  partyConnect(code);
+  renderSelectorScreen();
+  redrawPartyModal();
+  if (currentScreen === "sheet") renderContent();
 }

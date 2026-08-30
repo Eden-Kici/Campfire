@@ -46,7 +46,11 @@ let settings = {
   /* Off means every roll opens unrolled and you tap Roll -- you can look at a
      skill without logging a die for it. On puts it back to resolving on the
      first tap, for tables that want the speed. */
-  fastRolls: false
+  fastRolls: false,
+  /* Which relay the party talks through. Empty means the one the app ships
+     with; a value here points at a different one, which is how a table on a
+     laptop relay, or a second deployment, gets used without a code change. */
+  relayUrl: ""
 };
 
 function persistSettings() {
@@ -65,6 +69,8 @@ function openSettingsModal() {
     <div class="modal-heading">Options</div>
     ${textFieldHtml("setting-username", "Username", settings.username,
       { hint: "Shown to other players when you join or host a party" })}
+    ${textFieldHtml("setting-relay", "Party Relay", settings.relayUrl,
+      { hint: "Leave blank to use the default", placeholder: DEFAULT_RELAY_URL })}
     ${toggleLineHtml("setting-death-saves", "Always show death saves", settings.alwaysShowDeathSaves,
       { hint: "Otherwise they appear only at 0 hit points" })}
     ${toggleLineHtml("setting-fast-rolls", "Fast Rolls", settings.fastRolls,
@@ -78,6 +84,11 @@ function openSettingsModal() {
   usernameInput.addEventListener("blur", () => {
     settings.username = usernameInput.value.trim() || settings.username;
     usernameInput.value = settings.username;
+    persistSettings();
+  });
+  const relayInput = document.getElementById("setting-relay");
+  relayInput.addEventListener("blur", () => {
+    settings.relayUrl = relayInput.value.trim();
     persistSettings();
   });
   settingToggle("setting-death-saves", "alwaysShowDeathSaves");

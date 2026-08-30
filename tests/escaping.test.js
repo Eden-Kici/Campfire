@@ -39,7 +39,14 @@ module.exports = function (suite) {
     n.title = HOSTILE; n.body = HOSTILE;
     if (n.sharing && n.sharing.sharedByName) n.sharing.sharedByName = HOSTILE;
   });
-  c.partyMembers = [HOSTILE];
+  app.party = {
+    status: "connected", name: HOSTILE, code: "KT4M", cap: null,
+    settings: { showClasses: true, showLevels: true, hpDisplay: "stats", showCustom: true },
+    members: [
+      { device: "aaa111", you: true, name: "Me" },
+      { device: "bbb222", name: HOSTILE, subtext: HOSTILE, classNames: HOSTILE, level: 3, hp: 5, maxHp: 10 }
+    ]
+  };
   c.weaponProficiencies = [HOSTILE];
   c.categoryRules[HOSTILE] = { countsWeight: true, appliesEffects: true, providesAttacks: true };
   c.inventory[0].category = HOSTILE;

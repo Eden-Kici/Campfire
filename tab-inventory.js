@@ -913,11 +913,13 @@ function openGiveQuantityModal(item) {
   document.getElementById("give-qty-confirm").addEventListener("click", () => openGiveToModal(item, qty));
 }
 
+/* Who is actually in the room, rather than four names baked into the demo
+   character. Empty when you aren't in a party, which is the honest answer and
+   what the Give screen now says. */
 function partyRosterForGiving() {
-  return character.partyMembers.map(m => {
-    const isGM = /\(GM\)/i.test(m);
-    return { name: m.replace(/\s*\(GM\)/i, "").trim(), role: isGM ? "GM" : "Player" };
-  });
+  return party.members
+    .filter(m => !m.you)
+    .map(m => ({ name: m.name, role: m.owner ? "Host" : "Player", device: m.device }));
 }
 
 function openGiveToModal(item, qty) {
