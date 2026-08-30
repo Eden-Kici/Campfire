@@ -1042,7 +1042,7 @@ function calculatePassivePerception(character) {
    a +1 longsword and a plain one are both called Longsword, and quietly
    folding one into the other would destroy the magic weapon. */
 function stackSignature(item) {
-  const skip = { id: true, qty: true, category: true };
+  const skip = { id: true, qty: true, category: true, inside: true };
   const canonical = (value) => {
     if (Array.isArray(value)) return value.map(canonical);
     if (value && typeof value === "object") {
@@ -1059,12 +1059,102 @@ function stackSignature(item) {
 
 function canMergeStacks(a, b) {
   if (!a || !b || a === b) return false;
+  // two packs are never "two of a pack": each holds different things, and
+  // folding them into a stack of 2 would strand one lot of contents
+  if (isContainerItem(a) || isContainerItem(b)) return false;
   return stackSignature(a) === stackSignature(b);
 }
 
 function mergeStacks(into, from) {
   into.qty = (into.qty || 1) + (from.qty || 1);
   return into;
+}
+
+/* ---------- containers ----------
+
+   A pack is an item that other items are inside. The relationship is stored on
+   the child (`inside` holds the container's id) rather than as a nested array
+   on the parent, so the inventory stays one flat list. Everything that already
+   walks `character.inventory` -- weight, attacks, effects, giving, persistence
+   -- keeps working without knowing containers exist.
+
+   A contained item's category is kept equal to its container's. That is what
+   makes the rest of the app correct for free: a longsword inside a pack sitting
+   in Carrying provides no attacks, because Carrying provides none, and it does
+   so without a single rule about containers being written anywhere else. */
+function isContainerItem(item) {
+  return !!(item && item.isContainer);
+}
+
+function containerContents(character, container) {
+  if (!container) return [];
+  return (character.inventory || []).filter(item => sameId(item.inside, container.id));
+}
+
+function topLevelItems(character) {
+  return (character.inventory || []).filter(item => item.inside == null);
+}
+
+// what the pack row reports: itself, plus everything in it
+function containerWeight(character, container) {
+  return containerContents(character, container)
+    .reduce((sum, item) => sum + (item.weight || 0) * (item.qty || 1),
+            (container.weight || 0) * (container.qty || 1));
+}
+
+function putInContainer(character, item, container) {
+  if (!item || !container || item === container) return false;
+  if (isContainerItem(item)) return false;          // no packs inside packs
+  item.inside = container.id;
+  item.category = container.category;               // see the note above
+  return true;
+}
+
+function takeOutOfContainer(item, category) {
+  if (!item || item.inside == null) return false;
+  delete item.inside;
+  if (category) item.category = category;
+  return true;
+}
+
+/* Tipping a pack out. The contents land in the pack's own category, which is
+   where the pack itself is, so nothing moves anywhere surprising. */
+function emptyContainer(character, container) {
+  const spilled = containerContents(character, container);
+  spilled.forEach(item => takeOutOfContainer(item, container.category));
+  return spilled;
+}
+
+/* Removing a pack takes what is in it. Leaving the contents behind would
+   scatter a pack's worth of loose items across the sheet with no explanation,
+   and leaving them pointing at an id that no longer exists would hide them
+   entirely. */
+function removeItemAndContents(character, item) {
+  const doomed = [item].concat(containerContents(character, item));
+  character.inventory = character.inventory.filter(row => doomed.indexOf(row) === -1);
+  return doomed;
+}
+
+/* A catalogue pack is a row plus a shopping list. Adding one creates the pack
+   and everything in it, so a Dungeoneer's Pack arrives as a crowbar and ten
+   torches you can actually find, spend and hand over. */
+function expandContainerContents(character, container, source) {
+  const list = (source && source.contents) || [];
+  return list.map(entry => {
+    const catalogue = typeof allInventoryItems === "function"
+      ? allInventoryItems().find(row => row.name === entry.name) : null;
+    const item = {
+      id: makeId(character.inventory),
+      name: entry.name,
+      category: container.category,
+      weight: entry.weight != null ? entry.weight : (catalogue ? catalogue.weight : 0),
+      qty: entry.qty || 1,
+      inside: container.id
+    };
+    if (catalogue && catalogue.description) item.description = catalogue.description;
+    character.inventory.push(item);
+    return item;
+  });
 }
 
 /* ---------- money ----------

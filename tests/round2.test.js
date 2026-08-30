@@ -149,7 +149,7 @@ module.exports = function (suite) {
 
   suite.runs("but the kit still owns where it lands and how many", () => {
     const arrows = app.kitItemTemplate("arrows");
-    suite.is("the sheet says Arrows, not the shop's Arrows (20)", arrows.name, "Arrows");
+    suite.is("a stack of twenty reads as Arrows, not the catalogue's singular Arrow", arrows.name, "Arrows");
     suite.ok("and the count is a quantity", arrows.qty > 1, JSON.stringify(arrows.qty));
     suite.ok("with a category to land in", !!arrows.category, "no category");
   });
@@ -189,7 +189,7 @@ module.exports = function (suite) {
     Object.assign(app.creatorState, { started: true, charClass: "Cleric", background: "Acolyte",
       equipment: app.STARTING_KIT.Cleric.choices.map(() => 0) });
     const html = app.equipmentStepHtml(5);
-    suite.ok("a money heading", html.includes("Money"), html.slice(-600));
+    suite.ok("a coins heading", html.includes("Coins"), html.slice(-600));
     suite.ok("with an amount", html.includes("gp"), html.slice(-600));
   });
 

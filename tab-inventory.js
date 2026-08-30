@@ -25,7 +25,9 @@ function moneyRowHtml() {
   return `
     <div class="money-block">
       <div class="money-head">
-        <span class="money-head-label">${stashOn ? "Carried" : "Money"}</span>
+        <span class="money-head-label">${stashOn ? "Carried" : "Coins"}</span>
+        ${(typeof party !== "undefined" && party.status !== "none" && partyMemberList(party.members, deviceId()).length)
+          ? `<button class="add-link" id="send-money-button">Send</button>` : ""}
         <span class="money-total">${formatGold(moneyInGold(character.purse))} gp</span>
       </div>
       <div class="coin-row">${coinCellsHtml(character.purse, "purse")}</div>
@@ -35,8 +37,6 @@ function moneyRowHtml() {
           <span class="money-total">${formatGold(moneyInGold(character.stash))} gp</span>
         </div>
         <div class="coin-row">${coinCellsHtml(character.stash, "stash")}</div>` : ""}
-      ${(typeof party !== "undefined" && party.status !== "none" && partyMemberList(party.members, deviceId()).length)
-        ? `<button class="add-link" id="send-money-button" style="margin-top:10px;">Send Money</button>` : ""}
     </div>`;
 }
 
@@ -102,7 +102,8 @@ function renderInventoryTab() {
     <div id="inventory-sections">
       ${categories.map(cat => {
         const isOpen = openInvCategories[cat] !== false;
-        const items = character.inventory.filter(i => i.category === cat);
+        // contained items draw under their pack, not beside it
+        const items = character.inventory.filter(i => i.category === cat && i.inside == null);
         return `
           <div class="section-head-row" data-cat-card="${esc(cat)}" data-inv-cat-toggle="${esc(cat)}" style="cursor:pointer;touch-action:pan-y;">
             <div class="section-head">${esc(cat)}</div>
@@ -111,15 +112,7 @@ function renderInventoryTab() {
             </div>
           </div>
           <div data-cat-body="${esc(cat)}" style="${isOpen ? "" : "display:none;"}">
-            ${items.map(item => `
-              <div class="item-row" data-item-view="${item.id}" data-item-id="${item.id}" style="touch-action:pan-y;">
-                <div style="flex:1;">
-                  <div class="item-name">${esc(item.name)}${item.qty > 1 ? " \u00D7" + item.qty : ""}</div>
-                  ${(character.categoryRules[cat].appliesEffects && (item.acBonus || item.attackBonus)) ? `<div class="item-effect">${item.acBonus ? formatModifier(item.acBonus) + " AC " : ""}${item.attackBonus ? formatModifier(item.attackBonus) + " Attack " : ""}</div>` : ""}
-                  <div class="item-meta">${character.categoryRules[cat].countsWeight ? item.weight + " lb" : "No weight"}</div>
-                </div>
-              </div>
-            `).join("") || `<div class="empty-hint">No items in this category</div>`}
+            ${items.map(item => itemRowHtml(item, cat)).join("") || `<div class="empty-hint">No items in this category</div>`}
           </div>
         `;
       }).join("")}
@@ -214,10 +207,13 @@ function wireItemDragging() {
     let dragged = null;
     let mergeTarget = null;
 
+    let packTarget = null;
+
     const clearMergeMarks = () => {
-      document.querySelectorAll(".merge-ready, .merge-hover").forEach(r =>
-        r.classList.remove("merge-ready", "merge-hover"));
+      document.querySelectorAll(".merge-ready, .merge-hover, .pack-ready, .pack-hover").forEach(r =>
+        r.classList.remove("merge-ready", "merge-hover", "pack-ready", "pack-hover"));
       mergeTarget = null;
+      packTarget = null;
     };
 
     attachHoldDrag(row, {
@@ -230,7 +226,12 @@ function wireItemDragging() {
         document.querySelectorAll(".item-row").forEach(other => {
           if (other === row) return;
           const item = character.inventory.find(i => sameId(i.id, other.dataset.itemId));
-          if (canMergeStacks(dragged, item)) other.classList.add("merge-ready");
+          if (canMergeStacks(dragged, item)) { other.classList.add("merge-ready"); return; }
+          // a pack you could drop this into: not itself, not another pack, and
+          // not the one it is already sitting in
+          if (isContainerItem(item) && dragged && !isContainerItem(dragged) && !sameId(dragged.inside, item.id)) {
+            other.classList.add("pack-ready");
+          }
         });
       },
       onMove: (e) => {
@@ -238,19 +239,31 @@ function wireItemDragging() {
            where it is. The outer quarters still reorder, so dropping a stack
            between two others is unaffected. */
         const over = itemRowUnder(e, row);
-        if (over && over.classList.contains("merge-ready")) {
+        const overMiddle = over && (() => {
           const box = over.getBoundingClientRect();
-          const inMiddle = e.clientY > box.top + box.height * 0.25 && e.clientY < box.bottom - box.height * 0.25;
-          if (inMiddle) {
-            if (mergeTarget !== over) {
-              if (mergeTarget) mergeTarget.classList.remove("merge-hover");
-              mergeTarget = over;
-              over.classList.add("merge-hover");
-            }
-            return;
+          return e.clientY > box.top + box.height * 0.25 && e.clientY < box.bottom - box.height * 0.25;
+        })();
+
+        if (over && overMiddle && over.classList.contains("merge-ready")) {
+          if (mergeTarget !== over) {
+            if (mergeTarget) mergeTarget.classList.remove("merge-hover");
+            if (packTarget) { packTarget.classList.remove("pack-hover"); packTarget = null; }
+            mergeTarget = over;
+            over.classList.add("merge-hover");
           }
+          return;
+        }
+        if (over && overMiddle && over.classList.contains("pack-ready")) {
+          if (packTarget !== over) {
+            if (packTarget) packTarget.classList.remove("pack-hover");
+            if (mergeTarget) { mergeTarget.classList.remove("merge-hover"); mergeTarget = null; }
+            packTarget = over;
+            over.classList.add("pack-hover");
+          }
+          return;
         }
         if (mergeTarget) { mergeTarget.classList.remove("merge-hover"); mergeTarget = null; }
+        if (packTarget) { packTarget.classList.remove("pack-hover"); packTarget = null; }
 
         const bodies = Array.from(document.querySelectorAll("[data-cat-body]"));
         let targetBody = null;
@@ -288,24 +301,52 @@ function wireItemDragging() {
             return;
           }
         }
+        if (packTarget) {
+          const pack = character.inventory.find(i => sameId(i.id, packTarget.dataset.itemId));
+          clearMergeMarks();
+          if (pack && dragged && putInContainer(character, dragged, pack)) {
+            openInvContainers[pack.id] = true;
+            showToast(dragged.name + " \u2192 " + pack.name);
+            renderContent();
+            return;
+          }
+        }
         clearMergeMarks();
 
-        const newInventory = [];
+        /* Rebuilt from what is on screen, which is also how something leaves a
+           pack: a row dragged out of a pack's list is no longer inside one, and
+           a row dropped into it is. `closest` answers that for both at once. */
+        const rebuilt = [];
         document.querySelectorAll("[data-cat-body]").forEach(body => {
           const cat = body.dataset.catBody;
           body.querySelectorAll(".item-row").forEach(r => {
-            const item = character.inventory.find(i => i.id == r.dataset.itemId);
-            if (item) { item.category = cat; newInventory.push(item); }
+            const item = character.inventory.find(i => sameId(i.id, r.dataset.itemId));
+            if (!item) return;
+            const packBody = r.closest("[data-pack-body]");
+            if (packBody) item.inside = packBody.dataset.packBody;
+            else delete item.inside;
+            item.category = cat;
+            rebuilt.push(item);
           });
         });
-        character.inventory = newInventory;
+        character.inventory = rebuilt;
         renderContent();
       }
     });
   });
 }
 
+let openInvContainers = {};
+
 function wireInventoryTab() {
+  document.querySelectorAll("[data-container-toggle]").forEach(caret => {
+    caret.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const id = caret.dataset.containerToggle;
+      openInvContainers[id] = openInvContainers[id] === false;
+      renderContent();
+    });
+  });
   document.getElementById("add-inventory-button").addEventListener("click", () => openAddInventoryModal());
   const sendMoneyButton = document.getElementById("send-money-button");
   if (sendMoneyButton) sendMoneyButton.addEventListener("click", openSendMoneyModal);
@@ -373,6 +414,32 @@ function categoryRuleTogglesHtml(idPrefix, rule) {
    all three and a type toggle decides which extra block appears. Combat's
    "+ Add" opens this same form preset to Weapon, and the attack editor sends
    you here rather than keeping a second copy of the weapon fields. */
+
+/* One inventory row. A pack draws its contents underneath it, indented and
+   collapsible, and reports the weight of everything inside rather than its own
+   nothing -- an empty backpack weighing 0 lb while holding sixty pounds of rope
+   and rations is the thing this replaced. */
+function itemRowHtml(item, cat, nested) {
+  const rule = character.categoryRules[cat] || {};
+  const container = isContainerItem(item);
+  const contents = container ? containerContents(character, item) : [];
+  const isOpen = container && openInvContainers[item.id] !== false;
+  const weight = container ? containerWeight(character, item) : (item.weight || 0) * (item.qty || 1);
+
+  return `
+    <div class="item-row${nested ? " item-nested" : ""}" data-item-view="${item.id}" data-item-id="${item.id}"
+         ${container ? `data-container-row="${item.id}"` : ""} style="touch-action:pan-y;">
+      <div style="flex:1;">
+        <div class="item-name">${container ? `<span class="pack-caret" data-container-toggle="${item.id}">${isOpen ? "\u25BE" : "\u25B8"}</span> ` : ""}${esc(item.name)}${item.qty > 1 ? " \u00D7" + item.qty : ""}</div>
+        ${(rule.appliesEffects && (item.acBonus || item.attackBonus)) ? `<div class="item-effect">${item.acBonus ? formatModifier(item.acBonus) + " AC " : ""}${item.attackBonus ? formatModifier(item.attackBonus) + " Attack " : ""}</div>` : ""}
+        <div class="item-meta">${rule.countsWeight ? roundWeight(weight) + " lb" : "No weight"}${container ? " \u00b7 " + contents.length + (contents.length === 1 ? " item" : " items") : ""}</div>
+      </div>
+    </div>
+    ${container && isOpen ? `<div class="pack-contents" data-pack-body="${item.id}">
+      ${contents.map(inner => itemRowHtml(inner, cat, true)).join("") || `<div class="empty-hint" style="padding:8px 0 8px 22px;">Empty</div>`}
+    </div>` : ""}
+  `;
+}
 
 function itemTypeToggleHtml(current) {
   return `
@@ -585,6 +652,67 @@ function newItemFormState(item) {
   };
 }
 
+/* Everything the Add Item form is currently saying, as an item. Pulled out so
+   the same call can build what gets saved and, at the moment a catalogue row is
+   picked, what that row would have produced untouched. */
+function buildItemFromForm(state) {
+  const item = Object.assign({}, readCommonItemFields());
+  const acBonus = parseInt(document.getElementById("if-ac").value) || 0;
+  const attackBonus = parseInt(document.getElementById("if-atkb").value) || 0;
+  if (acBonus) item.acBonus = acBonus;
+  if (attackBonus) item.attackBonus = attackBonus;
+  applyItemType(item, state.type, state);
+  return item;
+}
+
+/* What "you changed it" means, precisely: the item this form would produce
+   now, against the item it produced the moment the catalogue row was picked.
+
+   Comparing against the catalogue row itself would flag every single pick as
+   modified, because the form cannot express half of what a row carries -- its
+   price, its official flag, its table.
+
+   Quantity is excluded because buying three of something is not inventing a
+   new thing. So is category: where it sits on your sheet is where you keep it,
+   not what it is. stackSignature already ignores both. */
+function itemDiffersFromSource(item, baseline) {
+  return !!baseline && stackSignature(item) !== stackSignature(baseline);
+}
+
+function customVariantName(name) {
+  return /\(custom\)\s*$/i.test(name) ? name : name + " (Custom)";
+}
+
+/* A changed catalogue item becomes yours for good. That is the whole point:
+   the next character you build picks your version out of the same search
+   rather than you re-typing the same three edits. */
+function rememberCustomItem(item) {
+  const entry = Object.assign({}, item);
+  delete entry.id;
+  delete entry.qty;          // a quantity is this pile, not the thing
+  entry.official = false;
+  entry.type = itemType(entry);
+  if (!customContent.items) customContent.items = [];
+  if (customContent.items.some(existing => existing.name === entry.name)) return false;
+  entry.id = nextCustomId("items");
+  customContent.items.push(entry);
+  persistCustomContent();
+  return true;
+}
+
+function itemSearchResultsHtml(matches) {
+  if (!matches.length) return "";
+  return matches.map((entry, index) => `
+    <div class="res-row" data-pick-item="${index}" style="cursor:pointer;">
+      <div>
+        <div class="res-name">${esc(entry.name)}</div>
+        <div class="atk-range">${esc(itemTypeLabel(itemType(entry)))}${entry.cost ? " \u00b7 " + esc(entry.cost) : ""}${entry.official === false ? " \u00b7 Yours" : ""}</div>
+      </div>
+      <span class="add-link">Use</span>
+    </div>
+  `).join("");
+}
+
 function openAddInventoryModal(presetCategory, presetType) {
   const categories = Object.keys(character.categoryRules);
   let mode = "item";
@@ -606,36 +734,94 @@ function openAddInventoryModal(presetCategory, presetType) {
   const state = newItemFormState();
   if (presetType) state.type = presetType;
 
+  /* The catalogue row this form was started from, and what that row produced
+     before anything was touched. Both null for an item typed from scratch,
+     which is why a blank form is never "custom". */
+  let pickedSource = null;
+  let pickedBaseline = null;
+
+  function pickCatalogueItem(entry) {
+    pickedSource = entry;
+    Object.assign(state, newItemFormState(entry));
+    renderItemBody();
+  }
+
+  function startBlank() {
+    pickedSource = null;
+    pickedBaseline = null;
+    Object.assign(state, newItemFormState());
+    renderItemBody();
+  }
+
   function renderItemBody() {
     const defaultCat = presetCategory && categories.includes(presetCategory) ? presetCategory : categories[0];
+    // a catalogue row names a category this character may never have created
+    const prefill = pickedSource
+      ? Object.assign({}, pickedSource, {
+          category: categories.includes(pickedSource.category) ? pickedSource.category : defaultCat
+        })
+      : { category: defaultCat };
+
     body.innerHTML = `
+      ${textFieldHtml("item-search", "Search content", "", { placeholder: "Longsword, Chain Shirt, Potion\u2026" })}
+      <div id="item-search-results"></div>
+      ${pickedSource ? `<div class="breakdown-source" style="margin:10px 0 2px;">Based on ${esc(pickedSource.name)} \u00b7 <span class="add-link" id="item-clear-pick">start blank</span></div>` : ""}
       ${itemTypeToggleHtml(state.type)}
-      ${commonItemFieldsHtml({ category: defaultCat })}
+      ${commonItemFieldsHtml(prefill)}
       <div id="type-fields"></div>
       <button class="btn-primary" id="save-item-button" style="margin-top:16px;">Add Item</button>
     `;
     wireSelect("if-category");
+    wireItemSearch();
 
     const typeFields = document.getElementById("type-fields");
-    renderItemTypeFields(typeFields, state.type, null, state);
-    wireItemTypeToggle(state, typeFields, null);
+    renderItemTypeFields(typeFields, state.type, pickedSource, state);
+    wireItemTypeToggle(state, typeFields, pickedSource);
+
+    const clearPick = document.getElementById("item-clear-pick");
+    if (clearPick) clearPick.addEventListener("click", startBlank);
+
+    // read back what the form is saying right now, before the player touches
+    // it -- that is the thing "did you change it" gets measured against
+    if (pickedSource) pickedBaseline = buildItemFromForm(state);
 
     document.getElementById("save-item-button").addEventListener("click", () => {
-      const newId = makeId(character.inventory);
-      const item = Object.assign({ id: newId }, readCommonItemFields());
-
-      const acBonus = parseInt(document.getElementById("if-ac").value) || 0;
-      const attackBonus = parseInt(document.getElementById("if-atkb").value) || 0;
-      if (acBonus) item.acBonus = acBonus;
-      if (attackBonus) item.attackBonus = attackBonus;
+      const item = buildItemFromForm(state);
+      let kept = false;
+      if (itemDiffersFromSource(item, pickedBaseline)) {
+        item.name = customVariantName(item.name);
+        kept = rememberCustomItem(item);
+      }
+      item.id = makeId(character.inventory);
+      // the form has no field for "is a pack", so it comes off the row picked
+      if (pickedSource && pickedSource.isContainer) item.isContainer = true;
       // tracking is turned on from the item's own detail view, not here
 
-      applyItemType(item, state.type, state);
-
       character.inventory.push(item);
+      if (item.isContainer && pickedSource) {
+        const packed = expandContainerContents(character, item, pickedSource);
+        if (packed.length) openInvContainers[item.id] = true;
+      }
       openInvCategories[item.category] = true;
       closeModal();
       renderContent();
+      if (kept) showToast(item.name + " saved to your content");
+    });
+  }
+
+  function wireItemSearch() {
+    const input = document.getElementById("item-search");
+    const results = document.getElementById("item-search-results");
+    let matches = [];
+    input.addEventListener("input", () => {
+      const query = input.value.trim().toLowerCase();
+      matches = query
+        ? allInventoryItems().filter(entry => entry.name.toLowerCase().indexOf(query) !== -1).slice(0, 8)
+        : [];
+      results.innerHTML = itemSearchResultsHtml(matches);
+      results.querySelectorAll("[data-pick-item]").forEach(row => {
+        row.addEventListener("click", () => pickCatalogueItem(matches[parseInt(row.dataset.pickItem)]));
+      });
     });
   }
 
@@ -814,6 +1000,8 @@ function openItemDetailModal(itemId) {
 
     <div class="btn-row-2" style="margin-top:22px;">
       <button class="btn-primary" id="detail-edit-button">Edit</button>
+      ${isContainerItem(item) && containerContents(character, item).length
+        ? `<button class="btn-secondary" id="detail-unpack-button">Tip Out (${containerContents(character, item).length} items)</button>` : ""}
       <button class="btn-primary" id="detail-give-button" style="background:var(--control);color:var(--accent-soft);">Give</button>
     </div>
     ${toggleLineHtml("detail-track-switch", "Track under Resources", !!item.resource,
@@ -878,6 +1066,15 @@ function openItemDetailModal(itemId) {
   }
 
   document.getElementById("detail-edit-button").addEventListener("click", () => openItemEditModal(itemId));
+  const unpackButton = document.getElementById("detail-unpack-button");
+  if (unpackButton) {
+    unpackButton.addEventListener("click", () => {
+      const spilled = emptyContainer(character, item);
+      closeModal();
+      renderContent();
+      showToast(spilled.length + (spilled.length === 1 ? " item" : " items") + " out of " + item.name);
+    });
+  }
   document.getElementById("detail-give-button").addEventListener("click", () => startGiveFlow(item));
   document.getElementById("detail-delete-trigger").addEventListener("click", () => confirmDeleteItem(item));
 }
@@ -943,7 +1140,7 @@ function confirmDeleteItem(item, onDone) {
     confirmLabel: "Remove",
     danger: true,
     onConfirm: () => {
-      character.inventory = character.inventory.filter(i => i.id !== item.id);
+      removeItemAndContents(character, item);
       // the caller decides what to do with itself -- the detail modal closes,
       // the edit form closes, a row just re-renders
       if (onDone) onDone();
@@ -1042,7 +1239,7 @@ function openRecipientPicker(heading, onPick) {
    player did not. */
 function openSendMoneyModal() {
   openModal("sheet", `
-    <div class="modal-heading">Send Money</div>
+    <div class="modal-heading">Send Coins</div>
     <div class="breakdown-source" style="margin-bottom:12px;">Nothing is converted on the way.</div>
     ${COIN_TYPES.map(coin => numberFieldHtml("send-coin-" + coin.key, coin.name,
       0, { min: 0, max: coinCount(character.purse, coin.key) })).join("")}
@@ -1083,7 +1280,7 @@ function applyGive(item, qty, recipient) {
     return;
   }
   const currentQty = item.qty || 1;
-  if (qty >= currentQty) character.inventory = character.inventory.filter(i => !sameId(i.id, item.id));
+  if (qty >= currentQty) removeItemAndContents(character, item);
   else item.qty = currentQty - qty;
   closeModal();
   renderContent();
@@ -1154,7 +1351,7 @@ function respondToOffer(accepted) {
   if (accepted && offer.coin) addToPurse(character.purse, offer.coin);
   if (accepted && offer.item) {
     const landed = receivedItem(offer.item, character, offer.transferId);
-    applyReceivedItem(character, landed.item);
+    applyReceivedItem(character, landed.item, offer.item.contents);
     missing = landed.missing;
   }
   if (offer.from) {

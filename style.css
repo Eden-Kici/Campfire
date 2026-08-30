@@ -1209,3 +1209,14 @@ input[type="text"], input[type="number"], textarea { font-size: 16px; }
   outline-offset: -3px;
   background: var(--control-raised);
 }
+
+/* A pack and the things inside it. Indented rather than boxed, so a pack reads
+   as part of the same list it sits in rather than a separate panel. */
+.pack-contents { margin-left: 18px; border-left: 1px solid var(--border); padding-left: 8px; }
+.pack-caret { display: inline-block; width: 12px; color: var(--text-dim); }
+.item-row.item-nested .item-name { font-weight: normal; }
+
+/* Dropping something into a pack. Distinct from the merge outline on purpose:
+   merging and packing are different acts and should not look identical. */
+.item-row.pack-ready { outline: 1px dashed var(--text-dim); outline-offset: -3px; }
+.item-row.pack-hover { outline: 2px solid var(--text); outline-offset: -3px; background: var(--control-raised); }

@@ -832,3 +832,79 @@ function showToast(message) {
     repositionToasts();
   }, 3000);
 }
+
+/* Swiping between tabs.
+
+   Two things have to be true before a sideways drag counts, and both are about
+   not stealing a gesture that meant something else. It has to be clearly
+   sideways rather than merely not-quite-vertical, or ordinary scrolling would
+   flip tabs constantly. And a hold-drag in progress suppresses it outright:
+   dragging an item across the screen must not also change the tab out from
+   under it.
+
+   Nothing wraps. Swiping past Notes does nothing, because arriving back at
+   Combat from the far end is disorienting when the tab bar is right there
+   showing you where the ends are. */
+const SWIPE_MIN_X = 60;
+const SWIPE_SIDEWAYS_RATIO = 1.5;
+
+function wireTabSwiping() {
+  const content = document.getElementById("content");
+  let startX = 0, startY = 0, tracking = false;
+
+  content.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    tracking = true;
+    startX = e.clientX;
+    startY = e.clientY;
+  });
+
+  content.addEventListener("pointercancel", () => { tracking = false; });
+
+  content.addEventListener("pointerup", (e) => {
+    if (!tracking) return;
+    tracking = false;
+    if (document.querySelector(".dragging")) return;      // a drag is using this gesture
+    if (document.getElementById("modal-overlay")) return;
+
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    if (Math.abs(dx) < SWIPE_MIN_X) return;
+    if (Math.abs(dx) < Math.abs(dy) * SWIPE_SIDEWAYS_RATIO) return;
+    slideToTab(dx < 0 ? 1 : -1);
+  });
+}
+
+/* Slides the outgoing tab away and the incoming one in from the other side, so
+   the direction of travel is visible. Read off the tab bar rather than a list
+   kept here, because two orderings of the same five tabs would eventually
+   disagree. */
+function slideToTab(direction) {
+  const order = Array.from(tabButtons).map(button => button.dataset.tab);
+  const next = order[order.indexOf(activeTab) + direction];
+  if (!next) return;
+
+  const content = document.getElementById("content");
+  const outTo = direction > 0 ? "-9%" : "9%";
+  const inFrom = direction > 0 ? "9%" : "-9%";
+
+  content.style.transition = "transform .13s ease-out, opacity .13s ease-out";
+  content.style.transform = "translateX(" + outTo + ")";
+  content.style.opacity = "0";
+
+  setTimeout(() => {
+    activeTab = next;
+    updateActiveTabStyling();
+    renderContent();
+    content.scrollTop = 0;
+
+    content.style.transition = "none";
+    content.style.transform = "translateX(" + inFrom + ")";
+    requestAnimationFrame(() => {
+      content.style.transition = "transform .16s ease-out, opacity .16s ease-out";
+      content.style.transform = "";
+      content.style.opacity = "";
+      setTimeout(() => { content.style.transition = ""; }, 200);
+    });
+  }, 135);
+}

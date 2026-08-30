@@ -190,8 +190,14 @@ can now **push their edit back** to the note's owner, who checks the permission 
 And two stacks of the same thing **merge by dragging one onto the other**, with the piles it can
 join outlined while you drag.
 
-Standing shares, the offer flow and item giving have been run on the phones. **Money, stack merging
-and edit-back have only been run in two browsers against a local relay.**
+Since then the inventory grew up: Add Item searches the whole catalogue and saves a changed row as
+your own custom content, ammunition is sold singly instead of in named bundles, packs are real
+containers you can open and drag things into, the money block is now Coins with Send in its header,
+and swiping moves between tabs.
+
+Standing shares, the offer flow and item giving have been run on the phones. **Everything since —
+money, stack merging, edit-back, containers, catalogue search and swiping — has only been run in
+browsers against a local relay.**
 
 1. Push, then open the app on both phones. Host on one, join on the other with the four-character
    code. Watch a hit-point change on one appear on the other.

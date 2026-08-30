@@ -629,10 +629,10 @@ const KIT_ITEMS = {
      40 loose plus a full quiver of 20 on top. The quiver arrives empty and the
      player's first Refill moves arrows into it; putting the 20 in both places
      is what produced 60 in the first place. */
-  arrows:      { srd: "Arrows (20)", name: "Arrows", category: "Carrying", weight: 0.05, qty: 20,
+  arrows:      { srd: "Arrow", name: "Arrows", category: "Carrying", weight: 0.05, qty: 20,
                  description: "Ammunition for a bow.",
                  resource: { max: 0, recharge: { on: "none", amount: "all" } } },
-  bolts:       { srd: "Crossbow Bolts (20)", name: "Crossbow Bolts", category: "Carrying", weight: 0.075, qty: 20,
+  bolts:       { srd: "Crossbow Bolt", name: "Crossbow Bolts", category: "Carrying", weight: 0.075, qty: 20,
                  description: "Ammunition for a crossbow.",
                  resource: { max: 0, recharge: { on: "none", amount: "all" } } },
   quiver:      { srd: "Quiver", name: "Quiver", category: "Worn", weight: 1,

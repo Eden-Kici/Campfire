@@ -410,9 +410,12 @@ function myPartyName() {
 
 function partyGiveItem(item, qty, recipient) {
   const transferId = makeId(character.inventory);
+  // handing over a pack hands over what is in it
+  const parcel = Object.assign({}, item, { qty: qty });
+  if (isContainerItem(item)) parcel.contents = containerContents(character, item);
   const ok = partySend("item-offer", {
     transferId: transferId,
-    item: wireItem(Object.assign({}, item, { qty: qty })),
+    item: wireItem(parcel),
     to: recipient.device,
     from: deviceId(),
     fromName: myPartyName()
@@ -421,6 +424,7 @@ function partyGiveItem(item, qty, recipient) {
 
   pendingGives[transferId] = {
     item: JSON.parse(JSON.stringify(item)),
+    contents: isContainerItem(item) ? JSON.parse(JSON.stringify(containerContents(character, item))) : null,
     qty: qty,
     toName: recipient.name,
     status: "waiting",
@@ -455,7 +459,11 @@ function returnGivenItem(pending) {
   if (pending.coin) { addToPurse(character.purse, pending.coin); renderContent(); return; }
   const stack = character.inventory.find(i => sameId(i.id, pending.item.id));
   if (stack) stack.qty = (stack.qty || 0) + pending.qty;
-  else character.inventory.push(Object.assign({}, pending.item, { qty: pending.qty }));
+  else {
+    character.inventory.push(Object.assign({}, pending.item, { qty: pending.qty }));
+    // a pack that comes back comes back full
+    (pending.contents || []).forEach(child => character.inventory.push(Object.assign({}, child)));
+  }
   renderContent();
 }
 

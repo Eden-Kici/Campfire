@@ -35,8 +35,8 @@ function kitItemTemplate(key) {
   // the catalogue owns what the thing IS; the kit owns where it lands and how
   // many of it you get
   const merged = Object.assign({}, srd, kit);
-  // the kit's name wins: the catalogue sells "Arrows (20)" as a bundle, but on
-  // a sheet the count lives in `qty` and the row should just say Arrows
+  // the kit's name wins. The catalogue is singular -- it sells one arrow --
+  // and a stack of twenty on a sheet reads better as "Arrows"
   merged.name = kit.name || srd.name;
   // and the catalogue's description wins where it has one -- the kit's own text
   // is the fallback for the many catalogue rows that carry none
@@ -119,7 +119,7 @@ function equipmentStepHtml(stepNum) {
     ` : ""}
 
     ${money ? `
-      <div class="breakdown-subhead">Money</div>
+      <div class="breakdown-subhead">Coins</div>
       <div class="kit-money">${esc(money)}</div>
     ` : ""}
 

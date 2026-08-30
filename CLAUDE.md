@@ -108,6 +108,34 @@ These are load-bearing and easy to break:
   `{ countsWeight, appliesEffects, providesAttacks }`. Armour only contributes AC from a category
   with `appliesEffects`; weapons only appear under Attacks from one with `providesAttacks`.
   Stowing a weapon moves its category, it never deletes anything.
+- **A pack is a real container.** The relationship lives on the *child* — `item.inside` holds the
+  container's id — rather than as a nested array on the parent, so the inventory stays one flat
+  list and everything that already walks `character.inventory` (weight, attacks, effects, giving,
+  persistence) keeps working without knowing containers exist.
+  A contained item's `category` is kept equal to its container's, and **that one rule is what makes
+  the rest of the app correct for free**: a longsword inside a pack sitting in Carrying provides no
+  attacks, because Carrying provides none, without a word about containers appearing anywhere near
+  the attack code.
+  All seven SRD packs carry a real `contents` list, so adding one creates the pack *and* the crowbar
+  and the ten torches. A pack reports the weight of what is in it rather than its own nothing — an
+  Explorer's Pack is 59 lb, not 0. Packs never merge (`canMergeStacks` refuses them: two packs hold
+  different things, and a stack of 2 would strand one lot of contents), deleting one takes its
+  contents with it, and giving one hands over everything inside.
+- **The catalogue sells one of a thing.** Ammunition used to carry its bundle in the name — "Arrows
+  (20)" — which made the row unusable for anything but buying exactly twenty, and left a stack of
+  sixty still calling itself a stack of twenty. Names are singular, `qty` is 1, weight is per unit,
+  and the bundle survives only in the price string ("1 gp per 20"). `KIT_ITEMS` still overrides the
+  name to a plural for the stack it grants, because "Arrows ×20" on a sheet reads better than
+  "Arrow ×20".
+- **Add Item searches the catalogue** (`allInventoryItems()` in content-merge.js — five SRD tables
+  plus your own, yours first). Picking a row fills the whole form. If you then change anything, the
+  item is saved with "(Custom)" appended *and kept in your custom content for good*, so the next
+  character can pick your version out of the same search.
+  What counts as a change is measured against **what the form produced the moment you picked**, not
+  against the catalogue row: a row carries a price, an official flag and a table that the form
+  cannot express, so comparing directly would flag every pick as modified. Quantity and category are
+  excluded — buying three is not inventing a new thing, and where it sits on your sheet is where you
+  keep it rather than what it is. `stackSignature()` already ignores both, so it does the comparing.
 - **Ids are `"<device>-<n>"` strings.** `identity.js` mints a six-character device id on first use
   and keeps it in `campfire.device`; `makeId(list)` still counts within the one array and prefixes
   it, so ids stay short and readable while being unique across installs. Saves written before this
@@ -263,6 +291,9 @@ first-ever launch does. Tutorial tests set `tutorialState` by hand instead.
 - `traits > Proficiencies > Weapons` is flavour text duplicating the authoritative
   `weaponProficiencies` list — the last known two-sources-of-truth.
 - Emoji stand in for an icon set throughout.
+- A container's contents are one level deep. `putInContainer()` refuses a pack inside a pack, and
+  `readItem()` flattens one that arrives claiming otherwise, so nothing here has to guard against a
+  structure that nests forever.
 - **No user identity.** There is a device id now, but it identifies an *installation*, not a
   person: reinstall and you are someone new, and `settings.username` is "Adventurer" on every fresh
   install.

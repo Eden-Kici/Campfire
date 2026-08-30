@@ -75,7 +75,7 @@ function openSettingsModal() {
       { hint: "Otherwise they appear only at 0 hit points" })}
     ${toggleLineHtml("setting-fast-rolls", "Fast Rolls", settings.fastRolls,
       { hint: "Roll on the first tap" })}
-    ${toggleLineHtml("setting-stashed-money", "Track stashed money", settings.trackStashedMoney,
+    ${toggleLineHtml("setting-stashed-money", "Track stashed coins", settings.trackStashedMoney,
       { hint: "A second purse for coin you aren't carrying" })}
     ${toggleLineHtml("setting-money-weight", "Coin counts toward weight", settings.moneyCountsWeight,
       { hint: "50 coins to the pound" })}

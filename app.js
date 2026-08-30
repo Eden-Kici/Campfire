@@ -41,6 +41,7 @@ function renderContent() {
    INIT
    ============================================================ */
 
+wireTabSwiping();
 loadTheme();
 loadSettings();
 loadCustomContent();

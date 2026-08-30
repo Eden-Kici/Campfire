@@ -454,6 +454,21 @@ function readItem(raw) {
   const resource = readItemResource(raw.resource);
   if (resource) item.resource = resource;
 
+  /* A pack arrives with its contents or it arrives as a lie. The children are
+     read through the same validator, one level deep -- packs inside packs are
+     not a thing this app allows, so nothing here has to guard against a
+     structure that nests forever. */
+  if (raw.isContainer) {
+    item.isContainer = true;
+    if (Array.isArray(raw.contents)) {
+      item.contents = raw.contents.slice(0, 30).map(child => {
+        const inner = readItem(Object.assign({}, child, { isContainer: false, contents: null }));
+        if (inner) delete inner.contents;
+        return inner;
+      }).filter(Boolean);
+    }
+  }
+
   return item;
 }
 
@@ -506,6 +521,7 @@ function receivedItem(rawItem, target, transferId) {
   const item = JSON.parse(JSON.stringify(rawItem));
   item.id = transferId;
   item.category = landingCategory(target);
+  delete item.contents;                    // the children become rows of their own
 
   const missing = [];
   if (item.ammunition && !namedStackExists(target, item.ammunition)) {
@@ -522,11 +538,28 @@ function receivedItem(rawItem, target, transferId) {
 /* Keyed on the transfer, not the item. Two separate gifts of one arrow are two
    transfers and land as two rows; the same gift arriving twice, because a
    phone reconnected and the relay repeated itself, lands once. */
-function applyReceivedItem(target, item) {
+function applyReceivedItem(target, item, contents) {
   if (!target.inventory) target.inventory = [];
   const at = target.inventory.findIndex(i => sameId(i.id, item.id));
   if (at === -1) target.inventory.push(item);
   else target.inventory[at] = item;
+
+  /* A pack's contents arrive as their own rows pointing back at it. Keyed off
+     the transfer the same way the pack is, so a repeated delivery replaces
+     them rather than doubling everything in the bag. */
+  if (item.isContainer) {
+    target.inventory = target.inventory.filter(row => !sameId(row.inside, item.id));
+    (contents || []).forEach((child, index) => {
+      const row = Object.assign({}, child, {
+        id: item.id + "." + index,
+        category: item.category,
+        inside: item.id
+      });
+      delete row.contents;
+      delete row.isContainer;
+      target.inventory.push(row);
+    });
+  }
   return item;
 }
 

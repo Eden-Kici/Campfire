@@ -48,3 +48,20 @@ function subclassChoiceLevel(className) {
   const levels = list.reduce((all, sc) => all.concat((sc.features || []).map(f => f.level || 1)), []);
   return levels.length ? Math.min(...levels) : null;
 }
+
+/* Everything you could put in a bag, SRD and your own together, for the search
+   in Add Item. Weapons, armour, tools, gear and magic items are five tables in
+   the catalogue because that is how the SRD prints them -- but nobody adding a
+   longsword to a backpack is thinking about which table it came from. */
+function allInventoryItems() {
+  const catalogue = [].concat(
+    typeof SRD_WEAPONS !== "undefined" ? SRD_WEAPONS : [],
+    typeof SRD_ARMOUR !== "undefined" ? SRD_ARMOUR : [],
+    typeof SRD_TOOLS !== "undefined" ? SRD_TOOLS : [],
+    typeof SRD_GEAR !== "undefined" ? SRD_GEAR : [],
+    typeof SRD_MAGIC_ITEMS !== "undefined" ? SRD_MAGIC_ITEMS : []
+  );
+  const mine = (typeof customContent !== "undefined" && customContent.items) || [];
+  // yours first: a custom Longsword is the one you meant
+  return mine.concat(catalogue);
+}

@@ -147,10 +147,16 @@ const SRD_GEAR = [
   { name: "Abacus", official: true, cost: "2 gp", category: "Carrying", weight: 2 },
   { name: "Acid (vial)", official: true, cost: "25 gp", category: "Carrying", weight: 1, description: "Action: splash on a creature within 5 ft, or throw up to 20 ft as an improvised ranged weapon. On a hit, 2d6 acid damage." },
   { name: "Alchemist's Fire (flask)", official: true, cost: "50 gp", category: "Carrying", weight: 1, description: "Action: throw up to 20 ft as an improvised ranged weapon. On a hit, 1d4 fire damage at the start of each of the target's turns until it spends an action on a DC 10 Dexterity check to put out the flames." },
-  { name: "Arrows (20)", official: true, cost: "1 gp", category: "Carrying", weight: 1, qty: 20, resource: { max: 0, recharge: { on: "none", amount: "all" } } },
-  { name: "Blowgun Needles (50)", official: true, cost: "1 gp", category: "Carrying", weight: 1, qty: 50, resource: { max: 0, recharge: { on: "none", amount: "all" } } },
-  { name: "Crossbow Bolts (20)", official: true, cost: "1 gp", category: "Carrying", weight: 1.5, qty: 20, resource: { max: 0, recharge: { on: "none", amount: "all" } } },
-  { name: "Sling Bullets (20)", official: true, cost: "4 cp", category: "Carrying", weight: 1.5, qty: 20, resource: { max: 0, recharge: { on: "none", amount: "all" } } },
+  /* Ammunition is sold by the bundle and owned one at a time. The catalogue
+     used to carry the bundle in the name -- "Arrows (20)" -- which made the
+     row unusable for anything except buying exactly twenty: you could not add
+     three, and a stack of sixty still called itself a stack of twenty. The
+     count is a quantity now, the weight is per arrow, and the price says what
+     a bundle costs without pretending the bundle is the item. */
+  { name: "Arrow", official: true, cost: "1 gp per 20", category: "Carrying", weight: 0.05, qty: 1, resource: { max: 0, recharge: { on: "none", amount: "all" } } },
+  { name: "Blowgun Needle", official: true, cost: "1 gp per 50", category: "Carrying", weight: 0.02, qty: 1, resource: { max: 0, recharge: { on: "none", amount: "all" } } },
+  { name: "Crossbow Bolt", official: true, cost: "1 gp per 20", category: "Carrying", weight: 0.075, qty: 1, resource: { max: 0, recharge: { on: "none", amount: "all" } } },
+  { name: "Sling Bullet", official: true, cost: "4 cp per 20", category: "Carrying", weight: 0.075, qty: 1, resource: { max: 0, recharge: { on: "none", amount: "all" } } },
   { name: "Amulet", official: true, cost: "5 gp", category: "Carrying", weight: 1, description: "Can serve as a holy symbol." },
   { name: "Antitoxin (vial)", official: true, cost: "50 gp", category: "Carrying", weight: 0, description: "A creature that drinks this gains advantage on saving throws against poison for 1 hour. No benefit to undead or constructs." },
   { name: "Arcane Focus, Crystal", official: true, cost: "10 gp", category: "Carrying", weight: 1, description: "A spellcasting focus for sorcerer, warlock or wizard spells." },
@@ -230,6 +236,8 @@ const SRD_GEAR = [
   { name: "Robes", official: true, cost: "1 gp", category: "Carrying", weight: 4 },
   { name: "Rope, Hempen (50 feet)", official: true, cost: "1 gp", category: "Carrying", weight: 10, description: "2 hit points; bursts with a DC 17 Strength check." },
   { name: "Rope, Silk (50 feet)", official: true, cost: "10 gp", category: "Carrying", weight: 5, description: "2 hit points; bursts with a DC 17 Strength check." },
+  { name: "Rations (1 day)", official: true, cost: "5 sp", category: "Carrying", weight: 2, qty: 1 },
+  { name: "String (10 feet)", official: true, cost: "1 cp", category: "Carrying", weight: 0, qty: 1 },
   { name: "Sack", official: true, cost: "1 cp", category: "Carrying", weight: 0.5, description: "Holds 1 cubic foot or 30 lb of gear." },
   { name: "Scale, Merchant's", official: true, cost: "5 gp", category: "Carrying", weight: 3, description: "A small balance, pans and weights up to 2 lb, for measuring the exact weight of small objects." },
   { name: "Sealing Wax", official: true, cost: "5 sp", category: "Carrying", weight: 0 },
@@ -238,7 +246,7 @@ const SRD_GEAR = [
   { name: "Signet Ring", official: true, cost: "5 gp", category: "Carrying", weight: 0, description: "Can serve as a holy symbol." },
   { name: "Soap", official: true, cost: "2 cp", category: "Carrying", weight: 0 },
   { name: "Spellbook", official: true, cost: "50 gp", category: "Carrying", weight: 3, description: "A leather-bound tome with 100 blank vellum pages for recording spells." },
-  { name: "Spikes, Iron (10)", official: true, cost: "1 gp", category: "Carrying", weight: 5 },
+  { name: "Iron Spike", official: true, cost: "1 gp per 10", category: "Carrying", weight: 0.5, qty: 1 },
   { name: "Spyglass", official: true, cost: "1,000 gp", category: "Carrying", weight: 1, description: "Magnifies viewed objects to twice their size." },
   { name: "Tent, Two-Person", official: true, cost: "2 gp", category: "Carrying", weight: 20 },
   { name: "Tinderbox", official: true, cost: "5 sp", category: "Carrying", weight: 1, description: "Flint, fire steel and tinder. Action to light a torch or similar; 1 minute for anything else." },
@@ -246,11 +254,84 @@ const SRD_GEAR = [
   { name: "Vial", official: true, cost: "1 gp", category: "Carrying", weight: 0, description: "Holds 4 ounces liquid." },
   { name: "Waterskin", official: true, cost: "2 sp", category: "Carrying", weight: 5, description: "Holds 4 pints liquid." },
   { name: "Whetstone", official: true, cost: "1 cp", category: "Carrying", weight: 1 },
-  { name: "Burglar's Pack", official: true, cost: "16 gp", category: "Carrying", weight: 0, description: "Backpack, 1,000 ball bearings, 10 ft of string, a bell, 5 candles, a crowbar, a hammer, 10 pitons, a hooded lantern, 2 flasks of oil, 5 days of rations, a tinderbox, a waterskin, and 50 feet of hempen rope strapped to the side." },
-  { name: "Diplomat's Pack", official: true, cost: "39 gp", category: "Carrying", weight: 0, description: "Chest, 2 cases for maps and scrolls, fine clothes, a bottle of ink, an ink pen, a lamp, 2 flasks of oil, 5 sheets of paper, a vial of perfume, sealing wax and soap." },
-  { name: "Dungeoneer's Pack", official: true, cost: "12 gp", category: "Carrying", weight: 0, description: "Backpack, a crowbar, a hammer, 10 pitons, 10 torches, a tinderbox, 10 days of rations, a waterskin, and 50 feet of hempen rope strapped to the side." },
-  { name: "Entertainer's Pack", official: true, cost: "40 gp", category: "Carrying", weight: 0, description: "Backpack, a bedroll, 2 costumes, 5 candles, 5 days of rations, a waterskin, and a disguise kit." },
-  { name: "Explorer's Pack", official: true, cost: "10 gp", category: "Carrying", weight: 0, description: "Backpack, a bedroll, a mess kit, a tinderbox, 10 torches, 10 days of rations, a waterskin, and 50 feet of hempen rope strapped to the side." },
-  { name: "Priest's Pack", official: true, cost: "19 gp", category: "Carrying", weight: 0, description: "Backpack, a blanket, 10 candles, a tinderbox, an alms box, 2 blocks of incense, a censer, vestments, 2 days of rations, and a waterskin." },
-  { name: "Scholar's Pack", official: true, cost: "40 gp", category: "Carrying", weight: 0, description: "Backpack, a book of lore, a bottle of ink, an ink pen, 10 sheets of parchment, a small bag of sand, and a small knife." }
+  { name: "Burglar's Pack", official: true, isContainer: true, contents: [
+      { name: "Backpack", qty: 1 },
+      { name: "Ball Bearings (bag of 1,000)", qty: 1 },
+      { name: "String (10 feet)", qty: 1 },
+      { name: "Bell", qty: 1 },
+      { name: "Candle", qty: 5 },
+      { name: "Crowbar", qty: 1 },
+      { name: "Hammer", qty: 1 },
+      { name: "Piton", qty: 10 },
+      { name: "Lantern, Hooded", qty: 1 },
+      { name: "Oil (flask)", qty: 2 },
+      { name: "Rations (1 day)", qty: 5 },
+      { name: "Tinderbox", qty: 1 },
+      { name: "Waterskin", qty: 1 },
+      { name: "Rope, Hempen (50 feet)", qty: 1 }
+    ], cost: "16 gp", category: "Carrying", weight: 0, description: "Backpack, 1,000 ball bearings, 10 ft of string, a bell, 5 candles, a crowbar, a hammer, 10 pitons, a hooded lantern, 2 flasks of oil, 5 days of rations, a tinderbox, a waterskin, and 50 feet of hempen rope strapped to the side." },
+  { name: "Diplomat's Pack", official: true, isContainer: true, contents: [
+      { name: "Chest", qty: 1 },
+      { name: "Case, Map or Scroll", qty: 2 },
+      { name: "Clothes, Fine", qty: 1 },
+      { name: "Ink (1 ounce bottle)", qty: 1 },
+      { name: "Ink Pen", qty: 1 },
+      { name: "Lamp", qty: 1 },
+      { name: "Oil (flask)", qty: 2 },
+      { name: "Paper (one sheet)", qty: 5 },
+      { name: "Perfume (vial)", qty: 1 },
+      { name: "Sealing Wax", qty: 1 },
+      { name: "Soap", qty: 1 }
+    ], cost: "39 gp", category: "Carrying", weight: 0, description: "Chest, 2 cases for maps and scrolls, fine clothes, a bottle of ink, an ink pen, a lamp, 2 flasks of oil, 5 sheets of paper, a vial of perfume, sealing wax and soap." },
+  { name: "Dungeoneer's Pack", official: true, isContainer: true, contents: [
+      { name: "Backpack", qty: 1 },
+      { name: "Crowbar", qty: 1 },
+      { name: "Hammer", qty: 1 },
+      { name: "Piton", qty: 10 },
+      { name: "Torch", qty: 10 },
+      { name: "Tinderbox", qty: 1 },
+      { name: "Rations (1 day)", qty: 10 },
+      { name: "Waterskin", qty: 1 },
+      { name: "Rope, Hempen (50 feet)", qty: 1 }
+    ], cost: "12 gp", category: "Carrying", weight: 0, description: "Backpack, a crowbar, a hammer, 10 pitons, 10 torches, a tinderbox, 10 days of rations, a waterskin, and 50 feet of hempen rope strapped to the side." },
+  { name: "Entertainer's Pack", official: true, isContainer: true, contents: [
+      { name: "Backpack", qty: 1 },
+      { name: "Bedroll", qty: 1 },
+      { name: "Clothes, Costume", qty: 2 },
+      { name: "Candle", qty: 5 },
+      { name: "Rations (1 day)", qty: 5 },
+      { name: "Waterskin", qty: 1 },
+      { name: "Kit, Disguise", qty: 1 }
+    ], cost: "40 gp", category: "Carrying", weight: 0, description: "Backpack, a bedroll, 2 costumes, 5 candles, 5 days of rations, a waterskin, and a disguise kit." },
+  { name: "Explorer's Pack", official: true, isContainer: true, contents: [
+      { name: "Backpack", qty: 1 },
+      { name: "Bedroll", qty: 1 },
+      { name: "Kit, Mess", qty: 1 },
+      { name: "Tinderbox", qty: 1 },
+      { name: "Torch", qty: 10 },
+      { name: "Rations (1 day)", qty: 10 },
+      { name: "Waterskin", qty: 1 },
+      { name: "Rope, Hempen (50 feet)", qty: 1 }
+    ], cost: "10 gp", category: "Carrying", weight: 0, description: "Backpack, a bedroll, a mess kit, a tinderbox, 10 torches, 10 days of rations, a waterskin, and 50 feet of hempen rope strapped to the side." },
+  { name: "Priest's Pack", official: true, isContainer: true, contents: [
+      { name: "Backpack", qty: 1 },
+      { name: "Blanket", qty: 1 },
+      { name: "Candle", qty: 10 },
+      { name: "Tinderbox", qty: 1 },
+      { name: "Alms Box", qty: 1, weight: 1 },
+      { name: "Incense (block)", qty: 2, weight: 0 },
+      { name: "Censer", qty: 1, weight: 1 },
+      { name: "Vestments", qty: 1, weight: 4 },
+      { name: "Rations (1 day)", qty: 2 },
+      { name: "Waterskin", qty: 1 }
+    ], cost: "19 gp", category: "Carrying", weight: 0, description: "Backpack, a blanket, 10 candles, a tinderbox, an alms box, 2 blocks of incense, a censer, vestments, 2 days of rations, and a waterskin." },
+  { name: "Scholar's Pack", official: true, isContainer: true, contents: [
+      { name: "Backpack", qty: 1 },
+      { name: "Book", qty: 1 },
+      { name: "Ink (1 ounce bottle)", qty: 1 },
+      { name: "Ink Pen", qty: 1 },
+      { name: "Parchment (one sheet)", qty: 10 },
+      { name: "Bag of Sand", qty: 1, weight: 1 },
+      { name: "Knife, Small", qty: 1, weight: 0.5 }
+    ], cost: "40 gp", category: "Carrying", weight: 0, description: "Backpack, a book of lore, a bottle of ink, an ink pen, 10 sheets of parchment, a small bag of sand, and a small knife." }
 ];
