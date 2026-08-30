@@ -456,6 +456,11 @@ const SRD_MAGIC_ITEMS = [
      acBonus gives you an item that reads correctly and does nothing, which is
      worse than not having it. Weight is real here too: the table omits weights
      and a cloak is not weightless. */
+  // likewise invented here rather than in the SRD, and the one item in the app
+  // that adds to attack rolls from a worn slot
+  { name: "Ring of Precision", official: false, rarity: "Uncommon", attunement: false, weight: 0,
+    attackBonus: 1,
+    description: "A plain band that steadies the hand. You gain a +1 bonus to attack rolls while you wear it." },
   { name: "Cloak of Protection", official: true, rarity: "Uncommon", attunement: true, weight: 1,
     acBonus: 1,
     description: "You gain a +1 bonus to AC and saving throws while you wear this cloak." },

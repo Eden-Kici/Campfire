@@ -81,6 +81,15 @@ const SRD_WEAPONS = [
   { name: "Crossbow, Heavy", official: true, cost: "50 gp", category: "Equipped", weight: 18, isWeapon: true, attackAbility: "DEX", proficiencyRequired: "Martial", magicBonus: 0, weaponType: "ranged", range: "100/400 ft", properties: ["Ammunition", "Heavy", "Loading", "Two-Handed"], ammunition: "Crossbow Bolt", damage: [{ dice: "1d10", type: "Piercing", ability: "DEX" }] },
   { name: "Longbow", official: true, cost: "50 gp", category: "Equipped", weight: 2, isWeapon: true, attackAbility: "DEX", proficiencyRequired: "Martial", magicBonus: 0, weaponType: "ranged", range: "150/600 ft", properties: ["Ammunition", "Heavy", "Two-Handed"], ammunition: "Arrow", damage: [{ dice: "1d8", type: "Piercing", ability: "DEX" }] },
   { name: "Net", official: true, cost: "1 gp", category: "Equipped", weight: 3, isWeapon: true, attackAbility: "STR", proficiencyRequired: "Martial", magicBonus: 0, weaponType: "ranged", range: "5/15 ft", properties: ["Special", "Thrown"], description: "No damage. A Large or smaller target that's hit is restrained until it or another creature spends an action on a DC 10 Strength check to free it, or someone deals 5 slashing damage to the net (AC 10).", damage: [] },
+  /* Invented for this app, and marked as such. It shipped on the demo
+     character and in no catalogue, which made the demo sheet report its own kit
+     as homebrew once source tags existed. A third-party row is what it always
+     was; now it says so, and anyone can add one. */
+  { name: "Serpent's Fang", official: false, cost: "350 gp", category: "Equipped", weight: 1, isWeapon: true,
+    attackAbility: "DEX", proficiencyRequired: "Exotic", magicBonus: 1,
+    weaponType: "melee", range: "5 ft", properties: ["Finesse", "Light"],
+    description: "A slender blade with a hollow fang for a point, weeping venom.",
+    damage: [{ dice: "1d4", type: "Piercing", ability: "DEX" }, { dice: "1d6", type: "Poison" }] },
   { name: "Great Bow", official: false, cost: "100 gp", category: "Equipped", weight: 2, isWeapon: true, attackAbility: "DEX", proficiencyRequired: "Martial", magicBonus: 0, weaponType: "ranged", range: "150/600 ft", properties: ["Ammunition", "Heavy", "Special", "Two-Handed"], ammunition: "Arrow", description: "Bonus action to steady yourself; while steadied (and not having moved), damage rises to 2d6 piercing.", damage: [{ dice: "1d8", type: "Piercing", ability: "DEX" }] }
 ];
 

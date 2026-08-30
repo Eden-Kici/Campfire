@@ -47,7 +47,10 @@ Order: identity primitives (`identity.js`, which declares nothing but `makeId`/`
 and depends on nothing) → reference data (`srd-*.js`, now several files — races, classes, equipment, magic items and
 two halves of the spell list, split to stay under the `structure` suite's 1,500-line cap) →
 character data → shared machinery (`dice-history`, `roll`, `ui`, `theme`, `characters`, `tutorial`,
-`creator`, `party-protocol`, `party-net`, `party`, `content`, `rests`, `choices`, `help`) → one file per tab → `app.js`, which is
+`creator`, `party-protocol`, `party-net`, `party`, `content`, `rests`, `choices`, `help`) → one file
+per tab (plus `inventory-give.js`, split off when tab-inventory hit the 1,500-line cap: everything
+about the moment something leaves your sheet for somebody else's, none of which is needed to draw an
+inventory) → one file per tab → `app.js`, which is
 ~50 lines of tab switching and boot.
 
 All top-level `function` and `const` declarations share one global scope. Two files declaring the
@@ -135,12 +138,21 @@ These are load-bearing and easy to break:
   price string ("1 gp per 20"). The plural is gone from the kits, the demo character and every
   weapon's `ammunition` too: a stack of sixty is "Arrow ×60". That is not cosmetic — `itemSource()`
   matches by name, so a stack called "Arrows" matched no catalogue row and reported itself homebrew.
-- **The demo character's kit is built from real catalogue rows**, carrying the same rarity,
-  attunement and descriptions. It used to hold near-misses, which was invisible until source tags
-  existed and then made half the demo sheet claim to be homebrew. Two catalogue rows were the ones
-  actually wrong and were fixed: Chain Shirt had no description, and Cloak of Protection described a
-  +1 to AC in prose while carrying no `acBonus` at all — an item that read correctly and did
-  nothing.
+- **Every item on the demo character is catalogue content.** It used to hold near-misses and two
+  wholly invented items, which was invisible until source tags existed and then made most of the
+  demo sheet claim to be homebrew. Three catalogue rows were the ones actually wrong and were fixed:
+  Chain Shirt had no description; Cloak of Protection described a +1 to AC in prose while carrying
+  no `acBonus` at all, an item that read correctly and did nothing; and neither Serpent's Fang nor
+  Ring of Precision existed anywhere but on the demo sheet. Both are now `official: false` catalogue
+  rows — which is what they always were — so they carry a 3PP tag rather than a CC one, and anyone
+  can add one. "Spare Chainmail" was just Chain Mail kept in Camp Storage, and says so now.
+- **`sheetSourceNames()` feeds both "Spends Ammunition From" and "Refills From"**: everything in your
+  bags plus everything on the Resources list, minus the item doing the asking. The ammunition picker
+  used to offer `character.resources` alone — the *standalone* list — so a bow could be pointed at
+  Action Surge but not at your arrows, and the refill picker offered every resource row including the
+  container itself, so a quiver would happily refill from itself. A typed name that matches nothing is
+  left alone and marks nothing: point a bow at a stack you have not bought yet and it starts working
+  when you do.
 - **Add Item searches the catalogue** (`allInventoryItems()` in content-merge.js — five SRD tables
   plus your own, yours first). Picking a row fills the whole form. If you then change anything, the
   item is saved with "(Custom)" appended *and kept in your custom content for good*, so the next
@@ -158,9 +170,12 @@ These are load-bearing and easy to break:
   moment you change a preset and vanish again when you undo it (`wireLiveSourceTag`).
   `contentShape()` decides what "the same" means: it strips the catalogue's bookkeeping (`official`,
   `type`, `cost`, `contents`), the decisions you make about *your copy* rather than about the thing
-  (tracking, container-ness, off-hand, a kit's starting loadout) and empty values, because a blank
-  box and a field that was never there say the same thing — without that last one, every item read
-  as modified the instant its editor opened.
+  (tracking, container-ness, off-hand, a kit's starting loadout, **which stack a weapon spends
+  from**) and empty values, because a blank box and a field that was never there say the same thing —
+  without that last one, every item read as modified the instant its editor opened.
+  `ammunition` is in that list because it names a row on *your* sheet rather than a property of the
+  bow: the catalogue's value is a default, and pointing yours at a quiver instead of the loose stack
+  is an arrangement, like which pocket you keep it in.
 - **`settings.showSourceTags` turns on SRD and 3PP tags.** CC always shows: knowing a thing is not
   official content matters whether or not you asked. Tagging every row "SRD" on a sheet where nearly
   everything is would be noise, so that one is opt-in.
