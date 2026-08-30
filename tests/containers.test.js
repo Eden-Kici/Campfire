@@ -122,4 +122,30 @@ module.exports = function (suite) {
 
   applyReceivedItem(receiver, { id: "t-1", name: "Dungeoneer's Pack", category: "Carrying", weight: 0, qty: 1, isContainer: true }, wire.contents);
   suite.is("a repeated delivery does not double the contents", receiver.inventory.length, 3);
+
+  suite.section("a bag of holding");
+  const bag = () => {
+    const holder = { id: "b-1", name: "Bag of Holding", category: "Carrying", weight: 15, qty: 1,
+                     isContainer: true, ignoresContentWeight: true };
+    const anvil = { id: "b-2", name: "Anvil", category: "Carrying", weight: 200, qty: 1, inside: "b-1" };
+    return {
+      inventory: [holder, anvil],
+      categoryRules: { Carrying: { countsWeight: true, appliesEffects: false, providesAttacks: false } },
+      purse: { pp: 0, gp: 0, ep: 0, sp: 0, cp: 0 },
+      holder: holder, anvil: anvil
+    };
+  };
+  const b = bag();
+  suite.is("the bag reports only its own weight", app.containerWeight(b, b.holder), 15);
+  suite.is("and what is in it knows which bag is cheating",
+    app.weightlessContainerFor(b, b.anvil) === b.holder, true);
+  suite.is("so two hundred pounds of anvil costs you fifteen",
+    app.calculateCarriedWeight(b).total, 15);
+
+  const ordinary = bag();
+  delete ordinary.holder.ignoresContentWeight;
+  suite.is("an ordinary bag carries what is in it",
+    app.calculateCarriedWeight(ordinary).total, 215);
+  suite.is("and nothing inside it is exempt",
+    app.weightlessContainerFor(ordinary, ordinary.anvil), null);
 };

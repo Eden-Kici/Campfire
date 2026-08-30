@@ -1095,11 +1095,21 @@ function topLevelItems(character) {
   return (character.inventory || []).filter(item => item.inside == null);
 }
 
+/* A bag of holding does not get heavier. The rule lives on the container and
+   is asked about the child, so nothing else in the app needs to know which
+   bags are magic -- the weight sum just asks whether this item is inside one. */
+function weightlessContainerFor(character, item) {
+  if (!item || item.inside == null) return null;
+  const holder = (character.inventory || []).find(row => sameId(row.id, item.inside));
+  return holder && holder.ignoresContentWeight ? holder : null;
+}
+
 // what the pack row reports: itself, plus everything in it
 function containerWeight(character, container) {
+  const own = (container.weight || 0) * (container.qty || 1);
+  if (container.ignoresContentWeight) return own;
   return containerContents(character, container)
-    .reduce((sum, item) => sum + (item.weight || 0) * (item.qty || 1),
-            (container.weight || 0) * (container.qty || 1));
+    .reduce((sum, item) => sum + (item.weight || 0) * (item.qty || 1), own);
 }
 
 function putInContainer(character, item, container) {
@@ -1252,7 +1262,9 @@ function calculateCarriedWeight(character) {
   const sources = [];
   character.inventory.forEach(item => {
     const rule = character.categoryRules[item.category];
-    if (rule && rule.countsWeight) sources.push({ label: item.name, value: item.weight * (item.qty || 1) });
+    if (!rule || !rule.countsWeight) return;
+    if (weightlessContainerFor(character, item)) return;    // inside a bag of holding
+    sources.push({ label: item.name, value: item.weight * (item.qty || 1) });
   });
   const coins = carriedCoinWeight(character);
   if (coins) sources.push({ label: totalCoins(character.purse) + " coins", value: coins });

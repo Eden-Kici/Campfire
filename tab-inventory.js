@@ -430,9 +430,9 @@ function itemRowHtml(item, cat, nested) {
     <div class="item-row${nested ? " item-nested" : ""}" data-item-view="${item.id}" data-item-id="${item.id}"
          ${container ? `data-container-row="${item.id}"` : ""} style="touch-action:pan-y;">
       <div style="flex:1;">
-        <div class="item-name">${container ? `<span class="pack-caret" data-container-toggle="${item.id}">${isOpen ? "\u25BE" : "\u25B8"}</span> ` : ""}${esc(item.name)}${item.qty > 1 ? " \u00D7" + item.qty : ""}</div>
+        <div class="item-name">${container ? `<span class="pack-caret" data-container-toggle="${item.id}">${isOpen ? "\u25BE" : "\u25B8"}</span> ` : ""}${esc(item.name)}${item.qty > 1 ? " \u00D7" + item.qty : ""}${isCustomContentItem(item) ? ` <span class="res-tag" style="background:var(--control-raised);color:var(--accent-soft);">CC</span>` : ""}</div>
         ${(rule.appliesEffects && (item.acBonus || item.attackBonus)) ? `<div class="item-effect">${item.acBonus ? formatModifier(item.acBonus) + " AC " : ""}${item.attackBonus ? formatModifier(item.attackBonus) + " Attack " : ""}</div>` : ""}
-        <div class="item-meta">${rule.countsWeight ? roundWeight(weight) + " lb" : "No weight"}${container ? " \u00b7 " + contents.length + (contents.length === 1 ? " item" : " items") : ""}</div>
+        <div class="item-meta">${rule.countsWeight ? roundWeight(weight) + " lb" : "No weight"}${container ? " \u00b7 " + contents.length + (contents.length === 1 ? " item" : " items") : ""}${container && item.ignoresContentWeight ? " \u00b7 weightless" : ""}</div>
       </div>
     </div>
     ${container && isOpen ? `<div class="pack-contents" data-pack-body="${item.id}">
@@ -450,11 +450,12 @@ function itemTypeToggleHtml(current) {
     </div>`;
 }
 
-function commonItemFieldsHtml(item) {
+function commonItemFieldsHtml(item, afterName) {
   item = item || {};
   const categories = Object.keys(character.categoryRules);
   return `
     ${textFieldHtml("if-name", "Name", item.name, { placeholder: "e.g. Potion of Healing" })}
+    ${afterName || ""}
     ${selectFieldHtml("if-category", "Category", categories, item.category || categories[0])}
     <div class="field-row">
       ${numberFieldHtml("if-weight", "Weight (lb)", item.weight != null ? item.weight : 1)}
@@ -679,10 +680,6 @@ function itemDiffersFromSource(item, baseline) {
   return !!baseline && stackSignature(item) !== stackSignature(baseline);
 }
 
-function customVariantName(name) {
-  return /\(custom\)\s*$/i.test(name) ? name : name + " (Custom)";
-}
-
 /* A changed catalogue item becomes yours for good. That is the whole point:
    the next character you build picks your version out of the same search
    rather than you re-typing the same three edits. */
@@ -693,11 +690,36 @@ function rememberCustomItem(item) {
   entry.official = false;
   entry.type = itemType(entry);
   if (!customContent.items) customContent.items = [];
-  if (customContent.items.some(existing => existing.name === entry.name)) return false;
+  /* Matched on what the thing is rather than on its name, now that a variant
+     keeps the name it came from. Two different custom longswords are two
+     entries; saving the same one twice is one. */
+  if (customContent.items.some(existing => contentShape(existing) === contentShape(entry))) return false;
   entry.id = nextCustomId("items");
   customContent.items.push(entry);
   persistCustomContent();
   return true;
+}
+
+/* A catalogue row and an inventory row describe the same thing in different
+   words: the catalogue also carries a price, an official flag, a table name
+   and, for a pack, its shopping list. None of that is the item, and comparing
+   with it left means nothing on a sheet ever matches anything in your content. */
+function contentShape(entry) {
+  const bones = Object.assign({}, entry);
+  delete bones.official;
+  delete bones.type;
+  delete bones.cost;
+  delete bones.contents;
+  return stackSignature(bones);
+}
+
+/* Whether this row on the sheet is one of yours. Asked by shape rather than by
+   name, because a variant deliberately keeps the name of the catalogue row it
+   came from. */
+function isCustomContentItem(item) {
+  if (typeof customContent === "undefined" || !customContent.items) return false;
+  const shape = contentShape(item);
+  return customContent.items.some(entry => contentShape(entry) === shape);
 }
 
 function itemSearchResultsHtml(matches) {
@@ -705,8 +727,8 @@ function itemSearchResultsHtml(matches) {
   return matches.map((entry, index) => `
     <div class="res-row" data-pick-item="${index}" style="cursor:pointer;">
       <div>
-        <div class="res-name">${esc(entry.name)}</div>
-        <div class="atk-range">${esc(itemTypeLabel(itemType(entry)))}${entry.cost ? " \u00b7 " + esc(entry.cost) : ""}${entry.official === false ? " \u00b7 Yours" : ""}</div>
+        <div class="res-name">${esc(entry.name)}${entry.official === false ? ` <span class="res-tag" style="background:var(--control-raised);color:var(--accent-soft);">CC</span>` : ""}</div>
+        <div class="atk-range">${esc(itemTypeLabel(itemType(entry)))}${entry.cost ? " \u00b7 " + esc(entry.cost) : ""}</div>
       </div>
       <span class="add-link">Use</span>
     </div>
@@ -762,12 +784,14 @@ function openAddInventoryModal(presetCategory, presetType) {
         })
       : { category: defaultCat };
 
+    /* One field, not two. Typing a name searches for it; picking a result
+       fills the form in and leaves the name where you were already looking.
+       A separate "Search content" box above a "Name" box asked the player to
+       understand the difference before they had done anything. */
     body.innerHTML = `
-      ${textFieldHtml("item-search", "Search content", "", { placeholder: "Longsword, Chain Shirt, Potion\u2026" })}
-      <div id="item-search-results"></div>
-      ${pickedSource ? `<div class="breakdown-source" style="margin:10px 0 2px;">Based on ${esc(pickedSource.name)} \u00b7 <span class="add-link" id="item-clear-pick">start blank</span></div>` : ""}
       ${itemTypeToggleHtml(state.type)}
-      ${commonItemFieldsHtml(prefill)}
+      ${commonItemFieldsHtml(prefill, `<div id="item-search-results"></div>
+        ${pickedSource ? `<div class="breakdown-source" style="margin:2px 0 10px;">From ${esc(pickedSource.name)} \u00b7 <span class="add-link" id="item-clear-pick">start blank</span></div>` : ""}`)}
       <div id="type-fields"></div>
       <button class="btn-primary" id="save-item-button" style="margin-top:16px;">Add Item</button>
     `;
@@ -787,11 +811,10 @@ function openAddInventoryModal(presetCategory, presetType) {
 
     document.getElementById("save-item-button").addEventListener("click", () => {
       const item = buildItemFromForm(state);
+      // a changed catalogue row keeps its name and is marked as yours instead.
+      // "Longsword (Custom)" made every variant read like a different weapon
       let kept = false;
-      if (itemDiffersFromSource(item, pickedBaseline)) {
-        item.name = customVariantName(item.name);
-        kept = rememberCustomItem(item);
-      }
+      if (itemDiffersFromSource(item, pickedBaseline)) kept = rememberCustomItem(item);
       item.id = makeId(character.inventory);
       // the form has no field for "is a pack", so it comes off the row picked
       if (pickedSource && pickedSource.isContainer) item.isContainer = true;
@@ -810,7 +833,7 @@ function openAddInventoryModal(presetCategory, presetType) {
   }
 
   function wireItemSearch() {
-    const input = document.getElementById("item-search");
+    const input = document.getElementById("if-name");
     const results = document.getElementById("item-search-results");
     let matches = [];
     input.addEventListener("input", () => {
@@ -818,6 +841,8 @@ function openAddInventoryModal(presetCategory, presetType) {
       matches = query
         ? allInventoryItems().filter(entry => entry.name.toLowerCase().indexOf(query) !== -1).slice(0, 8)
         : [];
+      // an exact match is what you already picked; offering it back is noise
+      if (matches.length === 1 && matches[0].name.toLowerCase() === query) matches = [];
       results.innerHTML = itemSearchResultsHtml(matches);
       results.querySelectorAll("[data-pick-item]").forEach(row => {
         row.addEventListener("click", () => pickCatalogueItem(matches[parseInt(row.dataset.pickItem)]));
@@ -1008,11 +1033,42 @@ function openItemDetailModal(itemId) {
       { hint: "For things you spend, like arrows", style: "margin-top:14px;" })}
     <div id="detail-resource-fields">${item.resource ? itemResourceFieldsHtml(item.resource) : ""}</div>
     ${item.resource ? `<button class="btn-primary" id="detail-resource-save">Save Tracking</button>` : ""}
+    ${toggleLineHtml("detail-container-switch", "Turn into container", isContainerItem(item),
+      { hint: "Other items can be dragged inside it" })}
+    ${isContainerItem(item) ? toggleLineHtml("detail-weightless-switch", "Contents weigh nothing",
+      !!item.ignoresContentWeight, { hint: "For a bag of holding, or anything else that cheats" }) : ""}
   `);
 
   const offHandSwitch = document.getElementById("item-offhand-switch");
   if (offHandSwitch) offHandSwitch.addEventListener("click", () => {
     item.offHand = !item.offHand;
+    closeModal();
+    renderContent();
+    openItemDetailModal(itemId);
+  });
+
+  /* Anything can be a container: a barrel, a chest, a saddlebag, a bag of
+     holding. Turning it off tips out what was inside rather than stranding it
+     pointing at something that no longer holds anything. */
+  const containerSwitch = document.getElementById("detail-container-switch");
+  if (containerSwitch && containerSwitch.addEventListener) containerSwitch.addEventListener("click", () => {
+    if (isContainerItem(item)) {
+      const spilled = emptyContainer(character, item);
+      delete item.isContainer;
+      delete item.ignoresContentWeight;
+      if (spilled.length) showToast(spilled.length + (spilled.length === 1 ? " item" : " items") + " tipped out");
+    } else {
+      item.isContainer = true;
+      openInvContainers[item.id] = true;
+    }
+    closeModal();
+    renderContent();
+    openItemDetailModal(itemId);
+  });
+
+  const weightlessSwitch = document.getElementById("detail-weightless-switch");
+  if (weightlessSwitch && weightlessSwitch.addEventListener) weightlessSwitch.addEventListener("click", () => {
+    item.ignoresContentWeight = !item.ignoresContentWeight;
     closeModal();
     renderContent();
     openItemDetailModal(itemId);

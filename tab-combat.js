@@ -486,9 +486,16 @@ function applyHp(type, amount) {
   const maxHP = calculateMaxHP(character);
 
   if (type === "heal") {
+    /* A Bonus effect on Healing lifts every point of it -- a ring that makes
+       potions work harder, a Life cleric's Disciple of Life. Added once to the
+       amount rather than to each die, because the effect describes the healing
+       received, not the roll that produced it. */
+    const lift = effectsAffectingStat(character, "Healing")
+      .reduce((sum, effect) => sum + effectAmount(character, effect), 0);
+    const healed = Math.max(0, amount + lift);
     // any healing above zero brings you round and wipes the death save tracks
     const wasDown = character.hp.current <= 0;
-    character.hp.current = Math.min(maxHP.total, character.hp.current + amount);
+    character.hp.current = Math.min(maxHP.total, character.hp.current + healed);
     if (wasDown && character.hp.current > 0) resetDeathSaves(character);
     return;
   }

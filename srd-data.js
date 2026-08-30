@@ -139,7 +139,7 @@ const WEAPON_PROPERTY_INFO = {
   "Versatile": "This weapon can be used with one or two hands. The damage in parentheses is the damage when it is used with two hands to make a melee attack."
 };
 
-const MODIFIER_STATS = ["AC", "Initiative", "Speed", "Attack Rolls", "Damage Rolls", "Proficiency Bonus", "Spell Attack", "Spell DC"];
+const MODIFIER_STATS = ["AC", "Initiative", "Speed", "Attack Rolls", "Damage Rolls", "Healing", "Proficiency Bonus", "Spell Attack", "Spell DC"];
 const EFFECT_CATEGORIES_GENERAL = ["Condition", "Ability Score", "Saving Throw", "Skill", "Bonus", "Advantage", "Reroll"];
 const EFFECT_CATEGORIES_FEATURE = ["Ability Score", "Saving Throw", "Skill", "Bonus", "Advantage", "Reroll"];
 

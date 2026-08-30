@@ -108,6 +108,14 @@ These are load-bearing and easy to break:
   `{ countsWeight, appliesEffects, providesAttacks }`. Armour only contributes AC from a category
   with `appliesEffects`; weapons only appear under Attacks from one with `providesAttacks`.
   Stowing a weapon moves its category, it never deletes anything.
+- **`APP_VERSION` in app.js is shown under Development in the menu, and is bumped by hand.** Bump it
+  whenever you change something a player would notice, so "which build is this phone running" has an
+  answer during a demo instead of a guess.
+- **Any item can be made a container** from its detail view, next to Track under Resources — a
+  barrel, a chest, a saddlebag. `ignoresContentWeight` is the second toggle: a bag of holding
+  reports only its own weight, and `weightlessContainerFor()` is what the weight sum asks about each
+  item, so nothing else in the app needs to know which bags are magic. Turning the toggle off tips
+  the contents out rather than stranding them pointing at something that no longer holds anything.
 - **A pack is a real container.** The relationship lives on the *child* — `item.inside` holds the
   container's id — rather than as a nested array on the parent, so the inventory stays one flat
   list and everything that already walks `character.inventory` (weight, attacks, effects, giving,
@@ -136,6 +144,13 @@ These are load-bearing and easy to break:
   cannot express, so comparing directly would flag every pick as modified. Quantity and category are
   excluded — buying three is not inventing a new thing, and where it sits on your sheet is where you
   keep it rather than what it is. `stackSignature()` already ignores both, so it does the comparing.
+  A variant **keeps the name it came from** and carries a `CC` tag instead of a "(Custom)" suffix,
+  which made every variation read like a different weapon. That means your content is matched by
+  shape rather than by name: `contentShape()` strips the catalogue-only bookkeeping (`official`,
+  `type`, `cost`, `contents`) so a row on a sheet can be recognised as one of yours at all.
+- **The Name field is the search field.** One box: typing a name searches the catalogue, picking a
+  result fills the form and leaves the name where you were already looking. Two boxes asked the
+  player to understand the difference before they had done anything.
 - **Ids are `"<device>-<n>"` strings.** `identity.js` mints a six-character device id on first use
   and keeps it in `campfire.device`; `makeId(list)` still counts within the one array and prefixes
   it, so ids stay short and readable while being unique across installs. Saves written before this
@@ -322,6 +337,19 @@ first-ever launch does. Tutorial tests set `tutorialState` by hand instead.
 - No attribution ships anywhere in the app: every mention of CC-BY, the SRD and 5esrd.com is in a
   source comment. No LICENSE file, no credits screen. CC-BY requires attribution in the distributed
   work.
+
+## Gestures on a phone
+
+Long-pressing a row to drag it also asks iOS to select the text under the finger and pop the callout
+menu, which cancels the pointer stream halfway through — so a hold-drag or a sideways swipe works,
+then doesn't, with nothing visible to tell the two apart. Selection and the tap highlight are turned
+off on the things you drag and tap (`.item-row`, `.note-row`, chips, tabs, coin cells) and left alone
+on inputs and textareas. `#content` carries `touch-action: pan-y`, which hands vertical panning to
+the browser and keeps horizontal for the swipe handler rather than racing it.
+
+**None of this can be verified here.** Chromium under Playwright does not reproduce iOS's selection
+and callout behaviour, so a green browser run says nothing about whether a gesture feels right under
+a thumb. Test gestures on the phone.
 
 ## Writing copy
 

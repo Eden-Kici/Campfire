@@ -505,6 +505,8 @@ function wireCombo(id, options, onChange) {
 function wireConditionField(idPrefix, existingValue) {
   const extra = document.getElementById(idPrefix + "-condition-extra");
   if (!extra) return;
+  const input = document.getElementById(idPrefix + "-condition");
+  const results = document.getElementById(idPrefix + "-condition-results");
 
   function reveal(condition) {
     const isExhaustion = String(condition).trim().toLowerCase() === "exhaustion";
@@ -516,7 +518,36 @@ function wireConditionField(idPrefix, existingValue) {
       { min: 1, max: 6 });
   }
 
-  wireCombo(idPrefix + "-condition", ALL_CONDITIONS, reveal);
+  if (!input || !results) return;
+
+  function redraw() {
+    const query = input.value.trim().toLowerCase();
+    // nothing until you type, exactly as Add Item behaves -- the condition
+    // list is long enough that showing all of it buries the rest of the form
+    let matches = query
+      ? ALL_CONDITIONS.filter(name => name.toLowerCase().indexOf(query) !== -1)
+      : [];
+    // an exact match is what you already typed; offering it back is noise
+    if (matches.length === 1 && matches[0].toLowerCase() === query) matches = [];
+
+    results.innerHTML = matches.slice(0, 8).map(name => `
+      <div class="res-row" data-pick-condition="${esc(name)}" style="cursor:pointer;">
+        <div class="res-name">${esc(name)}</div>
+        <span class="add-link">Use</span>
+      </div>
+    `).join("");
+
+    results.querySelectorAll("[data-pick-condition]").forEach(row => {
+      row.addEventListener("click", () => {
+        input.value = row.dataset.pickCondition;
+        results.innerHTML = "";
+        reveal(input.value);
+      });
+    });
+  }
+
+  input.addEventListener("input", () => { redraw(); reveal(input.value); });
+  redraw();
   if (existingValue && existingValue.condition) reveal(existingValue.condition);
 }
 
@@ -527,7 +558,12 @@ function wireConditionField(idPrefix, existingValue) {
    tier list, so the amount fields below need to know up front. */
 function effectSubfieldsHtml(category, idPrefix, existingValue) {
   if (category === "Condition") {
-    return comboFieldHtml(idPrefix + "-condition", "Condition", "Choose one, or type your own") +
+    /* The same list Add Item uses. A dropdown that appears over the form is
+       fine with a mouse and awkward with a thumb; a list that pushes the form
+       down is one you can see and hit. */
+    return textFieldHtml(idPrefix + "-condition", "Condition", "",
+        { placeholder: "Type to search, or write your own" }) +
+      `<div id="${idPrefix}-condition-results"></div>` +
       `<div id="${idPrefix}-condition-extra"></div>`;
   }
   if (category === "Advantage") {

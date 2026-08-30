@@ -1220,3 +1220,29 @@ input[type="text"], input[type="number"], textarea { font-size: 16px; }
    merging and packing are different acts and should not look identical. */
 .item-row.pack-ready { outline: 1px dashed var(--text-dim); outline-offset: -3px; }
 .item-row.pack-hover { outline: 2px solid var(--text); outline-offset: -3px; background: var(--control-raised); }
+
+/* Gestures on a phone.
+
+   Long-pressing a row to drag it also asks iOS to select the text under the
+   finger and pop the callout menu, which cancels the pointer stream halfway
+   through -- so a hold-drag or a sideways swipe would work, then not work,
+   with nothing to tell them apart. Selection is turned off on the things you
+   drag and tap, and left alone on the things you type into.
+
+   `touch-action: pan-y` on the scroller claims vertical panning for the
+   browser and leaves horizontal to us, which is what makes a swipe between
+   tabs land consistently rather than racing the scroll. */
+.phone { -webkit-tap-highlight-color: transparent; }
+#content { touch-action: pan-y; }
+
+.item-row, .note-row, .section-head-row, .tab-item, .chip, .coin-cell,
+.res-row, .recipient-row, .member-row, .char-card, .drawer-item, .toggle-btn {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input, textarea, select, .note-body-field, .note-title-field {
+  -webkit-user-select: text;
+  user-select: text;
+}

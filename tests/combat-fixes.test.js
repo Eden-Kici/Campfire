@@ -191,4 +191,37 @@ module.exports = function (suite) {
     "in the shared four-column grid d12 and d20 sat alone on a second row");
   suite.ok("the death panel is still in there", /id="calc-death-saves"/.test(calc.html));
   suite.ok("with no ids from the shared block", !/id="roll-death-save"/.test(calc.html));
+
+  suite.section("a Bonus on Healing lifts every point of it");
+  /* A ring that makes potions work harder, a Life cleric's Disciple of Life.
+     It describes the healing received, not the roll that produced it, so it is
+     added once to the amount rather than to each die. */
+  const healSheet = app.character;
+  healSheet.activeEffects = [];
+  healSheet.hp.current = 10;
+  app.applyHp("heal", 5);
+  const plain = healSheet.hp.current;
+  suite.is("with no effect, five points is five points", plain, 15);
+
+  healSheet.hp.current = 10;
+  healSheet.activeEffects = [{
+    id: "h-1", name: "Disciple of Life", concentration: false,
+    duration: { type: "Permanent", rounds: null },
+    effects: [{ category: "Bonus", value: { stat: "Healing", amount: 3 } }]
+  }];
+  app.applyHp("heal", 5);
+  suite.is("with a +3, five points heals eight", healSheet.hp.current, 18);
+
+  /* A negative one cannot turn healing into damage. */
+  healSheet.hp.current = 10;
+  healSheet.activeEffects = [{
+    id: "h-2", name: "Cursed", concentration: false,
+    duration: { type: "Permanent", rounds: null },
+    effects: [{ category: "Bonus", value: { stat: "Healing", amount: -20 } }]
+  }];
+  app.applyHp("heal", 5);
+  suite.is("a penalty bigger than the healing stops at nothing, it does not wound",
+    healSheet.hp.current, 10);
+  suite.ok("Healing is offered in the Bonus list", app.MODIFIER_STATS.indexOf("Healing") !== -1);
+  healSheet.activeEffects = [];
 };

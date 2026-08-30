@@ -3,8 +3,8 @@
 
 module.exports = function (suite) {
   const app = require("./harness").loadApp();
-  const { allInventoryItems, customVariantName, itemDiffersFromSource,
-          rememberCustomItem, stackSignature, itemType } = app;
+  const { allInventoryItems, itemDiffersFromSource, isCustomContentItem,
+          rememberCustomItem, contentShape, itemType } = app;
 
   suite.section("what the search looks through");
   const catalogue = allInventoryItems();
@@ -20,12 +20,6 @@ module.exports = function (suite) {
   suite.ok("your own content is in it too", withMine.some(i => i.name === "Zzz Test Blade"));
   suite.is("and comes first, because a custom Longsword is the one you meant",
     withMine[0].name, "Zzz Test Blade");
-
-  suite.section("naming a variant");
-  suite.is("a change earns a suffix", customVariantName("Longsword"), "Longsword (Custom)");
-  suite.is("changing it again does not stack suffixes",
-    customVariantName("Longsword (Custom)"), "Longsword (Custom)");
-  suite.is("whatever the casing was", customVariantName("Longsword (custom)"), "Longsword (custom)");
 
   suite.section("what counts as changing it");
   const base = { name: "Longsword", category: "Equipped", weight: 3, qty: 1, isWeapon: true,
@@ -52,7 +46,9 @@ module.exports = function (suite) {
 
   suite.section("keeping it");
   const before = app.customContent.items.length;
-  const variant = like({ name: "Longsword (Custom)", magicBonus: 1, id: 77 });
+  /* A variant keeps the name it came from and is marked as yours instead --
+     "Longsword (Custom)" made every variation read like a different weapon. */
+  const variant = like({ magicBonus: 1, id: 77 });
   suite.is("a variant is kept", rememberCustomItem(variant), true);
   suite.is("in your content", app.customContent.items.length, before + 1);
 
@@ -62,7 +58,17 @@ module.exports = function (suite) {
   suite.is("without the quantity you happened to buy", "qty" in kept, false);
   suite.is("and with an id of its own, not the inventory row's", kept.id === 77, false);
 
-  suite.is("keeping the same name twice does not duplicate it", rememberCustomItem(variant), false);
+  suite.is("it keeps the name it came from", kept.name, "Longsword");
+  suite.is("saving the very same variant again does not duplicate it", rememberCustomItem(variant), false);
   suite.is("so your content has one of them", app.customContent.items.length, before + 1);
-  suite.ok("and it is now searchable", allInventoryItems().some(i => i.name === "Longsword (Custom)"));
+
+  /* Matched on shape, not name: a second, different custom longsword is a
+     second entry rather than a collision. */
+  suite.is("but a different variant of the same thing is its own entry",
+    rememberCustomItem(like({ weight: 9, id: 78 })), true);
+  suite.is("so now there are two", app.customContent.items.length, before + 2);
+
+  suite.section("knowing one on sight");
+  suite.is("a row matching your content is flagged", isCustomContentItem(like({ magicBonus: 1 })), true);
+  suite.is("a plain catalogue row is not", isCustomContentItem(like()), false);
 };

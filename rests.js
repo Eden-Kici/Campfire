@@ -727,6 +727,7 @@ function openAppMenu() {
     ` : ""}
 
     <div class="drawer-section">Development</div>
+    <div class="drawer-item" style="cursor:default;">Version<span class="drawer-hint">${esc(APP_VERSION)}</span></div>
     <button class="drawer-item" id="menu-reset-demo">Reset to Demo Character<span class="drawer-hint">clears saved data</span></button>
   `);
   const on = (id, handler) => { const el = document.getElementById(id); if (el) el.addEventListener("click", handler); };
