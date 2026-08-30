@@ -109,10 +109,11 @@ function createNote(sectionId) {
   if (section.autoShare) {
     note.sharing = {
       sharedByMe: true, continuous: true,
-      sharedWith: partyMemberNames(party.members, deviceId()).map(m => ({ name: m, permission: "edit" }))
+      sharedWith: partyMemberList(party.members, deviceId()).map(m => ({ name: m.name, device: m.device, permission: "edit" }))
     };
   }
   character.notes.push(note);
+  partyResendNote(note);
   openNoteSections[sectionId] = true;
   renderContent();
   openNoteEditorModal(newId);
@@ -219,8 +220,9 @@ function maybeSyncNoteSharingToSection(note, targetSection) {
       onConfirm: () => {
         note.sharing = {
           sharedByMe: true, continuous: true,
-          sharedWith: partyMemberNames(party.members, deviceId()).map(m => ({ name: m, permission: "edit" }))
+          sharedWith: partyMemberList(party.members, deviceId()).map(m => ({ name: m.name, device: m.device, permission: "edit" }))
         };
+        partyResendNote(note);
         renderContent();
       }
     });
@@ -229,7 +231,11 @@ function maybeSyncNoteSharingToSection(note, targetSection) {
       title: "Stop sharing this note?",
       body: `"${targetSection.name}" doesn't auto-share notes.`,
       confirmLabel: "Stop sharing", danger: true,
-      onConfirm: () => { note.sharing = null; renderContent(); }
+      onConfirm: () => {
+        partyUnshareNote(note.id, (note.sharing.sharedWith || []).map(m => m.device).filter(Boolean));
+        note.sharing = null;
+        renderContent();
+      }
     });
   }
 }
@@ -358,6 +364,7 @@ function openNoteEditorModal(noteId) {
     note.title = document.getElementById("note-title-input").value;
     note.body = document.getElementById("note-body-input").value;
     note.updatedAt = Date.now();
+    partyResendNoteSoon(note);   // debounced; no-op unless shared continuously
   }
   if (!isReadOnly) {
     document.getElementById("note-title-input").addEventListener("input", commit);
@@ -424,11 +431,15 @@ function deleteNoteWithConfirm(noteId) {
 }
 
 function openShareModal(noteId) {
-  const note = character.notes.find(n => n.id === noteId);
+  const note = character.notes.find(n => sameId(n.id, noteId));
+  // keyed by device, not name: two players can bring characters with the same
+  // name, and the thing we ultimately send to is the device
   const existing = {};
   if (note.sharing && note.sharing.sharedByMe) {
-    note.sharing.sharedWith.forEach(m => { existing[m.name] = m.permission; });
+    note.sharing.sharedWith.forEach(m => { if (m.device) existing[m.device] = m.permission; });
   }
+  const wasSharedWith = note.sharing && note.sharing.sharedByMe
+    ? note.sharing.sharedWith.map(m => m.device).filter(Boolean) : [];
   let continuous = note.sharing && note.sharing.sharedByMe ? note.sharing.continuous : true;
 
   openModal("full", `
@@ -436,13 +447,13 @@ function openShareModal(noteId) {
     ${toggleLineHtml("sw-continuous", "Keep updated for everyone (continuous)", continuous)}
     ${fieldLabelHtml("Party", { style: "margin-top:14px;" })}
     <div id="share-member-list">
-      ${partyMemberNames(party.members, deviceId()).map(m => {
-        const perm = existing[m] || "off";
+      ${partyMemberList(party.members, deviceId()).map(m => {
+        const perm = existing[m.device] || "off";
         const label = perm === "off" ? "Not shared" : (perm === "edit" ? "Can Edit" : "Can View");
         return `
           <div class="member-row">
-            <span>${esc(m)}</span>
-            <button class="toggle-btn" data-perm="${perm}" data-member-btn="${esc(m)}">${esc(label)}</button>
+            <span>${esc(m.name)}</span>
+            <button class="toggle-btn" data-perm="${perm}" data-member-btn="${esc(m.name)}" data-member-device="${esc(m.device)}">${esc(label)}</button>
           </div>
         `;
       }).join("")}
@@ -465,17 +476,29 @@ function openShareModal(noteId) {
   document.getElementById("save-share-button").addEventListener("click", () => {
     const sharedWith = [];
     document.querySelectorAll("[data-member-btn]").forEach(btn => {
-      if (btn.dataset.perm !== "off") sharedWith.push({ name: btn.dataset.memberBtn, permission: btn.dataset.perm });
+      if (btn.dataset.perm !== "off") {
+        sharedWith.push({ name: btn.dataset.memberBtn, device: btn.dataset.memberDevice, permission: btn.dataset.perm });
+      }
     });
     note.sharing = sharedWith.length ? { sharedByMe: true, continuous, sharedWith } : null;
+
+    /* Anyone dropped from the list has to be told, or their copy sits there
+       looking shared forever. Taking something back is as much a part of
+       sharing as handing it over. */
+    const nowShared = sharedWith.map(m => m.device);
+    partyUnshareNote(note.id, wasSharedWith.filter(d => nowShared.indexOf(d) === -1));
+    const sent = partyShareNote(note, sharedWith.filter(m => m.device));
+
     closeModal();
     renderContent();
+    if (sharedWith.length) showToast(sent ? "Shared with " + sent + (sent === 1 ? " player" : " players") : "Not connected \u2014 nothing sent");
     openNoteEditorModal(noteId);
   });
 
   const stopBtn = document.getElementById("stop-share-button");
   if (stopBtn) {
     stopBtn.addEventListener("click", () => {
+      partyUnshareNote(note.id, (note.sharing.sharedWith || []).map(m => m.device).filter(Boolean));
       note.sharing = null;
       closeModal();
       renderContent();

@@ -11,7 +11,7 @@
    an update -- the old cache is dropped on activate, so bumping the version is
    the whole deploy story. */
 
-const CACHE_NAME = "campfire-v5";
+const CACHE_NAME = "campfire-v6";
 
 const ASSETS = [
   "./",

@@ -176,10 +176,12 @@ Items 1 and 2 of the original list are **done**: the repo is live at
 `https://eden-kici.github.io/Campfire/` and both iPhones are installed and confirmed in Aeroplane
 Mode.
 
-The party (§4) is **built, and its thin slice is complete** — device identity, host and join by room
-code, a live roster honouring the host's visibility settings, and pushing an effect group onto
-another player's sheet. All of it verified with two browsers against a local relay. It has **not yet
-been run on the two phones against the deployed relay**, and that is the next thing.
+The party (§4) is **built and complete, past the thin slice** — device identity, host and join by
+room code, a live roster honouring the host's visibility settings, pushing an effect group onto
+another player's sheet, note sharing with per-person view/edit, and item giving with an
+acknowledgement so a gift nobody receives comes back. All verified with two browsers against a local
+relay; the roster and effect push have also been run on the two phones against the deployed relay.
+**Note sharing and item giving have not yet been run on the phones.**
 
 1. Push, then open the app on both phones. Host on one, join on the other with the four-character
    code. Watch a hit-point change on one appear on the other.

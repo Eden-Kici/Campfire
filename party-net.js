@@ -191,6 +191,54 @@ function handlePartyMessage(raw) {
     return;
   }
 
+  if (msg.t === "item") {
+    if (msg.to !== deviceId()) return;
+    // an unopened sheet cannot take delivery, so say nothing back and let the
+    // giver's timeout hand it to them again
+    if (currentScreen !== "sheet") { showToast(msg.fromName + " is giving you something \u2014 open a character"); return; }
+
+    const landed = receivedItem(msg.item, character, msg.transferId);
+    applyReceivedItem(character, landed.item);
+    if (msg.from) partySend("item-ack", { transferId: msg.transferId, to: msg.from });
+
+    const what = landed.item.qty > 1 ? landed.item.qty + " " + landed.item.name : landed.item.name;
+    showToast(landed.missing.length
+      ? msg.fromName + " gave you " + what + " \u2014 no " + landed.missing.join(" or ") + " here, so it arrived unlinked"
+      : msg.fromName + " gave you " + what);
+    renderContent();
+    return;
+  }
+
+  if (msg.t === "item-ack") {
+    if (msg.to !== deviceId()) return;
+    const pending = pendingGives[msg.transferId];
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    delete pendingGives[msg.transferId];
+    return;
+  }
+
+  if (msg.t === "note") {
+    if (msg.to !== deviceId()) return;
+    if (currentScreen !== "sheet") { showToast(msg.fromName + " shared a note \u2014 open a character"); return; }
+    const known = (character.notes || []).some(n => sameId(n.id, msg.note.id));
+    const placed = applySharedNote(character, receivedNote(msg.note, msg.fromName, msg.permission));
+    showToast(known ? msg.fromName + " updated \u201c" + (placed.title || "a note") + "\u201d"
+                    : msg.fromName + " shared \u201c" + (placed.title || "a note") + "\u201d");
+    renderContent();
+    return;
+  }
+
+  if (msg.t === "note-unshare") {
+    if (msg.to !== deviceId()) return;
+    if (currentScreen !== "sheet") return;
+    const gone = removeSharedNote(character, msg.id);
+    if (!gone) return;
+    showToast(msg.fromName + " stopped sharing \u201c" + (gone.title || "a note") + "\u201d");
+    renderContent();
+    return;
+  }
+
   if (msg.t === "effect") {
     if (msg.to !== "*" && msg.to !== deviceId()) return;
     if (currentScreen !== "sheet") { showToast(msg.fromName + " sent " + msg.group.name + " — open a character"); return; }
@@ -201,10 +249,96 @@ function handlePartyMessage(raw) {
   }
 }
 
+/* Sharing is per recipient, because the permission is. One message each
+   rather than one broadcast, so "can edit" for one person and "can view" for
+   another is a thing the protocol can actually say. */
+function partyShareNote(note, recipients) {
+  const me = party.members.find(m => m.you);
+  const fromName = me ? me.name : settings.username;
+  let sent = 0;
+  (recipients || []).forEach(r => {
+    if (partySend("note", { note: wireNote(note), to: r.device, permission: r.permission, fromName: fromName })) sent += 1;
+  });
+  return sent;
+}
+
+function partyUnshareNote(noteId, devices) {
+  const me = party.members.find(m => m.you);
+  const fromName = me ? me.name : settings.username;
+  (devices || []).forEach(device => partySend("note-unshare", { id: noteId, to: device, fromName: fromName }));
+}
+
+/* Re-sends a note that is shared continuously, to everyone it is shared with.
+   Called from the editor's save, so "keep updated for everyone" means what it
+   says instead of being a snapshot with a friendlier label. */
+function partyResendNote(note) {
+  if (!note.sharing || !note.sharing.sharedByMe || !note.sharing.continuous) return 0;
+  return partyShareNote(note, note.sharing.sharedWith.filter(r => r.device));
+}
+
+/* The note editor commits on every keystroke, which is right for saving and
+   very wrong for sending: typing a paragraph would be a message per letter.
+   Typing pauses are where a reader is actually able to read anything, so the
+   send waits for one. */
+let noteResendTimer = null;
+function partyResendNoteSoon(note) {
+  if (!note.sharing || !note.sharing.sharedByMe || !note.sharing.continuous) return;
+  clearTimeout(noteResendTimer);
+  noteResendTimer = setTimeout(() => partyResendNote(note), 700);
+}
+
+/* Giving is the only thing in this app that destroys something on this phone
+   in order to create it on another, so it is the only thing that waits to hear
+   back. The item leaves your bag immediately, because a demo where you tap
+   Give and nothing happens for a second reads as broken -- but it is held
+   aside, and if nobody acknowledges it within a few seconds it comes back.
+
+   Without this, one message lost in flight destroys the item for both players
+   and neither of them ever finds out. */
+const GIVE_ACK_TIMEOUT = 8000;
+let pendingGives = {};
+
+function partyGiveItem(item, qty, toDevice) {
+  const me = party.members.find(m => m.you);
+  const transferId = makeId(character.inventory);
+  const parcel = Object.assign({}, item, { qty: qty });
+  const ok = partySend("item", {
+    transferId: transferId,
+    item: wireItem(parcel),
+    to: toDevice,
+    from: deviceId(),
+    fromName: me ? me.name : settings.username
+  });
+  if (!ok) return null;
+
+  pendingGives[transferId] = {
+    item: JSON.parse(JSON.stringify(item)),
+    qty: qty,
+    timer: setTimeout(() => giveWentUnanswered(transferId), GIVE_ACK_TIMEOUT)
+  };
+  return transferId;
+}
+
+function giveWentUnanswered(transferId) {
+  const pending = pendingGives[transferId];
+  if (!pending) return;
+  delete pendingGives[transferId];
+
+  // back in the bag: onto the original stack if it survived, as its own row if
+  // the whole thing was handed over
+  const stack = character.inventory.find(i => sameId(i.id, pending.item.id));
+  if (stack) stack.qty = (stack.qty || 0) + pending.qty;
+  else character.inventory.push(Object.assign({}, pending.item, { qty: pending.qty }));
+
+  showToast("No answer \u2014 kept your " + pending.item.name);
+  renderContent();
+}
+
 function partyPushEffect(group, toDevice) {
   const me = party.members.find(m => m.you);
   return partySend("effect", {
-    group: group,
+    // flattened at our level, not theirs -- see wireEffectGroup
+    group: wireEffectGroup(group, totalLevel(character)),
     to: toDevice || "*",
     fromName: me ? me.name : settings.username
   });

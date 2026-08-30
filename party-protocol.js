@@ -65,6 +65,12 @@ function clampText(value, max, fallback) {
   return text ? text.slice(0, max) : fallback;
 }
 
+function clampNumber(value, min, max) {
+  const n = Number(value);
+  if (!isFinite(n)) return null;
+  return Math.min(max, Math.max(min, n));
+}
+
 function clampWhole(value, min, max) {
   const n = Math.round(Number(value));
   if (!isFinite(n)) return null;
@@ -163,6 +169,26 @@ function readEffectGroup(raw) {
   };
 }
 
+/* An effect's strength is decided by whoever cast it. But a scaling amount is
+   stored as a tiers table and resolved against whoever is *holding* the
+   effect, so pushing one across untouched is wrong twice over: the number
+   silently changes to suit the recipient's level, and readEffectValue drops
+   the table on arrival anyway -- it keeps only plain values -- leaving the
+   effect with no amount at all.
+
+   So the sender flattens it at their own level before it goes. The wire
+   format carries numbers, never tables, which is also why the validator on
+   the far side can stay as strict as it is. */
+function wireEffectGroup(group, senderLevel) {
+  const flat = JSON.parse(JSON.stringify(group));
+  (flat.effects || []).forEach(row => {
+    if (row && row.value && row.value.amount && typeof row.value.amount === "object") {
+      row.value.amount = resolveScalingValue(row.value.amount, senderLevel);
+    }
+  });
+  return flat;
+}
+
 /* ---------- messages ---------- */
 
 function partyMessage(type, payload) {
@@ -197,6 +223,47 @@ function parsePartyMessage(raw) {
   if (msg.t === "bye") {
     if (typeof msg.device !== "string") return null;
     return { t: "bye", device: msg.device };
+  }
+
+  if (msg.t === "item") {
+    const item = readItem(msg.item);
+    if (!item || msg.transferId == null) return null;
+    return {
+      t: "item", item: item,
+      transferId: String(msg.transferId).slice(0, 40),
+      to: typeof msg.to === "string" ? msg.to : "*",
+      from: typeof msg.from === "string" ? msg.from : null,
+      fromName: clampText(msg.fromName, 40, "Someone")
+    };
+  }
+
+  if (msg.t === "item-ack") {
+    if (msg.transferId == null) return null;
+    return {
+      t: "item-ack",
+      transferId: String(msg.transferId).slice(0, 40),
+      to: typeof msg.to === "string" ? msg.to : "*"
+    };
+  }
+
+  if (msg.t === "note") {
+    const note = readNote(msg.note);
+    if (!note) return null;
+    return {
+      t: "note", note: note,
+      to: typeof msg.to === "string" ? msg.to : "*",
+      permission: msg.permission === "edit" ? "edit" : "view",
+      fromName: clampText(msg.fromName, 40, "Someone")
+    };
+  }
+
+  if (msg.t === "note-unshare") {
+    if (msg.id == null) return null;
+    return {
+      t: "note-unshare", id: String(msg.id).slice(0, 40),
+      to: typeof msg.to === "string" ? msg.to : "*",
+      fromName: clampText(msg.fromName, 40, "Someone")
+    };
   }
 
   if (msg.t === "effect") {
@@ -235,6 +302,237 @@ function dropRosterEntry(members, device) {
    a change from the four hardcoded names those screens used to show. */
 function partyMemberNames(members, myDevice) {
   return (members || []).filter(m => m.device !== myDevice).map(m => m.name);
+}
+
+/* The same list, with the address attached. Sharing has to record *who* in a
+   way that survives two players having the same character name, so anything
+   that will later send something keeps the device rather than the name. */
+function partyMemberList(members, myDevice) {
+  return (members || [])
+    .filter(m => m.device !== myDevice)
+    .map(m => ({ name: m.name, device: m.device }));
+}
+
+/* ---------- items ---------- */
+
+/* An item is the hardest thing in this app to hand over, and none of the
+   difficulty is in the sending.
+
+   An item refers to the *holder's* world by name. Its `category` is a key into
+   their `categoryRules`, and an item in a category they have never created
+   matches no rule, so it shows under no heading and provides no attack -- it
+   arrives and is simply invisible. `ammunition` and `resource.refillFrom` name
+   a stack on the holder's sheet: hand someone a bow and it points at a quiver
+   that does not exist for them.
+
+   So the fields that describe the item travel, and the fields that describe
+   its place in someone's life do not. */
+const ITEM_TEXT_FIELDS = {
+  name: 60, description: 500, attackAbility: 8, proficiencyRequired: 20,
+  weaponType: 20, range: 30, ammunition: 60, type: 20, rarity: 20
+};
+const ITEM_NUMBER_FIELDS = {
+  weight: [0, 5000], acBonus: [-10, 10], attackBonus: [-10, 10], magicBonus: [-10, 10]
+};
+
+function readDamageRow(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  // dice notation is fed to the roll engine, so it is matched rather than
+  // merely trimmed -- "9999d99" from a stranger is a denial of service
+  const dice = clampText(raw.dice, 20, null);
+  if (!dice || !/^\s*\d{1,3}d\d{1,3}\s*([+-]\s*\d{1,3})?\s*$/.test(dice)) return null;
+  const row = { dice: dice.replace(/\s+/g, ""), type: clampText(raw.type, 30, "Bludgeoning") };
+  const ability = clampText(raw.ability, 8, null);
+  if (ability) row.ability = ability;
+  return row;
+}
+
+function readItemResource(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const resource = { max: clampWhole(raw.max, 0, 9999) || 0 };
+  if (raw.loaded != null) resource.loaded = clampWhole(raw.loaded, 0, 9999) || 0;
+  const refill = clampText(raw.refillFrom, 60, null);
+  if (refill) resource.refillFrom = refill;
+  const on = raw.recharge && clampText(raw.recharge.on, 12, null);
+  resource.recharge = { on: on || "none", amount: "all" };
+  return resource;
+}
+
+function readItem(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const name = clampText(raw.name, 60, null);
+  if (!name) return null;
+
+  const item = { name: name, qty: clampWhole(raw.qty, 1, 9999) || 1 };
+  Object.keys(ITEM_TEXT_FIELDS).forEach(key => {
+    if (key === "name") return;
+    const value = clampText(raw[key], ITEM_TEXT_FIELDS[key], null);
+    if (value) item[key] = value;
+  });
+  Object.keys(ITEM_NUMBER_FIELDS).forEach(key => {
+    if (raw[key] == null) return;
+    const bounds = ITEM_NUMBER_FIELDS[key];
+    const value = clampNumber(raw[key], bounds[0], bounds[1]);
+    if (value != null) item[key] = value;
+  });
+  if (raw.isWeapon) item.isWeapon = true;
+  if (raw.attunement) item.attunement = true;
+
+  if (Array.isArray(raw.damage)) {
+    const rows = raw.damage.slice(0, 6).map(readDamageRow).filter(Boolean);
+    if (rows.length) item.damage = rows;
+  }
+  if (Array.isArray(raw.properties)) {
+    item.properties = raw.properties.slice(0, 12)
+      .map(p => clampText(p, 40, null)).filter(Boolean);
+  }
+  if (raw.armour && typeof raw.armour === "object") {
+    item.armour = {
+      base: clampWhole(raw.armour.base, 0, 30) || 10,
+      kind: clampText(raw.armour.kind, 12, "light"),
+      dexCap: raw.armour.dexCap == null ? null : clampWhole(raw.armour.dexCap, 0, 10)
+    };
+  }
+  const resource = readItemResource(raw.resource);
+  if (resource) item.resource = resource;
+
+  return item;
+}
+
+function wireItem(item) {
+  // everything the far side is willing to read, and nothing else: `category`
+  // and `isDefaultLoadout` are this sheet's arrangement, not the item
+  return readItem(item);
+}
+
+/* Where a given item lands, and it is never where it left from.
+
+   Partly because the sender's category may not exist on the far sheet. But
+   mostly because arriving equipped would apply the item's effects to someone
+   who never chose to put it on -- hand over a cloak and their armour class
+   changes while they are looking at something else. An item you are handed
+   goes in your pack. Putting it on is a decision, and it stays theirs. */
+function landingCategory(target) {
+  const rules = target.categoryRules || {};
+  const carrying = Object.keys(rules).find(name =>
+    rules[name] && !rules[name].providesAttacks && !rules[name].appliesEffects);
+  if (carrying) return carrying;
+  target.categoryRules = Object.assign({}, rules, {
+    Carrying: { countsWeight: true, appliesEffects: false, providesAttacks: false }
+  });
+  return "Carrying";
+}
+
+function namedStackExists(target, name) {
+  if ((target.inventory || []).some(i => i.name === name)) return true;
+  return (target.resources || []).some(r => r.name === name);
+}
+
+/* Returns what landed and what had to be cut loose, so the receiver can be
+   told rather than left with a bow that quietly never tracks ammunition. */
+function receivedItem(rawItem, target, transferId) {
+  const item = JSON.parse(JSON.stringify(rawItem));
+  item.id = transferId;
+  item.category = landingCategory(target);
+
+  const missing = [];
+  if (item.ammunition && !namedStackExists(target, item.ammunition)) {
+    missing.push(item.ammunition);
+    delete item.ammunition;
+  }
+  if (item.resource && item.resource.refillFrom && !namedStackExists(target, item.resource.refillFrom)) {
+    missing.push(item.resource.refillFrom);
+    item.resource = Object.assign({}, item.resource, { refillFrom: null });
+  }
+  return { item: item, missing: missing };
+}
+
+/* Keyed on the transfer, not the item. Two separate gifts of one arrow are two
+   transfers and land as two rows; the same gift arriving twice, because a
+   phone reconnected and the relay repeated itself, lands once. */
+function applyReceivedItem(target, item) {
+  if (!target.inventory) target.inventory = [];
+  const at = target.inventory.findIndex(i => sameId(i.id, item.id));
+  if (at === -1) target.inventory.push(item);
+  else target.inventory[at] = item;
+  return item;
+}
+
+/* ---------- notes ---------- */
+
+/* A note is the one thing in this app that can cross to another sheet and be
+   unambiguously correct on arrival: it is a title and a body, and it refers
+   to nothing on the receiver's character. Everything about *where* it sits --
+   its section, its position -- is the receiver's business, so none of it
+   travels. */
+function wireNote(note) {
+  return {
+    id: note.id, title: note.title || "", body: note.body || "",
+    createdAt: note.createdAt || Date.now(), updatedAt: note.updatedAt || Date.now()
+  };
+}
+
+function readNote(raw) {
+  if (!raw || typeof raw !== "object" || raw.id == null) return null;
+  const now = Date.now();
+  return {
+    id: String(raw.id).slice(0, 40),
+    title: typeof raw.title === "string" ? raw.title.slice(0, 200) : "",
+    // generous, but an order of magnitude under the relay's message cap
+    body: typeof raw.body === "string" ? raw.body.slice(0, 20000) : "",
+    createdAt: clampWhole(raw.createdAt, 0, 4102444800000) || now,
+    updatedAt: clampWhole(raw.updatedAt, 0, 4102444800000) || now
+  };
+}
+
+function receivedNote(note, fromName, permission) {
+  return {
+    id: note.id, sectionId: null,
+    title: note.title, body: note.body,
+    createdAt: note.createdAt, updatedAt: note.updatedAt,
+    sharing: {
+      sharedByMe: false,
+      sharedByName: fromName || "Someone",
+      // anything that isn't explicitly edit is view: the cautious direction
+      permission: permission === "edit" ? "edit" : "view"
+    }
+  };
+}
+
+/* Where an arriving note lands. A section flagged "receive shared notes here"
+   is the inbox when there is one. When there isn't, one gets made -- a note
+   that arrives with nowhere to sit is a note the player never sees, and
+   silently dropping it is the worst of the available options. */
+function inboxSection(target) {
+  if (!target.noteSections) target.noteSections = [];
+  const flagged = target.noteSections.find(s => s.receiveFrom);
+  if (flagged) return flagged;
+  const made = { id: makeId(target.noteSections), name: "Shared with me", autoShare: false, receiveFrom: true };
+  target.noteSections.push(made);
+  return made;
+}
+
+function applySharedNote(target, note) {
+  if (!target.notes) target.notes = [];
+  const at = target.notes.findIndex(n => sameId(n.id, note.id));
+  if (at === -1) {
+    const placed = Object.assign({}, note, { sectionId: inboxSection(target).id });
+    target.notes.push(placed);
+    return placed;
+  }
+  /* An update to a note already here keeps whichever section the reader filed
+     it in. They moved it; that was a decision, and a later edit from the
+     sender is not a reason to overrule it. */
+  const kept = target.notes[at].sectionId;
+  target.notes[at] = Object.assign({}, note, { sectionId: kept });
+  return target.notes[at];
+}
+
+function removeSharedNote(target, id) {
+  const gone = (target.notes || []).find(n => sameId(n.id, id) && n.sharing && !n.sharing.sharedByMe);
+  if (!gone) return null;
+  target.notes = target.notes.filter(n => n !== gone);
+  return gone;
 }
 
 /* ---------- receiving an effect ---------- */

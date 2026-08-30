@@ -179,13 +179,28 @@ first-ever launch does. Tutorial tests set `tutorialState` by hand instead.
   The relay is hosted rather than run on a laptop because a page served over HTTPS is not permitted
   to open a `ws://` connection to a local address; that throws at construction, before any network
   attempt.
-- **What is still faked is the transfer, not the roster.** Both of these now offer the people
-  actually in the room, via `partyMemberNames(party.members, deviceId())`:
-  1. **note sharing** (`tab-notes.js`) writes `note.sharing` locally and sends nothing;
-  2. **item giving** (`partyRosterForGiving` in `tab-inventory.js`) still ends in `applyGive`
-     deleting the item and toasting, with nothing on the other end to receive it.
-  Each roster row now carries a real `device` to address, so either one is a message type away
-  rather than a rewrite.
+- **Nothing in the party is faked any more.** Note sharing and item giving both cross the wire.
+- **Notes are the easy case.** A note is a title and a body and refers to nothing on the reader's
+  sheet, so it arrives correct. Where it *sits* is the reader's business, so `sectionId` never
+  travels; an arrival lands in whichever section is flagged `receiveFrom` (one is created if none
+  is), and a note the reader has since refiled stays refiled through later edits. Continuous sharing
+  re-sends on edit through `partyResendNoteSoon`, which is debounced — the editor commits on every
+  keystroke, and without it typing a sentence would be a message per letter. `removeSharedNote`
+  refuses to touch a note the holder owns, so an unshare naming a guessed id cannot delete someone's
+  own writing.
+- **Items are the hard case, and the rules are the interesting part.** An item's `category` keys
+  into the *holder's* `categoryRules`, so one in a category they have never created matches no rule
+  and renders nowhere at all. `landingCategory()` therefore files every arrival under a category
+  that neither equips nor arms — which also stops a handed-over cloak changing someone's AC before
+  they chose to put it on. `ammunition` and `resource.refillFrom` are name lookups into the holder's
+  sheet, so they are cut when the receiver has no match, and the receiver is told which link went.
+  `isDefaultLoadout` and `category` are the sender's arrangement and never travel.
+- **Giving is the only action that destroys something here to create it there**, so it is the only
+  one that waits to hear back. The item leaves the bag immediately, is held in `pendingGives`, and
+  is returned after `GIVE_ACK_TIMEOUT` if no acknowledgement arrives — a phone with no character
+  open cannot take delivery, and without this that gift would be destroyed for both players with
+  neither of them told. Transfers are keyed on a fresh transfer id, so a repeated delivery lands
+  once while a genuinely second gift is a second row.
 - Persistence carries `SCHEMA_VERSION` and **sets aside** an older save under `campfire.characters.vN`
   rather than loading it. It used to merely refuse it — and then the first render's
   `persistCharacters()` wrote the demo character straight over it, so a schema bump silently deleted
@@ -202,12 +217,16 @@ first-ever launch does. Tutorial tests set `tutorialState` by hand instead.
 - **No user identity.** There is a device id now, but it identifies an *installation*, not a
   person: reinstall and you are someone new, and `settings.username` is "Adventurer" on every fresh
   install.
-- Inventory items reference the *recipient's* world by name — `category` keys into their
-  `categoryRules`, and an item in a category they don't have renders nowhere at all, silently.
-  `ammunition` and `resource.refillFrom` are name lookups too.
-- Effect groups have no provenance (no `sourceCharacterId`), and `effectAmount()` resolves scaling
-  tiers against the *holder's* level, so a tiered effect pushed from another character recomputes
-  wrongly on arrival.
+- A given item never stacks with one the receiver already has: 20 arrows given twice is two rows of
+  20, not one of 40. Predictable, and it keeps repeated deliveries idempotent, but it is not tidy.
+- Delivery is acknowledged, not guaranteed. If the acknowledgement itself is lost the giver gets the
+  item back while the receiver keeps it too, which duplicates rather than destroys — the safer of
+  the two directions, and the reason it was built that way round.
+- `effectAmount()` resolves scaling tiers against the *holder's* level. That is right for an effect
+  you own and wrong for one handed to you, so a pushed effect is flattened to a plain number at the
+  sender's level before it leaves (`wireEffectGroup`) — the wire format carries numbers, never
+  tables. A received group carries `fromName` but still no `sourceCharacterId`, so nothing can go
+  back and ask the caster's sheet a question about it later.
 - Three backgrounds (Soldier, Sage, Criminal) are PHB text, not SRD 5.1 — only Acolyte is in the
   SRD. They carry `official: false` and render a "3PP" tag, which says *third-party homebrew* when
   the truth is *unlicensed WotC*. The comment at the table says so.

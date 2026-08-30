@@ -957,15 +957,22 @@ function openGiveToModal(item, qty) {
 
   document.getElementById("give-to-confirm").addEventListener("click", () => {
     if (selected === null) return;
-    applyGive(item, qty, roster[selected].name);
+    applyGive(item, qty, roster[selected]);
   });
 }
 
-function applyGive(item, qty, recipientName) {
+/* The item only leaves the bag once the message is actually away. If the
+   socket is down there is nothing to receive it, and destroying it here would
+   lose it for everyone. */
+function applyGive(item, qty, recipient) {
+  if (!partyGiveItem(item, qty, recipient.device)) {
+    showToast("Not connected \u2014 nothing was given");
+    return;
+  }
   const currentQty = item.qty || 1;
-  if (qty >= currentQty) character.inventory = character.inventory.filter(i => i.id !== item.id);
+  if (qty >= currentQty) character.inventory = character.inventory.filter(i => !sameId(i.id, item.id));
   else item.qty = currentQty - qty;
   closeModal();
   renderContent();
-  showToast("Gave " + qty + " " + item.name + " to " + recipientName);
+  showToast("Gave " + qty + " " + item.name + " to " + recipient.name);
 }
