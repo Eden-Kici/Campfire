@@ -210,6 +210,23 @@ first-ever launch does. Tutorial tests set `tutorialState` by hand instead.
   they chose to put it on. `ammunition` and `resource.refillFrom` are name lookups into the holder's
   sheet, so they are cut when the receiver has no match, and the receiver is told which link went.
   `isDefaultLoadout` and `category` are the sender's arrangement and never travel.
+- **A roster entry is a snapshot, so `mergeRosterEntry()` replaces rather than layers.** Merging
+  field by field looks harmless and is not: closing your sheet stops you reporting a class, a level
+  and a hit point total, and a merge leaves all three frozen on everyone else's screen — a player
+  who has put their sheet away still showing as a level 6 Fighter on 22 hit points. Only `you` and
+  `pic` survive, because neither travels.
+- **Avatars are their own message (`face`), not part of the roster entry.** Entries go out on every
+  change to your sheet, so a picture riding along would be twenty kilobytes per point of damage
+  taken. A face changes about once, so it is sent about once — on connect, on a change, and by
+  everyone when somebody new arrives. `readAvatar()` is strict because the string lands in an
+  `<img src>` on someone else's phone: it must be a `data:image/...;base64` URL under
+  `MAX_AVATAR_BYTES`, which also rules out a remote URL that would have every phone at the table
+  quietly fetch something from a stranger. A malformed picture drops the whole message rather than
+  clearing the face that is already there.
+- **`partyIdentityChanged()` is what "who I appear to be just changed" calls.** Renaming a character
+  and changing your username both happen in modals that never re-render the sheet, so
+  `announceMyPartyState()` — which rides on `renderContent` — never fired for either, and a new name
+  sat on your own phone and nowhere else until you happened to take damage.
 - **Editing works both ways.** A reader given `edit` sends their change to the note's *owner*
   (`note-edit`, addressed with `sharing.sharedByDevice`, which is why a received note records it),
   and the owner checks `canEditSharedNote()` before applying and passing it on to everyone else —
@@ -258,10 +275,11 @@ first-ever launch does. Tutorial tests set `tutorialState` by hand instead.
 - A give is answered, not guaranteed. If the reply is lost in flight the giver gets the item back
   while the receiver keeps it too, which duplicates rather than destroys — the safer of the two
   directions, and the reason it was built that way round.
-- **A player who closes their sheet shows on the roster as `settings.username`**, so someone who was
-  "Tomas Blackwell" becomes "Adventurer" mid-session and messages about them read oddly. That is
-  `myPartyIdentity()` working as designed — the selector is the app's "no character chosen" state —
-  but at a real table it reads as a player being replaced by a stranger.
+- A player who closes their sheet shows on the roster as `settings.username`, with no class, level,
+  hit points or picture. That is deliberate and was confirmed as wanted: the selector is the app's
+  "no character chosen" state, and reporting a character you are no longer looking at would be a
+  lie. The cost is that `settings.username` defaults to "Adventurer", so a player who never set one
+  reads as a stranger the moment they put their sheet down.
 - `effectAmount()` resolves scaling tiers against the *holder's* level. That is right for an effect
   you own and wrong for one handed to you, so a pushed effect is flattened to a plain number at the
   sender's level before it leaves (`wireEffectGroup`) — the wire format carries numbers, never

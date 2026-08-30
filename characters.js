@@ -222,6 +222,8 @@ function openCharacterEditorModal() {
     character.profilePic = pendingPic;
     closeModal();
     renderSheetHeader();
+    persistCharacters();
+    partyIdentityChanged();
   });
 }
 

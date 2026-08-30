@@ -35,6 +35,23 @@ const HP_DISPLAY_MODES = ["stats", "estimate", "hide"];
 const ROSTER_WIRE_FIELDS = ["device", "owner", "name", "subtext", "classNames",
                             "level", "hp", "maxHp", "deathSaves", "customBuild"];
 
+/* An avatar is sent as its own message rather than on the roster entry.
+
+   Roster entries go out on every change to your sheet, so a picture riding
+   along would be twenty kilobytes per point of damage taken. A face changes
+   about once, so it is sent about once.
+
+   The cap is well under the relay's message limit, and the pattern is strict
+   for a reason: this string ends up in an <img src> on somebody else's phone.
+   It has to be an image, and it has to be self-contained -- a remote URL would
+   have every phone at the table quietly fetch something from a stranger. */
+const MAX_AVATAR_BYTES = 48000;
+
+function readAvatar(raw) {
+  if (typeof raw !== "string" || raw.length > MAX_AVATAR_BYTES) return null;
+  return /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(raw) ? raw : null;
+}
+
 function makeRoomCode() {
   let code = "";
   for (let i = 0; i < ROOM_CODE_LENGTH; i++) {
@@ -220,6 +237,15 @@ function parsePartyMessage(raw) {
     };
   }
 
+  if (msg.t === "face") {
+    if (typeof msg.device !== "string") return null;
+    // an explicit null clears a face; anything unreadable is dropped entirely,
+    // so a malformed picture cannot blank out someone's avatar
+    if (msg.pic === null) return { t: "face", device: msg.device, pic: null };
+    const pic = readAvatar(msg.pic);
+    return pic ? { t: "face", device: msg.device, pic: pic } : null;
+  }
+
   if (msg.t === "bye") {
     if (typeof msg.device !== "string") return null;
     return { t: "bye", device: msg.device };
@@ -304,14 +330,24 @@ function parsePartyMessage(raw) {
 
 /* ---------- the roster ---------- */
 
+/* An entry is a snapshot, so an update replaces it rather than being layered
+   over the last one. Merging field by field looks harmless and is not: closing
+   your character sheet stops you reporting a class, a level and a number of
+   hit points, and a merge would leave all three frozen on everyone else's
+   screen -- a player who has put their sheet away still showing as a level 6
+   Fighter on 22 hit points.
+
+   The exceptions are the two fields that never travel: which row is ours, and
+   the avatar, which arrives as its own message. */
 function mergeRosterEntry(members, entry) {
   const next = (members || []).slice();
   const at = next.findIndex(m => m.device === entry.device);
-  // Object.assign rather than replace, so the local-only fields that never
-  // travel -- `you`, and the avatar we deliberately don't send -- survive an
-  // update from the far side
-  if (at === -1) next.push(Object.assign({}, entry));
-  else next[at] = Object.assign({}, next[at], entry);
+  if (at === -1) { next.push(Object.assign({}, entry)); return next; }
+
+  const local = {};
+  if (next[at].you) local.you = true;
+  if (next[at].pic !== undefined) local.pic = next[at].pic;
+  next[at] = Object.assign({}, entry, local);
   return next;
 }
 

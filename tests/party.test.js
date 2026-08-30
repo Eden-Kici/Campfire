@@ -13,7 +13,7 @@ module.exports = function (suite) {
           normaliseNoteSharing, notesSharedWith, sharePermissionFor, absentShares,
           autoSharedNotes, enrolInAutoShares, canEditSharedNote,
           stackSignature, canMergeStacks, mergeStacks, readPurse, purseLabel,
-          canAffordPurse, takeFromPurse, addToPurse, purseTotal,
+          canAffordPurse, takeFromPurse, addToPurse, purseTotal, readAvatar, MAX_AVATAR_BYTES,
           weaponList,
           PARTY_PROTOCOL_VERSION } = app;
 
@@ -75,6 +75,33 @@ module.exports = function (suite) {
     ["classNames", "customBuild", "device", "hp", "level", "maxHp", "name", "owner"]);
   suite.is("a hostile name is kept verbatim as data for the render layer to escape",
     readRosterEntry(entry({ name: HOSTILE })).name, HOSTILE);
+
+  suite.section("faces");
+  const FACE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+  /* This string ends up in an <img src> on somebody else's phone. */
+  suite.is("a real embedded image is fine", readAvatar(FACE), FACE);
+  suite.is("a remote address is refused, whatever it points at",
+    readAvatar("https://example.com/me.png"), null);
+  suite.is("so is a data url that isn't an image",
+    readAvatar("data:text/html;base64,PHNjcmlwdD4="), null);
+  suite.is("and a script url", readAvatar("javascript:alert(1)"), null);
+  suite.is("and one with markup smuggled into the payload",
+    readAvatar('data:image/png;base64,AAA" onerror="alert(1)'), null);
+  suite.is("something far too big to travel is refused",
+    readAvatar("data:image/png;base64," + "A".repeat(MAX_AVATAR_BYTES)), null);
+  suite.is("and so is nothing at all", readAvatar(null), null);
+
+  suite.is("a face message reads back its picture",
+    parsePartyMessage(partyMessage("face", { device: "a1b2c3", pic: FACE })).pic, FACE);
+  suite.is("an explicit null clears one",
+    parsePartyMessage(partyMessage("face", { device: "a1b2c3", pic: null })).pic, null);
+  /* A malformed picture drops the whole message rather than clearing what is
+     already there -- one bad send should not blank someone's avatar. */
+  suite.is("a malformed picture drops the message instead of clearing the face",
+    parsePartyMessage(partyMessage("face", { device: "a1b2c3", pic: "https://example.com/x.png" })), null);
+  suite.is("a face with no device is refused",
+    parsePartyMessage(partyMessage("face", { pic: FACE })), null);
 
   suite.section("what we send");
   const mine = entry({ you: true, pic: "data:image/png;base64,AAAA" });
@@ -167,6 +194,16 @@ module.exports = function (suite) {
   members = mergeRosterEntry([{ device: "a1b2c3", name: "Me", you: true, pic: "data:x" }], entry({ hp: 9 }));
   suite.is("an update from the far side does not wipe our local 'you' marker", members[0].you, true);
   suite.is("nor the avatar it never knew about", members[0].pic, "data:x");
+
+  /* An entry is a snapshot. Someone who closes their sheet stops reporting a
+     class and a level, and those have to actually go away rather than sit
+     there frozen. */
+  const wasPlaying = mergeRosterEntry([], entry({ device: "d4e5f6", classNames: "Rogue", level: 5, hp: 20, maxHp: 30 }));
+  const nowIdle = mergeRosterEntry(wasPlaying, { device: "d4e5f6", name: "Tomas", owner: false, customBuild: false });
+  suite.is("closing a sheet clears the class", "classNames" in nowIdle[0], false);
+  suite.is("and the level", "level" in nowIdle[0], false);
+  suite.is("and the hit points", "hp" in nowIdle[0], false);
+  suite.is("while the name still updates", nowIdle[0].name, "Tomas");
 
   members = mergeRosterEntry(members, entry({ device: "d4e5f6", name: "Tomas" }));
   suite.is("a second device joins", members.length, 2);

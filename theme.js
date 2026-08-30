@@ -85,6 +85,7 @@ function openSettingsModal() {
     settings.username = usernameInput.value.trim() || settings.username;
     usernameInput.value = settings.username;
     persistSettings();
+    partyIdentityChanged();
   });
   const relayInput = document.getElementById("setting-relay");
   relayInput.addEventListener("blur", () => {

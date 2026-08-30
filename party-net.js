@@ -71,7 +71,9 @@ function partyConnect(code) {
     setPartyNetStatus("open");
     // announce ourselves; everyone already here answers with their own entry
     partyLastAnnounced = null;
+    lastSentFace = undefined;
     partyAnnounceMe();
+    partySendFace(true);
   };
 
   socket.onmessage = (event) => {
@@ -143,6 +145,21 @@ function partyAnnounceMe(isReply) {
   partySend("here", payload);
 }
 
+/* undefined means never sent, which is different from null meaning "no
+   picture" -- the first announce has to go out even when there isn't one. */
+let lastSentFace;
+
+function partySendFace(force) {
+  if (party.status === "none") return;
+  const pic = (currentScreen === "sheet" && character.profilePic) ? character.profilePic : null;
+  if (!force && pic === lastSentFace) return;
+  // too big to travel: the letter avatar stands in rather than the message
+  // being refused at the far end
+  if (pic && pic.length > MAX_AVATAR_BYTES) return;
+  lastSentFace = pic;
+  partySend("face", { device: deviceId(), pic: pic });
+}
+
 function partyAnnounceLeaving() {
   partySend("bye", { device: deviceId() });
 }
@@ -197,8 +214,21 @@ function handlePartyMessage(raw) {
       // standing shares are honoured on arrival, not only at the moment you
       // first ticked the box
       partyResendNotesTo(msg.entry.device, msg.entry.name);
+      /* Everyone re-sends their face when somebody arrives: the newcomer needs
+         all of them and they need the newcomer's, and the relay copies to the
+         whole room anyway. Once per join, not once per change. */
+      partySendFace(true);
     }
 
+    refreshPartyDependentScreens();
+    return;
+  }
+
+  if (msg.t === "face") {
+    if (msg.device === deviceId()) return;
+    const at = party.members.findIndex(m => m.device === msg.device);
+    if (at === -1) return;                       // a face for somebody we don't have yet
+    party.members[at].pic = msg.pic;
     refreshPartyDependentScreens();
     return;
   }

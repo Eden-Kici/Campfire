@@ -114,6 +114,7 @@ function refreshMyPartyIdentity() {
   if (index === -1) return;
   party.members[index] = myPartyIdentity({ owner: party.members[index].owner });
   partyAnnounceMe();
+  partySendFace();
   redrawPartyModal();
 }
 
@@ -126,6 +127,21 @@ function announceMyPartyState() {
   if (index === -1) return;
   party.members[index] = myPartyIdentity({ owner: party.members[index].owner });
   partyAnnounceMe();
+  partySendFace();
+}
+
+/* Renaming a character, or changing your username, happens in a modal that
+   never re-renders the sheet -- so announceMyPartyState, which rides on
+   renderContent, never fired for either. A new name would sit on your own
+   phone and nowhere else until you happened to take damage.
+
+   Anything that changes who you appear to be calls this instead. */
+function partyIdentityChanged() {
+  if (party.status === "none") return;
+  announceMyPartyState();
+  partySendFace();
+  renderSelectorScreen();
+  redrawPartyModal();
 }
 
 function partyStatusLine() {
