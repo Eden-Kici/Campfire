@@ -96,11 +96,22 @@ function partyMemberDetailLine(m) {
   if (party.settings.showLevels && m.level != null) bits.push("Level " + m.level);
   if (bits.length) parts.push(bits.join(" · "));
 
-  if (m.hp != null && m.maxHp != null) {
-    if (party.settings.hpDisplay === "stats") parts.push(m.hp + "/" + m.maxHp + " HP");
-    else if (party.settings.hpDisplay === "estimate") parts.push(hpEstimateLabel(m.hp, m.maxHp, m.deathSaves));
-  }
-  return parts.join(" · ");
+  const hp = partyHpLabel(m);
+  if (hp) parts.push(hp);
+  return parts.join(" \u00B7 ");
+}
+
+/* What you are allowed to know about somebody's hit points, in one place,
+   because two screens ask now: the roster and the cast window's target list.
+   The party's own setting decides it -- except for your own row, which is your
+   own sheet and was never a secret from you. */
+function partyHpLabel(m) {
+  if (!m || m.hp == null || m.maxHp == null) return "";
+  if (m.you) return m.hp + "/" + m.maxHp + " HP";
+  const mode = party.settings ? party.settings.hpDisplay : "hide";
+  if (mode === "stats") return m.hp + "/" + m.maxHp + " HP";
+  if (mode === "estimate") return hpEstimateLabel(m.hp, m.maxHp, m.deathSaves);
+  return "";
 }
 
 /* Your roster entry is a snapshot, so picking a character (or switching to a

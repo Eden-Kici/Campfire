@@ -192,19 +192,37 @@ function castModalHtml() {
    thing a cleric does -- had nowhere to land. */
 function castTargetRoster() {
   if (typeof party !== "undefined" && party.status !== "none" && party.members.length) return party.members;
-  return [{ device: deviceId(), name: character.name, you: true }];
+  /* Built here rather than through myPartyIdentity(), which reports whatever
+     screen the app is on. This window is always about the character whose
+     spell it is, and their hit points are the reason the row is worth reading. */
+  return [{
+    you: true,
+    device: deviceId(),
+    name: character.name,
+    hp: character.hp.current,
+    maxHp: calculateMaxHP(character).total,
+    deathSaves: character.deathSaves
+  }];
 }
 
 function castTargetsHtml(limit) {
   const roster = castTargetRoster();
   return `
     <div class="breakdown-subhead">Who it lands on${limit != null ? ` <span class="field-hint" style="display:inline;">up to ${limit}</span>` : ""}</div>
-    ${roster.map(member => `
+    ${roster.map(member => {
+      /* Hit points where you are choosing who to heal, when the party shares
+         them at all. A heal is aimed at whoever is worst off, and making
+         someone leave this window to find that out is how the wrong person
+         gets healed. The party's own setting decides what shows -- exact
+         numbers, a word, or nothing -- so this window can't leak what the
+         roster wouldn't. */
+      const hp = typeof partyHpLabel === "function" ? partyHpLabel(member) : "";
+      return `
       <div class="member-row" data-cast-target="${esc(member.device)}" style="cursor:pointer;">
-        <span>${esc(member.name)}${member.you ? " (you)" : ""}</span>
+        <span>${esc(member.name)}${member.you ? " (you)" : ""}${hp ? `<span class="cast-target-hp">${esc(hp)}</span>` : ""}</span>
         <span class="radio-dot${castState.targets.indexOf(member.device) !== -1 ? " selected" : ""}"></span>
-      </div>
-    `).join("")}
+      </div>`;
+    }).join("")}
     <div class="member-row">
       <span>Someone else${castState.strangers ? " ×" + castState.strangers : ""}</span>
       <span style="display:flex;gap:8px;">

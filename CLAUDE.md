@@ -425,6 +425,12 @@ than a button. A cantrip still resolves on the tap; anything with a level opens 
   only when you were a target. A spell with no target list at all — "you regain" — heals the only
   person it could be about; picking nobody from a list you *were* shown rolls it and stops, since
   that is a number you are about to say out loud to someone who isn't on the app.
+- **The target list shows hit points, under the party's own rule.** `partyHpLabel()` is the single
+  place that decides what you may know about someone's hit points — exact numbers, one word
+  (Bloodied / Dying / Dead / Stable), or nothing — and both the roster and the cast window ask it,
+  so the cast window can't leak what the roster wouldn't. Your own row is exempt: it is your sheet,
+  and it was never a secret from you. A heal is aimed at whoever is worst off, and making someone
+  leave the window to find that out is how the wrong person gets healed.
 - **Somebody else's hit points are theirs.** Healing travels as a settled number (`partySendHeal`
   → the `heal` message), never as dice, because re-rolling on arrival would give two people two
   answers to one spell — and it arrives as an offer with Take it / No thanks, since a heal that

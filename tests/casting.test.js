@@ -101,6 +101,28 @@ module.exports = function (suite) {
   suite.is("but picking nobody from a list you were shown only rolls it", character.hp.current, 1);
   character.hp.current = most;
 
+  suite.section("the target list says what the party lets it say about hit points");
+  const { partyHpLabel, party } = app;
+  const wounded = { device: "abc123", name: "Aldric", hp: 9, maxHp: 40, deathSaves: { successes: 0, failures: 0 } };
+  party.settings = { showClasses: true, showLevels: true, showCustom: false, hpDisplay: "stats" };
+  suite.is("exact numbers when the party shares them", partyHpLabel(wounded), "9/40 HP");
+  party.settings.hpDisplay = "estimate";
+  suite.is("a word when it only shares an estimate", partyHpLabel(wounded), "Bloodied");
+  party.settings.hpDisplay = "hide";
+  suite.is("and nothing at all when it shares neither", partyHpLabel(wounded), "");
+  suite.is("your own row is never a secret from you",
+    partyHpLabel({ device: "me", name: "Sigrid", you: true, hp: 12, maxHp: 62 }), "12/62 HP");
+  suite.is("somebody with no character open reports no hit points",
+    partyHpLabel({ device: "xyz789", name: "Bram" }), "");
+  party.settings.hpDisplay = "stats";
+  app.openCastModal(cure);
+  const targetList = app.castTargetsHtml(1);
+  suite.ok("and the cast window puts it beside the name you are about to pick",
+    targetList.indexOf("cast-target-hp") !== -1);
+  suite.ok("which is your own hit points when there is no party to ask",
+    targetList.indexOf(character.hp.current + "/") !== -1);
+  app.closeModal();
+
   suite.section("healing sent across the party arrives as an offer");
   const heal = parsePartyMessage(partyMessage("heal",
     { spell: "Cure Wounds", amount: 9, to: "d4e5f6", fromName: "Sigrid" }));

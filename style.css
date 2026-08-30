@@ -1305,3 +1305,7 @@ input, textarea, select, .note-body-field, .note-title-field {
 .cast-level.empty { opacity: .5; }
 .cast-level-num { font-size: 15px; font-weight: bold; }
 .cast-level-slots { font-size: 10px; color: var(--text-dim); }
+
+/* Hit points beside a name you are about to aim a heal at. Quiet, because the
+   name is what you are picking; present, because it is what you are picking on. */
+.cast-target-hp { margin-left: 8px; font-size: 11px; color: var(--text-dim); }
