@@ -17,7 +17,8 @@ function assetList() {
   const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
   const scripts = [...html.matchAll(/<script src="([^"]+)"/g)].map(m => m[1]);
   return ["./", "index.html", "style.css", "manifest.json",
-          "icon-180.png", "icon-192.png", "icon-512.png", "icon-maskable-512.png"].concat(scripts);
+          "icon-180.png", "icon-192.png", "icon-512.png", "icon-maskable-512.png",
+          "logo-mark.png", "favicon-64.png"].concat(scripts);
 }
 
 function write() {

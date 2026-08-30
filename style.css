@@ -165,6 +165,10 @@ body {
 
 .app-header { padding: 20px 18px 14px; }
 .brand-row { display: flex; align-items: center; gap: 6px; }
+/* The mark and the word are one lockup, so the flame is sized off the text it
+   sits beside rather than a fixed pixel height -- they stay paired if either
+   ever changes. */
+.brand-mark { height: 20px; width: auto; display: block; }
 .brand-name { color: var(--accent); font-weight: bold; font-size: 15px; }
 .char-name { font-size: 22px; font-weight: bold; }
 .char-class { color: var(--accent-soft); font-size: 13px; margin-top: 2px; }

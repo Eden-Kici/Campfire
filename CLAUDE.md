@@ -23,6 +23,14 @@ the service worker won't register over `file://`, which is fine and expected.
 It is also a **PWA**: `manifest.json`, `sw.js` and four icons. Served over HTTPS it installs to a
 phone's home screen and runs offline. See `DEPLOY.md`.
 
+**The brand.** Every icon is generated from the real logo — a flame over crossed logs, three flat
+tones (`#F5C37A` gold, `#E8843A` orange, `#533A2A` log brown) that are already the palette's own
+accents. `logo-mark.png` is the transparent mark, sized in CSS against the wordmark it sits beside
+so the two stay one lockup; the icons sit on `#17120f`, the manifest's own background, so the
+install splash doesn't seam. There is one mark for all three themes, which is what the brand sheet
+specifies. **Adding an image means adding it to `tools/build-sw.js`'s static list and re-running it**
+— a file the page loads but the worker doesn't cache works perfectly until the phone loses signal.
+
 ## What this is
 
 Campfire: Player — a D&D 5e character sheet, built as a proof of concept for a mobile app. The

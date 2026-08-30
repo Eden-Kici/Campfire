@@ -249,6 +249,7 @@ function renderSelectorScreen() {
   el.innerHTML = `
     <div class="app-header">
       <div class="brand-row">
+        <img class="brand-mark" src="logo-mark.png" alt="">
         <span class="brand-name">Campfire</span>
         <button class="menu-button" id="selector-menu-button" style="margin-left:auto;">&#9776;</button>
       </div>
