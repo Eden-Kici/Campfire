@@ -28,6 +28,7 @@ const SUITES = [
   ["round1", "./round1.test.js"],
   ["round2", "./round2.test.js"],
   ["round3", "./round3.test.js"],
+  ["party", "./party.test.js"],
   ["smoke", "./smoke.test.js"]
 ];
 

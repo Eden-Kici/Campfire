@@ -43,7 +43,8 @@ Plain `<script>` tags, no modules. The list in `index.html` **is** the dependenc
 `tests/harness.js` reads it from there rather than keeping its own copy — so the tests always load
 exactly what the page loads. Adding a file means adding it to `index.html`.
 
-Order: reference data (`srd-*.js`, now several files — races, classes, equipment, magic items and
+Order: identity primitives (`identity.js`, which declares nothing but `makeId`/`sameId`/`deviceId`
+and depends on nothing) → reference data (`srd-*.js`, now several files — races, classes, equipment, magic items and
 two halves of the spell list, split to stay under the `structure` suite's 1,500-line cap) →
 character data → shared machinery (`dice-history`, `roll`, `ui`, `theme`, `characters`, `tutorial`,
 `creator`, `party`, `content`, `rests`, `choices`, `help`) → one file per tab → `app.js`, which is
@@ -107,6 +108,12 @@ These are load-bearing and easy to break:
   `{ countsWeight, appliesEffects, providesAttacks }`. Armour only contributes AC from a category
   with `appliesEffects`; weapons only appear under Attacks from one with `providesAttacks`.
   Stowing a weapon moves its category, it never deletes anything.
+- **Ids are `"<device>-<n>"` strings.** `identity.js` mints a six-character device id on first use
+  and keeps it in `campfire.device`; `makeId(list)` still counts within the one array and prefixes
+  it, so ids stay short and readable while being unique across installs. Saves written before this
+  hold bare numbers, so **both shapes coexist** — `idSuffix()` reads either. Any lookup that starts
+  from the DOM must use `sameId()`; `parseInt()` on an id is now a bug, because it returns `NaN` for
+  the new shape and `NaN` matches nothing.
 - **Spell slots live only in `character.spellSlots`.** Combat renders them as resource rows and
   Spells renders them per level; both read the same object.
 - Resources are allowed to exceed max or go negative. That is intentional — custom content and
@@ -181,11 +188,9 @@ first-ever launch does. Tutorial tests set `tutorialState` by hand instead.
 - `traits > Proficiencies > Weapons` is flavour text duplicating the authoritative
   `weaponProficiencies` list — the last known two-sources-of-truth.
 - Emoji stand in for an icon set throughout.
-- **Every id is `Math.max(...) + 1` scoped to one array on one device** — characters, items, effect
-  groups, resources, spells, notes, custom content. Two devices both produce id 4. This is the first
-  thing that has to change before anything syncs.
-- **Nothing has a stable identity.** No device id, no user id; `settings.username` is "Adventurer"
-  on every fresh install.
+- **No user identity.** There is a device id now, but it identifies an *installation*, not a
+  person: reinstall and you are someone new, and `settings.username` is "Adventurer" on every fresh
+  install.
 - Inventory items reference the *recipient's* world by name — `category` keys into their
   `categoryRules`, and an item in a category they don't have renders nowhere at all, silently.
   `ammunition` and `resource.refillFrom` are name lookups too.

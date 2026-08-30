@@ -415,7 +415,7 @@ function setExhaustionLevel(character, level) {
       e.category === "Condition" && String(e.value.condition).toLowerCase() === "exhaustion"));
 
   if (clamped === 0) return;
-  const nextId = Math.max(0, ...character.activeEffects.map(g => g.id)) + 1;
+  const nextId = makeId(character.activeEffects);
   character.activeEffects.push({
     id: nextId,
     name: "Exhaustion " + clamped,

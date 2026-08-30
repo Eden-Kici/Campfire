@@ -11,7 +11,7 @@
    an update -- the old cache is dropped on activate, so bumping the version is
    the whole deploy story. */
 
-const CACHE_NAME = "campfire-v1";
+const CACHE_NAME = "campfire-v4";
 
 const ASSETS = [
   "./",
@@ -22,6 +22,7 @@ const ASSETS = [
   "icon-192.png",
   "icon-512.png",
   "icon-maskable-512.png",
+  "identity.js",
   "srd-data.js",
   "srd-races.js",
   "srd-classes.js",
@@ -39,6 +40,7 @@ const ASSETS = [
   "tutorial.js",
   "creator.js",
   "creator-equipment.js",
+  "party-protocol.js",
   "party.js",
   "content.js",
   "content-forms.js",

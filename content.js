@@ -76,7 +76,7 @@ function loadCustomContent() {
 }
 
 function nextCustomId(bucket) {
-  return Math.max(0, ...customContent[bucket].map(entry => entry.id || 0)) + 1;
+  return makeId(customContent[bucket]);
 }
 
 function itemTypeLabel(type) {

@@ -86,13 +86,13 @@ function stashStaleSave(raw, version) {
 }
 
 function selectCharacter(id) {
-  const found = savedCharacters.find(c => c.id === id);
+  const found = savedCharacters.find(c => sameId(c.id, id));
   if (found) character = found;
   return found;
 }
 
 function nextCharacterId() {
-  return Math.max(0, ...savedCharacters.map(c => c.id || 0)) + 1;
+  return makeId(savedCharacters);
 }
 
 let currentScreen = "selector";
@@ -268,7 +268,7 @@ function renderSelectorScreen() {
 
   document.querySelectorAll("[data-open-char]").forEach(card => {
     card.addEventListener("click", () => {
-      selectCharacter(parseInt(card.dataset.openChar));
+      selectCharacter(card.dataset.openChar);
       showScreen("sheet");
     });
   });

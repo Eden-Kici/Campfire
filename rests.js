@@ -268,7 +268,7 @@ function grantPendingChoice(character, feature, traitCategory) {
   if (!choice) return;
   const already = character.pendingChoices.some(p => p.featureName === choice.featureName && p.traitCategory === choice.traitCategory);
   if (already) return;
-  choice.id = Math.max(0, ...character.pendingChoices.map(p => p.id)) + 1;
+  choice.id = makeId(character.pendingChoices);
   character.pendingChoices.push(choice);
 }
 

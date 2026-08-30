@@ -327,7 +327,7 @@ function applyChoiceResolution(character, pending, chosen) {
   } else if (pending.kind === "cantrip") {
     chosen.forEach(name => {
       const known = SRD_SPELLS.find(x => x.level === 0 && x.name === name);
-      const nextId = Math.max(0, ...character.spells.map(s => s.id), 0) + 1;
+      const nextId = makeId(character.spells);
       character.spells.push({
         id: nextId, name: known ? known.name : name, level: 0, classSource: "Racial",
         castingTime: known ? spellCastingTimeCode(known.castingTime) : "A",

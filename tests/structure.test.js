@@ -30,12 +30,16 @@ module.exports = function (suite) {
   suite.is("and none is listed that doesn't exist", phantom, []);
 
   suite.section("the load order");
-  suite.is("reference data comes first", listed[0], "srd-data.js");
+  /* identity.js declares nothing but primitives and depends on nothing, and
+     character-data.js calls makeId() -- so it loads ahead of the data it
+     hands ids to. */
+  suite.is("identity primitives come first", listed[0], "identity.js");
+  suite.is("then reference data", listed[1], "srd-data.js");
   const refDataFiles = listed.filter(f => /^srd-/.test(f));
-  const afterRefData = listed[refDataFiles.length];
+  const afterRefData = listed[refDataFiles.length + 1];
   suite.ok("every srd-*.js file loads as one contiguous block up front",
-    listed.slice(0, refDataFiles.length).every(f => /^srd-/.test(f)),
-    "found a non-reference-data file inside the srd-*.js block: " + listed.slice(0, refDataFiles.length).join(", "));
+    listed.slice(1, refDataFiles.length + 1).every(f => /^srd-/.test(f)),
+    "found a non-reference-data file inside the srd-*.js block: " + listed.slice(1, refDataFiles.length + 1).join(", "));
   suite.is("then the character, right after the reference data block", afterRefData, "character-data.js");
   suite.is("and app.js starts everything last", listed[listed.length - 1], "app.js");
 

@@ -812,7 +812,7 @@ function openAddEffectModal() {
     const durationType = durationTypeSelect.value;
     const name = document.getElementById("effect-name").value.trim();
 
-    const newId = Math.max(0, ...character.activeEffects.map(e => e.id)) + 1;
+    const newId = makeId(character.activeEffects);
     character.activeEffects.push({
       id: newId,
       name,
@@ -922,7 +922,7 @@ function openAddResourceModal() {
     const name = document.getElementById("new-res-name").value.trim() || "New Resource";
     const max = parseInt(document.getElementById("new-res-max").value) || 1;
     const recharge = readRechargeValue("new-res");
-    const newId = Math.max(0, ...character.resources.map(r => r.id)) + 1;
+    const newId = makeId(character.resources);
     character.resources.push({ id: newId, name, recharge, current: max, max });
     closeModal();
     renderContent();

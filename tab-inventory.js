@@ -555,7 +555,7 @@ function openAddInventoryModal(presetCategory, presetType) {
     wireItemTypeToggle(state, typeFields, null);
 
     document.getElementById("save-item-button").addEventListener("click", () => {
-      const newId = Math.max(0, ...character.inventory.map(i => i.id)) + 1;
+      const newId = makeId(character.inventory);
       const item = Object.assign({ id: newId }, readCommonItemFields());
 
       const acBonus = parseInt(document.getElementById("if-ac").value) || 0;

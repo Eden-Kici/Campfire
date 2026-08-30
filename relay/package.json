@@ -1,0 +1,10 @@
+{
+  "name": "campfire-relay",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Message relay for Campfire's party feature. Separate from the app, which has no dependencies.",
+  "main": "relay.js",
+  "scripts": { "start": "node relay.js" },
+  "dependencies": { "ws": "^8.18.0" },
+  "engines": { "node": ">=18" }
+}

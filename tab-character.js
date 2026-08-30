@@ -212,7 +212,7 @@ function wireCharacterTab() {
       e.stopPropagation();
       const [category, index] = btn.dataset.addResourceFromFeature.split("|||");
       const trait = character.traits[category][parseInt(index)];
-      const newId = Math.max(0, ...character.resources.map(r => r.id)) + 1;
+      const newId = makeId(character.resources);
       // trait.resource.max is carried through as-is, flat number or scaling
       // tiers table alike -- that's what lets the resource's ceiling keep
       // moving as the character levels, instead of freezing whatever it was

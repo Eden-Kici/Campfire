@@ -410,7 +410,7 @@ function openAddSpellModal() {
 
   document.getElementById("save-spell-button").addEventListener("click", () => {
     const formData = readSpellForm();
-    const newId = Math.max(0, ...character.spells.map(s => s.id)) + 1;
+    const newId = makeId(character.spells);
     const spell = Object.assign({ id: newId, attackRoll: attackOn }, formData);
     if (!spell.damage) delete spell.damage;
     if (spell.level > 0) spell.prepared = false;

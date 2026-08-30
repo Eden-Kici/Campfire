@@ -101,9 +101,9 @@ function wireNotesTab() {
 }
 
 function createNote(sectionId) {
-  sectionId = parseInt(sectionId);
-  const section = character.noteSections.find(s => s.id === sectionId);
-  const newId = Math.max(0, ...character.notes.map(n => n.id)) + 1;
+  const section = character.noteSections.find(s => sameId(s.id, sectionId));
+  sectionId = section.id;   // the dataset gives text; store the id in its stored shape
+  const newId = makeId(character.notes);
   const now = Date.now();
   const note = { id: newId, sectionId, title: "", body: "", createdAt: now, updatedAt: now, sharing: null };
   if (section.autoShare) {
@@ -141,8 +141,8 @@ function wireNoteSectionDragging() {
       onEnd: () => {
         card.classList.remove("dragging");
         suppressNoteClickUntil = Date.now() + 300;
-        const order = Array.from(wrap.querySelectorAll("[data-note-sec-card]")).map(c => parseInt(c.dataset.noteSecCard));
-        character.noteSections.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+        const order = Array.from(wrap.querySelectorAll("[data-note-sec-card]")).map(c => c.dataset.noteSecCard);
+        character.noteSections.sort((a, b) => order.indexOf(String(a.id)) - order.indexOf(String(b.id)));
         renderContent();
       }
     });
@@ -179,20 +179,20 @@ function wireNoteDragging() {
         row.classList.remove("dragging");
         suppressNoteClickUntil = Date.now() + 300;
 
-        const noteId = parseInt(row.dataset.noteId);
-        const note = character.notes.find(n => n.id === noteId);
+        const note = character.notes.find(n => sameId(n.id, row.dataset.noteId));
         const newBody = row.closest("[data-note-sec-body]");
-        const newSectionId = newBody ? parseInt(newBody.dataset.noteSecBody) : note.sectionId;
-        if (newSectionId !== note.sectionId) {
-          const targetSection = character.noteSections.find(s => s.id === newSectionId);
+        const newSectionId = newBody ? newBody.dataset.noteSecBody : note.sectionId;
+        if (!sameId(newSectionId, note.sectionId)) {
+          const targetSection = character.noteSections.find(s => sameId(s.id, newSectionId));
           maybeSyncNoteSharingToSection(note, targetSection);
         }
 
         const newNotes = [];
         document.querySelectorAll("[data-note-sec-body]").forEach(body => {
-          const secId = parseInt(body.dataset.noteSecBody);
+          const movedTo = character.noteSections.find(s => sameId(s.id, body.dataset.noteSecBody));
+          const secId = movedTo ? movedTo.id : body.dataset.noteSecBody;
           body.querySelectorAll(".note-row").forEach(r => {
-            const n = character.notes.find(x => x.id == r.dataset.noteId);
+            const n = character.notes.find(x => sameId(x.id, r.dataset.noteId));
             if (n) { n.sectionId = secId; newNotes.push(n); }
           });
         });
@@ -249,7 +249,7 @@ function openAddSectionModal() {
   document.getElementById("save-sec-button").addEventListener("click", () => {
     const name = document.getElementById("new-sec-name").value.trim();
     if (!name) { closeModal(); return; }
-    const newId = Math.max(0, ...character.noteSections.map(s => s.id)) + 1;
+    const newId = makeId(character.noteSections);
     if (receiveFrom) character.noteSections.forEach(s => { s.receiveFrom = false; });
     character.noteSections.push({ id: newId, name, autoShare, receiveFrom });
     openNoteSections[newId] = true;
@@ -259,8 +259,8 @@ function openAddSectionModal() {
 }
 
 function openEditSectionModal(sectionId) {
-  sectionId = parseInt(sectionId);
-  const section = character.noteSections.find(s => s.id === sectionId);
+  const section = character.noteSections.find(s => sameId(s.id, sectionId));
+  sectionId = section ? section.id : sectionId;
   let autoShare = section.autoShare, receiveFrom = section.receiveFrom;
 
   openModal("sheet", `
@@ -325,8 +325,8 @@ function openEditSectionModal(sectionId) {
 }
 
 function openNoteEditorModal(noteId) {
-  noteId = parseInt(noteId);
-  const note = character.notes.find(n => n.id === noteId);
+  const note = character.notes.find(n => sameId(n.id, noteId));
+  noteId = note ? note.id : noteId;
   const section = character.noteSections.find(s => s.id === note.sectionId);
   const isReadOnly = !!(note.sharing && !note.sharing.sharedByMe && note.sharing.permission === "view");
 
@@ -398,7 +398,7 @@ function openNoteActionsMenu(noteId) {
 // a note shared with you keeps the sharer's access on the duplicate too.
 function duplicateNote(noteId) {
   const note = character.notes.find(n => n.id === noteId);
-  const newId = Math.max(0, ...character.notes.map(n => n.id)) + 1;
+  const newId = makeId(character.notes);
   const now = Date.now();
   const dup = JSON.parse(JSON.stringify(note));
   dup.id = newId;
