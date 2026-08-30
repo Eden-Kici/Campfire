@@ -30,6 +30,7 @@ const SUITES = [
   ["round3", "./round3.test.js"],
   ["custom-items", "./custom-items.test.js"],
   ["containers", "./containers.test.js"],
+  ["casting", "./casting.test.js"],
   ["party", "./party.test.js"],
   ["smoke", "./smoke.test.js"]
 ];

@@ -9,7 +9,9 @@ module.exports = function (suite) {
     calculateInitiative, calculateSpeed, calculateMaxHP, calculatePassivePerception,
     calculateProficiencyBonus, calculateAttack, calculateSpellAttack, calculateSpellDC,
     abilityModifier, effectiveAbilityScore, formatModifier, hasCondition,
-    weaponProficiency, itemType, weaponList
+    weaponProficiency, itemType, weaponList,
+    statBonusDice, savingThrowBonusDice, spellAttackBonusDice, effectDice, withBonusDice,
+    bonusLabel, sheetBonusLabel, diceSpan
   } = app;
 
   const item = name => character.inventory.find(i => i.name === name);
@@ -80,11 +82,47 @@ module.exports = function (suite) {
 
   suite.section("attacks");
   const longsword = calculateAttack(character, item("Longsword"));
-  suite.is("to hit totals correctly", longsword.toHitTotal, 8);
-  suite.is("to hit breakdown sums", longsword.toHitSources.reduce((t, s) => t + s.value, 0), 8);
+  /* Bless is on this sheet and contributes nothing to the flat total, because
+     it is 1d4 -- a thing you roll, not a number you add. It still appears in
+     the breakdown, worth zero, so the player can see it is there. */
+  suite.is("to hit totals correctly", longsword.toHitTotal, 7);
+  suite.is("to hit breakdown sums", longsword.toHitSources.reduce((t, s) => t + s.value, 0), 7);
   suite.ok("naming the proficiency requirement",
     longsword.toHitSources.some(s => s.label === "Proficiency (Martial)"));
   suite.ok("an effect reaches attack rolls", longsword.toHitSources.some(s => s.label === "Bless"));
+
+  suite.section("a dice bonus rides in the roll, not the total");
+  suite.is("Bless offers a d4 to attack rolls", statBonusDice(character, "Attack Rolls"), ["1d4"]);
+  suite.is("and to every saving throw, not a chosen one",
+    ["STR", "DEX", "CON", "INT", "WIS", "CHA"].map(a => savingThrowBonusDice(character, a).join("")),
+    ["1d4", "1d4", "1d4", "1d4", "1d4", "1d4"]);
+  suite.is("which is what the notation carries",
+    withBonusDice("1d20" + formatModifier(longsword.toHitTotal), statBonusDice(character, "Attack Rolls")),
+    "1d20+7+1d4");
+  suite.is("a spell attack is an attack roll too",
+    spellAttackBonusDice(character).indexOf("1d4") !== -1, true);
+  suite.is("a flat bonus is still a flat bonus",
+    effectDice({ value: { stat: "AC", amount: 2 } }), null);
+  suite.is("and nonsense in the amount is not dice",
+    effectDice({ value: { stat: "AC", amount: "lots" } }), null);
+  suite.is("nothing to add means nothing added", withBonusDice("1d20+7", []), "1d20+7");
+
+  suite.section("what the bonus comes to");
+  /* "+7" is a lie while Bless is up and "+7+1d4" is arithmetic homework. */
+  suite.is("a d4 on a +7 lands between 8 and 11", bonusLabel(7, ["1d4"]), "+8~11");
+  suite.is("two dice stack their spans", bonusLabel(0, ["1d4", "2d6"]), "+3~16");
+  suite.is("no dice is just the modifier", bonusLabel(7, []), "+7");
+  suite.is("and a negative one still reads right", bonusLabel(-1, ["1d4"]), "+0~3");
+  suite.is("the span of a bare die counts as one", JSON.stringify(diceSpan(["d6"])), JSON.stringify({ min: 1, max: 6 }));
+  suite.is("nonsense contributes nothing", JSON.stringify(diceSpan(["wat"])), JSON.stringify({ min: 0, max: 0 }));
+
+  /* The sheet's own display is a setting; the roll window's is not. */
+  app.settings.showBonusRange = false;
+  suite.is("off, the sheet keeps its steady number", sheetBonusLabel(7, ["1d4"]), "+7");
+  app.settings.showBonusRange = true;
+  suite.is("on, the sheet says the range", sheetBonusLabel(7, ["1d4"]), "+8~11");
+  suite.is("and still just the number when nothing is up", sheetBonusLabel(7, []), "+7");
+  app.settings.showBonusRange = false;
 
   suite.section("stacked damage");
   const fang = calculateAttack(character, item("Serpent's Fang"));
@@ -130,7 +168,8 @@ module.exports = function (suite) {
   suite.is("expertise doubles the new value", calculateSkill(character, "Stealth").total, 2 + 12);
   delete character.skillProficiency.Stealth;
   suite.is("it reaches saves", calculateSavingThrow(character, "STR").total, 3 + 6);
-  suite.is("it reaches attacks", calculateAttack(character, item("Longsword")).toHitTotal, 3 + 6 + 1 + 1);
+  // +1 from the Ring of Precision; Bless is dice and adds nothing flat
+  suite.is("it reaches attacks", calculateAttack(character, item("Longsword")).toHitTotal, 3 + 6 + 1);
   suite.is("and spell DCs", calculateSpellDC(character, "INT").total, 8 + 6 + 1);
   character.proficiencyBonusOverride = originalBonus;
 

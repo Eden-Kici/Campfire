@@ -137,7 +137,9 @@ function renderSpellsTab() {
         <div class="section-head" style="font-size:14px;margin:0;">${esc(levelLabel(lvl))}</div>
         <div style="display:flex;align-items:center;gap:10px;">
           ${slot
-            ? `<button class="mini-edit" data-edit-slots="${lvl}">\u270E</button><span style="color:var(--text-dim);font-size:12px;">${slot.current}/${slot.max} slots</span>`
+            ? `<button class="mini-edit" data-edit-slots="${lvl}">\u270E</button>${usingVisualSlots()
+                ? spellSlotPipsHtml(slot, lvl)
+                : `<span style="color:var(--text-dim);font-size:12px;">${slot.current}/${slot.max} slots</span>`}`
             : (lvl > 0 ? `<span style="color:var(--text-dim);font-size:12px;">no slots</span>` : "")}
         </div>
       </div>
@@ -188,7 +190,7 @@ function castSpell(spellId) {
   const spell = character.spells.find(s => s.id == spellId);
   if (!spell) return;
 
-  // resolve everything that can fail BEFORE spending anything -- this used to
+  // resolve everything that can fail BEFORE anything is spent -- this used to
   // decrement first and then throw on `cls.ability`, so the slot was gone,
   // the re-render never ran, and the screen still showed the old count
   const caster = spell.attackRoll
@@ -199,15 +201,15 @@ function castSpell(spellId) {
     return;
   }
 
-  const slot = character.spellSlots[spell.level];
-  if (slot) {
-    if (slot.current <= 0) showToast("No " + levelLabel(spell.level).replace(" Level", "") + "-level slots left");
-    slot.current--;
-  } else if (spell.level > 0) {
-    showToast("No " + levelLabel(spell.level).replace(" Level", "") + "-level slots on this sheet");
+  // a cantrip has no slot to choose, nothing to upcast and nobody to aim at
+  // that the roll does not already answer
+  if (spell.level === 0) {
+    if (caster) rollSpellAttack(spell);
+    renderContent();
+    return;
   }
-  if (caster) rollSpellAttack(spell);
-  renderContent();
+
+  openCastModal(spell);
 }
 
 /* Shared by Cast and by a cantrip's Roll pill. Returns false when the spell
@@ -219,7 +221,9 @@ function rollSpellAttack(spell) {
     return false;
   }
   const atk = calculateSpellAttack(character, caster.ability);
-  showRoll({ label: spell.name, notation: "1d20" + formatModifier(atk.total),
+  showRoll({ label: spell.name,
+             notation: withBonusDice("1d20" + formatModifier(atk.total), spellAttackBonusDice(character)),
+             bonus: bonusLabel(atk.total, spellAttackBonusDice(character)),
              sources: atk.sources, kind: "attack" });
   return true;
 }
@@ -232,12 +236,15 @@ function rollSpellDamage(spell) {
 }
 
 function wireSpellsTab() {
+  wireSlotPips();
   character.spellcasting.classes.forEach(cls => {
     const atkBox = [...document.querySelectorAll("[data-spell-atk]")].find(el => el.dataset.spellAtk === cls.name);
     if (atkBox) atkBox.addEventListener("click", () => {
       const atk = calculateSpellAttack(character, cls.ability);
       openBreakdownModal(cls.name + " Spell Attack", formatModifier(atk.total), "", atk.sources,
-        { label: cls.name + " Spell Attack", notation: "1d20" + formatModifier(atk.total), kind: "attack" });
+        { label: cls.name + " Spell Attack",
+          notation: withBonusDice("1d20" + formatModifier(atk.total), spellAttackBonusDice(character)),
+          bonus: bonusLabel(atk.total, spellAttackBonusDice(character)), kind: "attack" });
     });
     const dcBox = [...document.querySelectorAll("[data-spell-dc]")].find(el => el.dataset.spellDc === cls.name);
     if (dcBox) dcBox.addEventListener("click", () => {

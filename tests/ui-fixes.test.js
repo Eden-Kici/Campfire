@@ -71,11 +71,15 @@ module.exports = function (suite) {
     suite.is("slot untouched", after, before);
   });
 
+  /* Casting a levelled spell opens the cast window now -- you pick a level and
+     who it lands on -- so the slot goes when you confirm, not when you tap. */
   suite.runs("a normal cast still spends its slot", () => {
     const c = app.character;
     const spell = c.spells.find(s => s.level > 0);
     const before = c.spellSlots[spell.level].current;
     app.castSpell(spell.id);
+    suite.is("the window opened at the spell's own level", app.castState.level, spell.level);
+    app.confirmCast();
     const after = c.spellSlots[spell.level].current;
     c.spellSlots[spell.level].current = before;
     suite.is("spent one", after, before - 1);

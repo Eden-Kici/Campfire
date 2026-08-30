@@ -1256,3 +1256,52 @@ input, textarea, select, .note-body-field, .note-title-field {
    rest of the form off the screen. */
 .search-list { max-height: 220px; overflow-y: auto; }
 .search-list:not(:empty) { margin: -2px 0 10px; }
+
+/* What the bonus actually comes to, under the notation. Shown whether or not
+   the sheet is set to display ranges: "1d20+7+1d4" is what you are throwing,
+   "+8~11" is what it means, and working that out in your head at a table is
+   exactly the job the app is for. */
+.roll-bonus {
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-dim);
+  margin: -4px 0 10px;
+}
+
+/* Spell slots as pips. Diamonds rather than squares because that is the shape
+   every game with a slot economy has taught people to read, and the point of
+   drawing them at all is that you do not have to count. */
+.slot-pips { display: inline-flex; align-items: center; gap: 8px; padding: 3px 2px; }
+.slot-pip {
+  width: 12px; height: 12px; padding: 0;
+  border: 1px solid var(--accent); border-radius: 2px;
+  background: transparent; transform: rotate(45deg);
+  cursor: pointer; flex: none;
+}
+.slot-pip.filled { background: var(--accent); }
+/* a slot you have above your maximum, from a feature that hands you one */
+.slot-pip.extra { border-style: dashed; background: var(--accent-soft); }
+.slot-pip-none { color: var(--text-dim); font-size: 12px; }
+
+.slot-summary { display: inline-flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.slot-summary-level { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-dim); }
+.slot-summary-label { opacity: .75; }
+
+/* The cast window: pick a level, see what it changes, pick who it lands on. */
+.cast-banner {
+  border-radius: 8px; padding: 9px 11px; margin-bottom: 10px;
+  font-size: 12px; line-height: 1.4;
+}
+.cast-banner.caution { background: var(--temp-surface); color: var(--accent-soft); }
+.cast-banner.danger { background: var(--danger-surface); color: var(--danger-text); }
+
+.cast-levels { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+.cast-level {
+  flex: 1 1 52px; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 8px 4px; border: 1px solid var(--border); border-radius: 9px;
+  background: var(--control); color: var(--text); font-family: inherit; cursor: pointer;
+}
+.cast-level.active { border-color: var(--accent); background: var(--control-raised); }
+.cast-level.empty { opacity: .5; }
+.cast-level-num { font-size: 15px; font-weight: bold; }
+.cast-level-slots { font-size: 10px; color: var(--text-dim); }

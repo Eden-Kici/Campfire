@@ -191,7 +191,9 @@ function renderCombatTab() {
       return `
       <div class="res-row">
         <div class="res-name-wrap" data-slot-view="${lvl}"><span class="res-name">${slotRowName(lvl)}</span><span class="res-tag">${esc(rechargeLabel(slot.recharge))}</span></div>
-        <div class="stepper"><button data-slot-minus="${lvl}">\u2212</button><span class="res-count">${slot.current}/${slot.max}</span><button data-slot-plus="${lvl}">+</button></div>
+        ${usingVisualSlots()
+          ? spellSlotPipsHtml(slot, lvl)
+          : `<div class="stepper"><button data-slot-minus="${lvl}">\u2212</button><span class="res-count">${slot.current}/${slot.max}</span><button data-slot-plus="${lvl}">+</button></div>`}
       </div>
     `;
     }).join("")}
@@ -234,7 +236,7 @@ function renderCombatTab() {
             ].filter(Boolean).join(" \u00B7 "))}</div>
           </div>
           ${atk.versatile ? `<button class="grip-toggle ${atk.twoHanded ? "two" : ""}" data-grip="${weapon.id}" title="One- or two-handed">${atk.twoHanded ? "2H" : "1H"}</button>` : ""}
-          <button class="atk-pill" data-roll-tohit="${weapon.id}">${formatModifier(atk.toHitTotal)}</button>
+          <button class="atk-pill" data-roll-tohit="${weapon.id}">${esc(sheetBonusLabel(atk.toHitTotal, statBonusDice(character, "Attack Rolls")))}</button>
           <button class="atk-pill" data-roll-damage="${weapon.id}">${esc(atk.damageNotation)}</button>
         </div>
       `;
@@ -243,6 +245,11 @@ function renderCombatTab() {
     ${pinnedSpells(character).length ? `
       <div class="section-head-row">
         <div class="section-head">Spells</div>
+        ${spellSlotLevels().length ? `<span class="slot-summary">${spellSlotLevels().map(lvl =>
+          usingVisualSlots()
+            ? `<span class="slot-summary-level"><span class="slot-summary-label">${lvl}</span>${spellSlotPipsHtml(character.spellSlots[lvl], lvl)}</span>`
+            : `<span class="slot-summary-level"><span class="slot-summary-label">${lvl}</span>${character.spellSlots[lvl].current}/${character.spellSlots[lvl].max}</span>`
+        ).join("")}</span>` : ""}
       </div>
       ${pinnedSpells(character).map(spell => renderSpellRow(spell)).join("")}
     ` : ""}
@@ -279,7 +286,8 @@ function wireCombatTab() {
   const initiative = calculateInitiative(character);
   root.querySelector("#initiative-box").addEventListener("click", () =>
     openBreakdownModal("Initiative", formatModifier(initiative.total), "", initiative.sources,
-      { label: "Initiative", notation: "1d20" + formatModifier(initiative.total) }));
+      { label: "Initiative", notation: "1d20" + formatModifier(initiative.total),
+        bonus: bonusLabel(initiative.total, []) }));
 
   const speed = calculateSpeed(character);
   root.querySelector("#speed-box").addEventListener("click", () => openBreakdownModal("Speed", speed.total, " ft", speed.sources));
@@ -352,6 +360,7 @@ function wireCombatTab() {
   }));
   root.querySelector("#add-resource-button").addEventListener("click", openAddResourceModal);
 
+  wireSlotPips(root);
   root.querySelectorAll("[data-slot-minus]").forEach(button => {
     button.addEventListener("click", () => { character.spellSlots[button.dataset.slotMinus].current--; renderContent(); });
   });
@@ -370,7 +379,8 @@ function wireCombatTab() {
       const atk = calculateAttack(character, weapon);
       showRoll({
         label: weapon.name + " \u2013 To Hit",
-        notation: "1d20" + formatModifier(atk.toHitTotal),
+        notation: withBonusDice("1d20" + formatModifier(atk.toHitTotal), statBonusDice(character, "Attack Rolls")),
+        bonus: bonusLabel(atk.toHitTotal, statBonusDice(character, "Attack Rolls")),
         sources: atk.toHitSources,
         kind: "attack",
         /* Spent when the attack is actually thrown, not when the window opens
@@ -539,7 +549,10 @@ function concentrationSaveDC(damage) {
 }
 
 function dropConcentration() {
-  const dropped = concentrationGroups(character).map(group => effectGroupLabel(group));
+  const held = concentrationGroups(character);
+  const dropped = held.map(group => effectGroupLabel(group));
+  // anyone we put this on is still holding it, and only we know it is over
+  held.forEach(group => partyRevokeEffect(group));
   character.activeEffects = character.activeEffects.filter(group => !group.concentration);
   return dropped;
 }
@@ -574,7 +587,8 @@ function openConcentrationCheckModal(damage) {
 
   const config = {
     label: "Concentration \u00B7 " + holding.join(", "),
-    notation: "1d20" + formatModifier(save.total),
+    notation: withBonusDice("1d20" + formatModifier(save.total), savingThrowBonusDice(character, "CON")),
+    bonus: bonusLabel(save.total, savingThrowBonusDice(character, "CON")),
     sources: save.sources,
     kind: "save",
     ability: "CON",
@@ -1258,7 +1272,7 @@ function openAttackDetailModal(weaponId) {
     <div class="breakdown-subhead">To Hit</div>
     ${breakdownRowsHtml(atk.toHitSources)}
     <hr class="breakdown-divider">
-    <div class="breakdown-total"><span>Total</span><span>${formatModifier(atk.toHitTotal)}</span></div>
+    <div class="breakdown-total"><span>Total</span><span>${esc(bonusLabel(atk.toHitTotal, statBonusDice(character, "Attack Rolls")))}</span></div>
 
     ${atk.damage.map(part => `
       <div class="breakdown-subhead">${esc(part.type || "Damage")}</div>

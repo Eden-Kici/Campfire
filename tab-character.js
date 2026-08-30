@@ -38,7 +38,7 @@ function renderCharacterTab() {
           <div class="skill-row" data-save="${a}">
             <div class="prof-dot ${character.savingThrowProficiency[a] ? "prof" : ""}"></div>
             <div class="skill-name">${ABILITY_FULL_NAMES[a]}</div>
-            <div class="skill-bonus">${formatModifier(save.total)}${save.overridden ? "*" : ""}</div>
+            <div class="skill-bonus">${esc(sheetBonusLabel(save.total, savingThrowBonusDice(character, a)))}${save.overridden ? "*" : ""}</div>
             <button class="mini-edit" data-edit-save="${a}">\u270E</button>
           </div>`;
       }).join("")}
@@ -56,7 +56,7 @@ function renderCharacterTab() {
             <div class="prof-dot ${dotClass}"></div>
             <div class="skill-name">${skillName}</div>
             <div class="skill-ability-small">${character.skillAbilityMap[skillName]}</div>
-            <div class="skill-bonus">${formatModifier(skill.total)}${skill.overridden ? "*" : ""}</div>
+            <div class="skill-bonus">${esc(sheetBonusLabel(skill.total, skillBonusDice(character, skillName)))}${skill.overridden ? "*" : ""}</div>
             <button class="mini-edit" data-edit-skill="${skillName}">\u270E</button>
           </div>`;
       }).join("")}
@@ -146,7 +146,8 @@ function wireCharacterTab() {
       const a = box.dataset.ability;
       const check = calculateAbilityCheck(character, a);
       openBreakdownModal(ABILITY_FULL_NAMES[a] + " Check", formatModifier(check.total), "", check.sources,
-        { label: ABILITY_FULL_NAMES[a] + " Check", notation: "1d20" + formatModifier(check.total), kind: "check" });
+        { label: ABILITY_FULL_NAMES[a] + " Check", notation: "1d20" + formatModifier(check.total),
+          bonus: bonusLabel(check.total, []), kind: "check" });
     });
   });
   document.querySelectorAll("[data-edit-ability]").forEach(btn => btn.addEventListener("click", (e) => { e.stopPropagation(); openEditAbilityModal(btn.dataset.editAbility); }));
@@ -158,7 +159,9 @@ function wireCharacterTab() {
       if (e.target.closest("[data-edit-save]")) return;
       const a = row.dataset.save;
       const save = calculateSavingThrow(character, a);
-      showRoll({ label: ABILITY_FULL_NAMES[a] + " Save", notation: "1d20" + formatModifier(save.total),
+      showRoll({ label: ABILITY_FULL_NAMES[a] + " Save",
+                 notation: withBonusDice("1d20" + formatModifier(save.total), savingThrowBonusDice(character, a)),
+                 bonus: bonusLabel(save.total, savingThrowBonusDice(character, a)),
                  sources: save.sources, kind: "save", ability: a });
     });
   });
@@ -169,7 +172,9 @@ function wireCharacterTab() {
       if (e.target.closest("[data-edit-skill]")) return;
       const name = row.dataset.skill;
       const skill = calculateSkill(character, name);
-      showRoll({ label: name, notation: "1d20" + formatModifier(skill.total),
+      showRoll({ label: name,
+                 notation: withBonusDice("1d20" + formatModifier(skill.total), skillBonusDice(character, name)),
+                 bonus: bonusLabel(skill.total, skillBonusDice(character, name)),
                  sources: skill.sources, kind: "check" });
     });
   });

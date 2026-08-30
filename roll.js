@@ -308,6 +308,7 @@ function rollWindowHtml() {
   return `
     <div class="roll-title">${esc(config.label)}</div>
     <div class="roll-notation">${esc(config.notation)}</div>
+    ${config.bonus ? `<div class="roll-bonus">Total bonus ${esc(config.bonus)}</div>` : ""}
 
     ${hasTarget ? `
       <div class="roll-dc">

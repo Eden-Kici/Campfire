@@ -195,9 +195,14 @@ your own custom content, ammunition is sold singly instead of in named bundles, 
 containers you can open and drag things into, the money block is now Coins with Send in its header,
 and swiping moves between tabs.
 
+The spells side is done too: Bless is a real 1d4 rather than a flat +1, slots draw as pips, casting
+opens a window that picks a level, previews what upcasting changes, picks who it lands on, and warns
+about downcasting and over-reaching — and breaking concentration clears the spell off the sheets it
+was cast on.
+
 Standing shares, the offer flow and item giving have been run on the phones. **Everything since —
-money, stack merging, edit-back, containers, catalogue search and swiping — has only been run in
-browsers against a local relay.**
+money, stack merging, edit-back, containers, catalogue search, swiping and all of the spell work —
+has only been run in browsers against a local relay.**
 
 1. Push, then open the app on both phones. Host on one, join on the other with the four-character
    code. Watch a hit-point change on one appear on the other.

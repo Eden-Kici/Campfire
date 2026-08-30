@@ -46,7 +46,9 @@ exactly what the page loads. Adding a file means adding it to `index.html`.
 Order: identity primitives (`identity.js`, which declares nothing but `makeId`/`sameId`/`deviceId`
 and depends on nothing) → reference data (`srd-*.js`, now several files — races, classes, equipment, magic items and
 two halves of the spell list, split to stay under the `structure` suite's 1,500-line cap) →
-character data → shared machinery (`dice-history`, `roll`, `ui`, `theme`, `characters`, `tutorial`,
+character data → `demo-character.js` (the sheet the app opens with, split out of character-data.js at
+the 1,500-line cap: it is pure data, everything left behind is calculation, and it loads *after* its
+parent because it reads constants declared there) → shared machinery (`dice-history`, `roll`, `ui`, `theme`, `characters`, `tutorial`,
 `creator`, `party-protocol`, `party-net`, `party`, `content`, `rests`, `choices`, `help`) → one file
 per tab (plus `inventory-give.js`, split off when tab-inventory hit the 1,500-line cap: everything
 about the moment something leaves your sheet for somebody else's, none of which is needed to draw an
@@ -111,6 +113,23 @@ These are load-bearing and easy to break:
   `{ countsWeight, appliesEffects, providesAttacks }`. Armour only contributes AC from a category
   with `appliesEffects`; weapons only appear under Attacks from one with `providesAttacks`.
   Stowing a weapon moves its category, it never deletes anything.
+- **A bonus can be dice, and dice ride in the roll rather than the total.** Bless adds 1d4 to attack
+  rolls and saving throws, which is not a number you can fold into "your attack bonus is +7" — the
+  whole point is that it is rolled fresh each time. So `effect.value.amount` may be a dice string;
+  `effectAmount()` resolves it to 0 (it contributes nothing flat, and still shows in the breakdown at
+  zero so the player can see it is there), and `effectDice()` / `statBonusDice()` /
+  `savingThrowBonusDice()` / `skillBonusDice()` collect it for `withBonusDice()` to append to the
+  notation and to the pill: `+7+1d4`, rolled as `1d20+7+1d4`.
+  Collected **at the roll site rather than inside the calculators**, which is why five calculation
+  functions and their tests were left alone.
+- **Where that number shows is a setting; what it comes to is not.** `sheetBonusLabel()` respects
+  `settings.showBonusRange`: off (the default) the sheet keeps the steady modifier it has when
+  nothing temporary is up, and the range appears when you go to roll; on, the sheet reads `+8~11`
+  everywhere. The **roll window always** carries a "Total bonus" line under the notation, whichever
+  way the setting is set — `1d20+7+1d4` is what you are throwing, `+8~11` is what it means, and
+  working that out in your head at a table is the job the app exists to do.
+  A Saving Throw effect can name `"All"`, because Bless lifts every save and writing that as six
+  separate modifiers is six things that can drift apart.
 - **`APP_VERSION` in app.js is shown under Development in the menu, and is bumped by hand.** Bump it
   whenever you change something a player would notice, so "which build is this phone running" has an
   answer during a demo instead of a guess.
@@ -374,6 +393,34 @@ first-ever launch does. Tutorial tests set `tutorialState` by hand instead.
   field and pushes the form down rather than floating over it, because a dropdown is fine under a
   mouse and a poor target for a thumb. Three different ways of picking a thing off a list is three
   things to learn.
+
+## Casting
+
+`spell-cast.js` — split from tab-spells.js because casting turned out to be a conversation rather
+than a button. A cantrip still resolves on the tap; anything with a level opens a window.
+
+- **The upcast preview is the SRD's own words.** There is no structured upcast data anywhere: 53 of
+  the 169 spells carry an "At Higher Levels" paragraph and the other 116 genuinely gain nothing. So
+  `spellUpcastText()` lifts that paragraph verbatim and prefixes how far above base you are. The 116
+  get the yellow banner instead, which is true rather than a guess.
+- **`spellTargetLimit()` reads the count out of the spell's own sentence** — "up to three creatures"
+  is prose, not a field — and applies the "one additional creature for each slot level above" rule
+  when the text says so. It returns **null for anything it does not recognise, and null means no
+  warning**: a limit we are unsure of is worse than no limit, because a warning that fires wrongly
+  teaches people to ignore warnings.
+- **Downcasting warns and allows.** The app has never refused a cast — a table ruling can put a
+  character outside the slot economy entirely — and a sheet that argues with the person holding it
+  is a sheet they stop using.
+- **A concentration spell aimed at other players lands on their sheets**, and the caster's own copy
+  records `castOn` so that dropping concentration can clear it again (`partyRevokeEffect` →
+  `effect-revoke`). Instantaneous spells push nothing: a heal is a number said out loud, and pushing
+  an effect for one would leave "Cure Wounds" on somebody's sheet forever with nothing to remove it.
+  The far side is *told*, not asked — the spell is over either way — but gets a window it must
+  acknowledge, because a bonus quietly vanishing mid-fight is how people end up rolling with numbers
+  that stopped being true.
+- `settings.autoSpendSlots` (on) spends the slot and names it in a toast; `settings.visualSpellSlots`
+  (on) draws slots as tappable pips instead of a fraction, in both tabs and in Combat's Spells
+  section.
 
 ## Gestures on a phone
 

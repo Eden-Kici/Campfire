@@ -278,6 +278,18 @@ function parsePartyMessage(raw) {
     };
   }
 
+  /* A spell ending on somebody else's sheet. The caster is the only one who
+     knows they stopped concentrating, so they are the one who says so. */
+  if (msg.t === "effect-revoke") {
+    if (msg.id == null) return null;
+    return {
+      t: "effect-revoke",
+      id: String(msg.id).slice(0, 40),
+      to: typeof msg.to === "string" ? msg.to : "*",
+      fromName: clampText(msg.fromName, 40, "Someone")
+    };
+  }
+
   if (msg.t === "note") {
     const note = readNote(msg.note);
     if (!note) return null;

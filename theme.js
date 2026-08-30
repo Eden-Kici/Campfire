@@ -47,6 +47,13 @@ let settings = {
      skill without logging a die for it. On puts it back to resolving on the
      first tap, for tables that want the speed. */
   fastRolls: false,
+  // off means casting leaves the slots alone and you move the pips yourself
+  autoSpendSlots: true,
+  // pips rather than "3/4". Off puts the numbers back.
+  visualSpellSlots: true,
+  /* Off, the sheet shows the steady bonus and the range appears in the roll
+     window. On, the range shows on the sheet too. */
+  showBonusRange: false,
   /* Off, only your own content is marked. On, every item says where it came
      from -- SRD, third-party, or yours. */
   showSourceTags: false,
@@ -78,6 +85,12 @@ function openSettingsModal() {
       { hint: "Otherwise they appear only at 0 hit points" })}
     ${toggleLineHtml("setting-fast-rolls", "Fast Rolls", settings.fastRolls,
       { hint: "Roll on the first tap" })}
+    ${toggleLineHtml("setting-auto-slots", "Casting spends the slot", settings.autoSpendSlots,
+      { hint: "Off, casting leaves your slots alone and you spend them yourself" })}
+    ${toggleLineHtml("setting-visual-slots", "Visual spell slots", settings.visualSpellSlots,
+      { hint: "Pips instead of a count. Tap one to spend it" })}
+    ${toggleLineHtml("setting-bonus-range", "Show bonus ranges on the sheet", settings.showBonusRange,
+      { hint: "A blessed +7 reads +8~11. The roll window shows it either way" })}
     ${toggleLineHtml("setting-source-tags", "Show content source tags", settings.showSourceTags,
       { hint: "Marks every item SRD, 3PP or CC. Your own content is always marked" })}
     ${toggleLineHtml("setting-stashed-money", "Track stashed coins", settings.trackStashedMoney,
@@ -99,6 +112,9 @@ function openSettingsModal() {
   });
   settingToggle("setting-death-saves", "alwaysShowDeathSaves");
   settingToggle("setting-fast-rolls", "fastRolls");
+  settingToggle("setting-auto-slots", "autoSpendSlots");
+  settingToggle("setting-visual-slots", "visualSpellSlots");
+  settingToggle("setting-bonus-range", "showBonusRange");
   settingToggle("setting-source-tags", "showSourceTags");
   settingToggle("setting-stashed-money", "trackStashedMoney");
   settingToggle("setting-money-weight", "moneyCountsWeight");

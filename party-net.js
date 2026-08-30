@@ -269,6 +269,18 @@ function handlePartyMessage(raw) {
     return;
   }
 
+  if (msg.t === "effect-revoke") {
+    if (msg.to !== deviceId()) return;
+    const ending = (character.activeEffects || []).find(g => sameId(g.id, msg.id));
+    if (!ending) return;
+    character.activeEffects = character.activeEffects.filter(g => g !== ending);
+    renderContent();
+    infoModal(ending.name + " has ended",
+      msg.fromName + " stopped concentrating, so " + ending.name + " is no longer on your sheet.",
+      "Confirm");
+    return;
+  }
+
   if (msg.t === "note") {
     if (msg.to !== deviceId()) return;
     /* A note arriving while no sheet is open used to be announced and thrown
@@ -492,6 +504,22 @@ function partyResendNotesTo(device, theirName) {
     const permission = sharePermissionFor(note, device);
     if (partySend("note", { note: wireNote(note), to: device, from: deviceId(), permission: permission, fromName: fromName })) sent += 1;
   });
+  return sent;
+}
+
+/* Told, not asked. Concentration has ended and the spell is over whether or
+   not the other player is looking at their phone -- but they get a window they
+   have to acknowledge, because a bonus quietly vanishing mid-fight is how
+   people end up rolling with numbers that stopped being true. */
+function partyRevokeEffect(group) {
+  const targets = (group && group.castOn) || [];
+  if (!targets.length) return 0;
+  const fromName = myPartyName();
+  let sent = 0;
+  targets.forEach(device => {
+    if (partySend("effect-revoke", { id: group.id, to: device, fromName: fromName })) sent += 1;
+  });
+  delete group.castOn;
   return sent;
 }
 

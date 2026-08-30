@@ -133,7 +133,7 @@ function confirmModal(options) {
 /* Same layer as confirmModal, for the same reason: an explanation is nearly
    always wanted from *inside* a form, and openModal() would close the form to
    show it. Read-only, so one dismiss button and nothing to cancel. */
-function infoModal(title, body) {
+function infoModal(title, body, buttonLabel) {
   const existing = document.getElementById("confirm-overlay");
   if (existing) existing.remove();
 
@@ -144,7 +144,7 @@ function infoModal(title, body) {
     <div class="confirm-box">
       <div class="confirm-title">${esc(title)}</div>
       <div class="confirm-body">${esc(body)}</div>
-      <button class="btn-secondary" id="info-close" style="margin-top:16px;">Close</button>
+      <button class="btn-secondary" id="info-close" style="margin-top:16px;">${esc(buttonLabel || "Close")}</button>
     </div>
   `;
   document.querySelector(".phone").appendChild(overlay);
@@ -514,6 +514,50 @@ function wireCombo(id, options, onChange) {
    it: a dropdown is fine under a mouse and a poor target for a thumb. Nothing
    shows until you type, and an exact match disappears, because offering back
    the thing you just picked is noise. */
+/* Spell slots as pips rather than a fraction. "Three of four" is something you
+   read; three filled boxes out of four is something you see, which is why every
+   game with a slot economy draws them this way.
+
+   A pip is tappable: a filled one spends, an empty one gives it back. Slots
+   above your maximum -- a feature that hands you an extra -- get their own mark
+   rather than being lost, because the app lets counts run past the ceiling
+   everywhere else too. */
+function spellSlotPipsHtml(slot, level) {
+  const max = Math.max(0, slot.max || 0);
+  const current = Math.max(0, slot.current || 0);
+  const shown = Math.min(current, max);
+  const spare = Math.max(0, current - max);
+
+  let pips = "";
+  for (let i = 0; i < max; i++) {
+    pips += `<button class="slot-pip${i < shown ? " filled" : ""}" data-slot-pip="${level}" data-pip-filled="${i < shown ? 1 : 0}" aria-label="Slot ${i + 1}"></button>`;
+  }
+  for (let i = 0; i < spare; i++) {
+    pips += `<button class="slot-pip filled extra" data-slot-pip="${level}" data-pip-filled="1" aria-label="Extra slot"></button>`;
+  }
+  if (!max && !spare) pips = `<span class="slot-pip-none">none</span>`;
+  return `<span class="slot-pips" title="${current}/${max}">${pips}</span>`;
+}
+
+/* A pip spends or restores the slot it stands for. stopPropagation because in
+   the Spells tab these sit inside the level header, which is itself a toggle --
+   without it, spending a slot also collapsed the list you were looking at. */
+function wireSlotPips(root) {
+  (root || document).querySelectorAll("[data-slot-pip]").forEach(pip => {
+    pip.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const slot = character.spellSlots[pip.dataset.slotPip];
+      if (!slot) return;
+      slot.current += pip.dataset.pipFilled === "1" ? -1 : 1;
+      renderContent();
+    });
+  });
+}
+
+function usingVisualSlots() {
+  return typeof settings === "undefined" || settings.visualSpellSlots !== false;
+}
+
 function searchListHtml(id) {
   return `<div class="search-list" id="${id}"></div>`;
 }
@@ -596,7 +640,11 @@ function effectSubfieldsHtml(category, idPrefix, existingValue) {
     </div>`;
   }
   if (category === "Ability Score" || category === "Saving Throw") {
-    return selectFieldHtml(idPrefix + "-ability", "Ability", Object.keys(ABILITY_FULL_NAMES)) +
+    // a saving throw effect can cover the lot; an ability score cannot
+    const abilities = category === "Saving Throw"
+      ? ["All"].concat(Object.keys(ABILITY_FULL_NAMES))
+      : Object.keys(ABILITY_FULL_NAMES);
+    return selectFieldHtml(idPrefix + "-ability", "Ability", abilities) +
       scalingValueFieldsHtml(idPrefix + "-amount", (existingValue && existingValue.amount !== undefined) ? existingValue.amount : -2, "Amount");
   }
   if (category === "Skill") {
@@ -768,7 +816,11 @@ function readRechargeValue(idPrefix) {
 
 function scalingValueBodyHtml(idPrefix, value) {
   const scaling = value && typeof value === "object" && Array.isArray(value.tiers);
-  if (!scaling) return numberFieldHtml(idPrefix + "-flat", "Amount", typeof value === "number" ? value : 1);
+  if (!scaling) {
+    return textFieldHtml(idPrefix + "-flat", "Amount",
+      typeof value === "number" || typeof value === "string" ? value : 1,
+      { hint: "A number, or dice like 1d4" });
+  }
   return `
     ${value.tiers.map((t, i) => `
       <div class="field-row" data-tier-row="${i}">
@@ -795,7 +847,11 @@ function scalingValueFieldsHtml(idPrefix, value, label) {
 function readScalingValueFromForm(idPrefix, wasScaling, tierCount) {
   if (!wasScaling) {
     const flatEl = document.getElementById(idPrefix + "-flat");
-    return flatEl ? (parseInt(flatEl.value) || 0) : 0;
+    if (!flatEl) return 0;
+    const raw = String(flatEl.value).trim().toLowerCase();
+    // kept as text when it is dice: "1d4" is rolled, not added
+    if (/^\d{0,2}d\d{1,3}$/.test(raw)) return raw;
+    return parseInt(raw) || 0;
   }
   const tiers = [];
   for (let i = 0; i < tierCount; i++) {

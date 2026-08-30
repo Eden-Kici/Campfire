@@ -5,7 +5,7 @@
 /* Bumped by hand whenever the app changes in a way a player would notice.
    Shown under Development in the menu, so "which build is this phone on" has
    an answer during a demo instead of a guess. */
-const APP_VERSION = "0.16.0";
+const APP_VERSION = "0.19.0";
 
 let activeTab = "combat";
 const tabButtons = document.querySelectorAll(".tab-item");

@@ -264,7 +264,8 @@ module.exports = function (suite) {
     const c2 = app.character;
     const spell = c2.spells.find(s => s.level === 1);
     const before = c2.spellSlots[1].current;
-    app.castSpell(spell.id);
+    app.castSpell(spell.id);       // opens the cast window
+    app.confirmCast();             // and this is what spends
     if (c2.spellSlots[1].current !== before - 1) throw new Error("the slot wasn't spent");
     c2.spellSlots[1].current = before;
   });
