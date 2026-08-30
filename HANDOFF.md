@@ -181,7 +181,11 @@ room code, a live roster honouring the host's visibility settings, pushing an ef
 another player's sheet, note sharing with per-person view/edit, and item giving with an
 acknowledgement so a gift nobody receives comes back. All verified with two browsers against a local
 relay; the roster and effect push have also been run on the two phones against the deployed relay.
-**Note sharing and item giving have not yet been run on the phones.**
+
+Since then, sharing became a **standing arrangement** — kept by device, re-sent whenever that device
+rejoins, with auto-share sections enrolling whoever arrives — and giving became an **offer** the
+receiver accepts or declines, with the giver watching a window they can close and which reopens with
+the answer. **None of that has been run on the phones yet.**
 
 1. Push, then open the app on both phones. Host on one, join on the other with the four-character
    code. Watch a hit-point change on one appear on the other.

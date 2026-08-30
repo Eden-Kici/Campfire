@@ -68,7 +68,9 @@ function loadCharacters() {
   }
 
   savedCharacters = saved.characters;
-  character = savedCharacters.find(c => c.id === saved.openId) || savedCharacters[0];
+  // sharing written before it meant anything names people with no address
+  savedCharacters.forEach(normaliseNoteSharing);
+  character = savedCharacters.find(c => sameId(c.id, saved.openId)) || savedCharacters[0];
   return { stale: false };
 }
 
@@ -102,6 +104,7 @@ function showScreen(screen) {
   document.getElementById("selector-screen").style.display = screen === "selector" ? "flex" : "none";
   document.getElementById("sheet-screen").style.display = screen === "sheet" ? "flex" : "none";
   refreshMyPartyIdentity();          // no-op unless you're actually in a party
+  drainPendingPartyNotes();          // anything that arrived while no sheet was open
   if (screen === "selector") renderSelectorScreen();
   else { renderSheetHeader(); renderContent(); }
   // landing on the sheet mid-tutorial means a character just got built (or

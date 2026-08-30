@@ -150,6 +150,21 @@ function partyAnnounceLeaving() {
 /* ---------- what arrives ---------- */
 
 let partyWarnedAboutVersion = false;
+let pendingIncomingNotes = [];
+
+/* Called when a character is opened. Anything that arrived while there was no
+   sheet to put it on gets applied now. */
+function drainPendingPartyNotes() {
+  if (!pendingIncomingNotes.length || currentScreen !== "sheet") return;
+  const waiting = pendingIncomingNotes;
+  pendingIncomingNotes = [];
+  waiting.forEach(msg => {
+    applySharedNote(character, receivedNote(msg.note, msg.fromName, msg.permission));
+  });
+  showToast(waiting.length === 1 ? "A shared note was waiting for you"
+                                 : waiting.length + " shared notes were waiting for you");
+  renderContent();
+}
 
 function handlePartyMessage(raw) {
   const msg = parsePartyMessage(raw);
@@ -177,7 +192,12 @@ function handlePartyMessage(raw) {
     // a new arrival gets told who is already here; a reply never triggers
     // another reply, which is what keeps this from echoing forever
     if (!msg.reply) partyAnnounceMe(true);
-    if (!known) showToast(msg.entry.name + " joined");
+    if (!known) {
+      showToast(msg.entry.name + " joined");
+      // standing shares are honoured on arrival, not only at the moment you
+      // first ticked the box
+      partyResendNotesTo(msg.entry.device, msg.entry.name);
+    }
 
     refreshPartyDependentScreens();
     return;
@@ -191,36 +211,45 @@ function handlePartyMessage(raw) {
     return;
   }
 
-  if (msg.t === "item") {
+  if (msg.t === "item-offer") {
     if (msg.to !== deviceId()) return;
-    // an unopened sheet cannot take delivery, so say nothing back and let the
-    // giver's timeout hand it to them again
-    if (currentScreen !== "sheet") { showToast(msg.fromName + " is giving you something \u2014 open a character"); return; }
-
-    const landed = receivedItem(msg.item, character, msg.transferId);
-    applyReceivedItem(character, landed.item);
-    if (msg.from) partySend("item-ack", { transferId: msg.transferId, to: msg.from });
-
-    const what = landed.item.qty > 1 ? landed.item.qty + " " + landed.item.name : landed.item.name;
-    showToast(landed.missing.length
-      ? msg.fromName + " gave you " + what + " \u2014 no " + landed.missing.join(" or ") + " here, so it arrived unlinked"
-      : msg.fromName + " gave you " + what);
-    renderContent();
+    // there is no sheet to put it on, and leaving the giver hanging for a
+    // minute is worse than telling them now
+    if (currentScreen !== "sheet") { declineOffer(msg, "no character open"); return; }
+    // one at a time: two accept prompts stacked on a phone is a way to tap the
+    // wrong one
+    if (incomingOffer) { declineOffer(msg, "busy"); return; }
+    incomingOffer = msg;
+    openIncomingItemModal(msg);
     return;
   }
 
-  if (msg.t === "item-ack") {
+  if (msg.t === "item-reply") {
     if (msg.to !== deviceId()) return;
     const pending = pendingGives[msg.transferId];
-    if (!pending) return;
+    if (!pending || pending.status !== "waiting") return;
     clearTimeout(pending.timer);
-    delete pendingGives[msg.transferId];
+    pending.status = msg.accepted ? "accepted" : "declined";
+    pending.reason = msg.reason;
+    pending.toName = msg.fromName || pending.toName;
+    if (!msg.accepted) returnGivenItem(pending);
+    // reopens if the giver tapped away while waiting, which they are told they
+    // may do
+    showGiveStatusModal(msg.transferId);
     return;
   }
 
   if (msg.t === "note") {
     if (msg.to !== deviceId()) return;
-    if (currentScreen !== "sheet") { showToast(msg.fromName + " shared a note \u2014 open a character"); return; }
+    /* A note arriving while no sheet is open used to be announced and thrown
+       away. It is held instead, and applied the moment a character is opened:
+       the sender did their part, and losing it here would be invisible to
+       both of them. */
+    if (currentScreen !== "sheet") {
+      pendingIncomingNotes.push(msg);
+      showToast(msg.fromName + " shared a note \u2014 open a character to read it");
+      return;
+    }
     const known = (character.notes || []).some(n => sameId(n.id, msg.note.id));
     const placed = applySharedNote(character, receivedNote(msg.note, msg.fromName, msg.permission));
     showToast(known ? msg.fromName + " updated \u201c" + (placed.title || "a note") + "\u201d"
@@ -253,8 +282,7 @@ function handlePartyMessage(raw) {
    rather than one broadcast, so "can edit" for one person and "can view" for
    another is a thing the protocol can actually say. */
 function partyShareNote(note, recipients) {
-  const me = party.members.find(m => m.you);
-  const fromName = me ? me.name : settings.username;
+  const fromName = myPartyName();
   let sent = 0;
   (recipients || []).forEach(r => {
     if (partySend("note", { note: wireNote(note), to: r.device, permission: r.permission, fromName: fromName })) sent += 1;
@@ -263,8 +291,7 @@ function partyShareNote(note, recipients) {
 }
 
 function partyUnshareNote(noteId, devices) {
-  const me = party.members.find(m => m.you);
-  const fromName = me ? me.name : settings.username;
+  const fromName = myPartyName();
   (devices || []).forEach(device => partySend("note-unshare", { id: noteId, to: device, fromName: fromName }));
 }
 
@@ -287,60 +314,88 @@ function partyResendNoteSoon(note) {
   noteResendTimer = setTimeout(() => partyResendNote(note), 700);
 }
 
-/* Giving is the only thing in this app that destroys something on this phone
-   in order to create it on another, so it is the only thing that waits to hear
-   back. The item leaves your bag immediately, because a demo where you tap
-   Give and nothing happens for a second reads as broken -- but it is held
-   aside, and if nobody acknowledges it within a few seconds it comes back.
+/* Giving is the only thing in this app that destroys something on one phone in
+   order to create it on another, and it is now the only thing that asks
+   permission first. An item is not a notification: arriving in someone's bag
+   uninvited is a change to their character that they did not make.
 
-   Without this, one message lost in flight destroys the item for both players
-   and neither of them ever finds out. */
-const GIVE_ACK_TIMEOUT = 8000;
+   So a give is an offer. The item leaves the giver's bag straight away -- they
+   should not be able to promise the same sword to two people while one of them
+   thinks about it -- and comes back if the answer is no, or if no answer comes
+   at all. */
+const GIVE_ANSWER_TIMEOUT = 60000;
 let pendingGives = {};
+let incomingOffer = null;
 
-function partyGiveItem(item, qty, toDevice) {
+function myPartyName() {
   const me = party.members.find(m => m.you);
+  return me ? me.name : settings.username;
+}
+
+function partyGiveItem(item, qty, recipient) {
   const transferId = makeId(character.inventory);
-  const parcel = Object.assign({}, item, { qty: qty });
-  const ok = partySend("item", {
+  const ok = partySend("item-offer", {
     transferId: transferId,
-    item: wireItem(parcel),
-    to: toDevice,
+    item: wireItem(Object.assign({}, item, { qty: qty })),
+    to: recipient.device,
     from: deviceId(),
-    fromName: me ? me.name : settings.username
+    fromName: myPartyName()
   });
   if (!ok) return null;
 
   pendingGives[transferId] = {
     item: JSON.parse(JSON.stringify(item)),
     qty: qty,
-    timer: setTimeout(() => giveWentUnanswered(transferId), GIVE_ACK_TIMEOUT)
+    toName: recipient.name,
+    status: "waiting",
+    timer: setTimeout(() => giveWentUnanswered(transferId), GIVE_ANSWER_TIMEOUT)
   };
   return transferId;
 }
 
-function giveWentUnanswered(transferId) {
-  const pending = pendingGives[transferId];
-  if (!pending) return;
-  delete pendingGives[transferId];
-
-  // back in the bag: onto the original stack if it survived, as its own row if
-  // the whole thing was handed over
+/* Back in the bag: onto the original stack if it survived, as its own row if
+   the whole thing was handed over. */
+function returnGivenItem(pending) {
   const stack = character.inventory.find(i => sameId(i.id, pending.item.id));
   if (stack) stack.qty = (stack.qty || 0) + pending.qty;
   else character.inventory.push(Object.assign({}, pending.item, { qty: pending.qty }));
-
-  showToast("No answer \u2014 kept your " + pending.item.name);
   renderContent();
 }
 
+function giveWentUnanswered(transferId) {
+  const pending = pendingGives[transferId];
+  if (!pending || pending.status !== "waiting") return;
+  pending.status = "unanswered";
+  returnGivenItem(pending);
+  showGiveStatusModal(transferId);
+}
+
+/* Sharing is a standing arrangement rather than a single send. Someone who was
+   offline when you shared, or who joined the party afterwards, has nothing
+   until they are told again -- so the moment a device appears on the roster,
+   every note already marked as shared with it goes out.
+
+   This is the whole reason sharing is stored by device and kept after the
+   session ends. */
+function partyResendNotesTo(device, theirName) {
+  const fromName = myPartyName();
+  // a section set to auto-share means everyone at the table, including whoever
+  // just walked in
+  enrolInAutoShares(character, device, theirName || "Player");
+  let sent = 0;
+  notesSharedWith(character, device).forEach(note => {
+    const permission = sharePermissionFor(note, device);
+    if (partySend("note", { note: wireNote(note), to: device, permission: permission, fromName: fromName })) sent += 1;
+  });
+  return sent;
+}
+
 function partyPushEffect(group, toDevice) {
-  const me = party.members.find(m => m.you);
   return partySend("effect", {
     // flattened at our level, not theirs -- see wireEffectGroup
     group: wireEffectGroup(group, totalLevel(character)),
     to: toDevice || "*",
-    fromName: me ? me.name : settings.username
+    fromName: myPartyName()
   });
 }
 

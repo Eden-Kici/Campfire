@@ -188,6 +188,21 @@ first-ever launch does. Tutorial tests set `tutorialState` by hand instead.
   keystroke, and without it typing a sentence would be a message per letter. `removeSharedNote`
   refuses to touch a note the holder owns, so an unshare naming a guessed id cannot delete someone's
   own writing.
+- **Sharing is a standing arrangement, not a single send**, and this is the part that was wrong
+  first time. It is stored **by device**, because a name is not an address — two players can bring
+  characters called the same thing. `partyResendNotesTo()` fires the moment a device appears on the
+  roster, so a note shared with someone who was offline, or who joins later, reaches them. The share
+  screen lists standing shares for people who aren't present under "Not at the table right now",
+  because an arrangement you can't see is one you can't take back.
+- **Auto-share belongs to the section, not to the instant the note was written.** A note made in an
+  auto-share section while you were alone was shared with nobody, and used to stay that way for
+  life — the likeliest reason a note "wasn't arriving". `enrolInAutoShares()` adds each arriving
+  device to those notes. The one thing that overrules it is `note.autoShareOptOut`, set when a
+  player stops a note's sharing by hand: a decision made deliberately outranks a rule set once.
+- **`normaliseNoteSharing()` runs on load** and clears sharing that was never real: entries carrying
+  a name and no device, and incoming shares on notes whose id is a bare number — a note genuinely
+  received keeps the sender's device-prefixed id, so a plain number can only be demo dressing from
+  before any of this worked.
 - **Items are the hard case, and the rules are the interesting part.** An item's `category` keys
   into the *holder's* `categoryRules`, so one in a category they have never created matches no rule
   and renders nowhere at all. `landingCategory()` therefore files every arrival under a category
@@ -195,12 +210,15 @@ first-ever launch does. Tutorial tests set `tutorialState` by hand instead.
   they chose to put it on. `ammunition` and `resource.refillFrom` are name lookups into the holder's
   sheet, so they are cut when the receiver has no match, and the receiver is told which link went.
   `isDefaultLoadout` and `category` are the sender's arrangement and never travel.
-- **Giving is the only action that destroys something here to create it there**, so it is the only
-  one that waits to hear back. The item leaves the bag immediately, is held in `pendingGives`, and
-  is returned after `GIVE_ACK_TIMEOUT` if no acknowledgement arrives — a phone with no character
-  open cannot take delivery, and without this that gift would be destroyed for both players with
-  neither of them told. Transfers are keyed on a fresh transfer id, so a repeated delivery lands
-  once while a genuinely second gift is a second row.
+- **Giving asks first.** An item arriving uninvited is a change to someone's character that they did
+  not make, so a give is an *offer*: `item-offer` out, an accept/decline prompt on the far side, and
+  `item-reply` back. The giver watches a status window they may close — it reopens by itself when
+  the answer lands, because a phone held up mid-demo should not be stuck on a spinner.
+  The item leaves the giver's bag as soon as the offer is away, so the same sword cannot be promised
+  to two people while one of them thinks about it, and `returnGivenItem()` puts it back on a decline
+  or after `GIVE_ANSWER_TIMEOUT`. A phone with no character open declines immediately with a reason
+  rather than leaving the giver waiting a minute for nothing. One offer is entertained at a time:
+  two accept prompts stacked on a phone is a way to tap the wrong one.
 - Persistence carries `SCHEMA_VERSION` and **sets aside** an older save under `campfire.characters.vN`
   rather than loading it. It used to merely refuse it — and then the first render's
   `persistCharacters()` wrote the demo character straight over it, so a schema bump silently deleted
@@ -219,9 +237,13 @@ first-ever launch does. Tutorial tests set `tutorialState` by hand instead.
   install.
 - A given item never stacks with one the receiver already has: 20 arrows given twice is two rows of
   20, not one of 40. Predictable, and it keeps repeated deliveries idempotent, but it is not tidy.
-- Delivery is acknowledged, not guaranteed. If the acknowledgement itself is lost the giver gets the
-  item back while the receiver keeps it too, which duplicates rather than destroys — the safer of
-  the two directions, and the reason it was built that way round.
+- A give is answered, not guaranteed. If the reply is lost in flight the giver gets the item back
+  while the receiver keeps it too, which duplicates rather than destroys — the safer of the two
+  directions, and the reason it was built that way round.
+- **A player who closes their sheet shows on the roster as `settings.username`**, so someone who was
+  "Tomas Blackwell" becomes "Adventurer" mid-session and messages about them read oddly. That is
+  `myPartyIdentity()` working as designed — the selector is the app's "no character chosen" state —
+  but at a real table it reads as a player being replaced by a stranger.
 - `effectAmount()` resolves scaling tiers against the *holder's* level. That is right for an effect
   you own and wrong for one handed to you, so a pushed effect is flattened to a plain number at the
   sender's level before it leaves (`wireEffectGroup`) — the wire format carries numbers, never

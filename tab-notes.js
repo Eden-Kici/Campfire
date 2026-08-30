@@ -234,6 +234,7 @@ function maybeSyncNoteSharingToSection(note, targetSection) {
       onConfirm: () => {
         partyUnshareNote(note.id, (note.sharing.sharedWith || []).map(m => m.device).filter(Boolean));
         note.sharing = null;
+        note.autoShareOptOut = true;
         renderContent();
       }
     });
@@ -430,6 +431,19 @@ function deleteNoteWithConfirm(noteId) {
   });
 }
 
+/* One row per person the note is or could be shared with. The permission is
+   carried on the button, and so is the device -- the name is only ever a
+   label, because two players can bring characters called the same thing. */
+function shareRowHtml(name, device, permission) {
+  const label = permission === "off" ? "Not shared" : (permission === "edit" ? "Can Edit" : "Can View");
+  return `
+    <div class="member-row">
+      <span>${esc(name)}</span>
+      <button class="toggle-btn" data-perm="${esc(permission)}" data-member-btn="${esc(name)}" data-member-device="${esc(device)}">${esc(label)}</button>
+    </div>
+  `;
+}
+
 function openShareModal(noteId) {
   const note = character.notes.find(n => sameId(n.id, noteId));
   // keyed by device, not name: two players can bring characters with the same
@@ -440,6 +454,8 @@ function openShareModal(noteId) {
   }
   const wasSharedWith = note.sharing && note.sharing.sharedByMe
     ? note.sharing.sharedWith.map(m => m.device).filter(Boolean) : [];
+  const here = partyMemberList(party.members, deviceId());
+  const away = absentShares(note, party.members, deviceId());
   let continuous = note.sharing && note.sharing.sharedByMe ? note.sharing.continuous : true;
 
   openModal("full", `
@@ -447,16 +463,13 @@ function openShareModal(noteId) {
     ${toggleLineHtml("sw-continuous", "Keep updated for everyone (continuous)", continuous)}
     ${fieldLabelHtml("Party", { style: "margin-top:14px;" })}
     <div id="share-member-list">
-      ${partyMemberList(party.members, deviceId()).map(m => {
-        const perm = existing[m.device] || "off";
-        const label = perm === "off" ? "Not shared" : (perm === "edit" ? "Can Edit" : "Can View");
-        return `
-          <div class="member-row">
-            <span>${esc(m.name)}</span>
-            <button class="toggle-btn" data-perm="${perm}" data-member-btn="${esc(m.name)}" data-member-device="${esc(m.device)}">${esc(label)}</button>
-          </div>
-        `;
-      }).join("")}
+      ${here.map(m => shareRowHtml(m.name, m.device, existing[m.device] || "off")).join("")}
+      ${here.length ? "" : `<div class="empty-hint">Nobody else is in the party.</div>`}
+      ${away.length ? `
+        <div class="breakdown-subhead">Not at the table right now</div>
+        <div class="breakdown-source" style="margin-bottom:8px;">Still shared. They get it again when they rejoin.</div>
+        ${away.map(s => shareRowHtml(s.name, s.device, s.permission)).join("")}
+      ` : ""}
     </div>
     <button class="btn-primary" id="save-share-button" style="margin-top:14px;">Save Sharing</button>
     ${note.sharing && note.sharing.sharedByMe ? `<button class="btn-primary btn-danger" id="stop-share-button" style="margin-top:8px;">Stop Sharing</button>` : ""}
@@ -481,6 +494,7 @@ function openShareModal(noteId) {
       }
     });
     note.sharing = sharedWith.length ? { sharedByMe: true, continuous, sharedWith } : null;
+    if (sharedWith.length) delete note.autoShareOptOut;
 
     /* Anyone dropped from the list has to be told, or their copy sits there
        looking shared forever. Taking something back is as much a part of
@@ -500,6 +514,7 @@ function openShareModal(noteId) {
     stopBtn.addEventListener("click", () => {
       partyUnshareNote(note.id, (note.sharing.sharedWith || []).map(m => m.device).filter(Boolean));
       note.sharing = null;
+      note.autoShareOptOut = true;   // outranks the section's auto-share rule
       closeModal();
       renderContent();
       openNoteEditorModal(noteId);

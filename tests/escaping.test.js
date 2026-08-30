@@ -245,6 +245,15 @@ module.exports = function (suite) {
     });
 
   suite.section("the sharing tags in particular");
+  /* The demo character used to ship with sharing already set, which quietly
+     made this suite depend on demo dressing. It sets up its own now. */
+  clean.character.notes[0].sharing = {
+    sharedByMe: false, sharedByName: HOSTILE, continuous: true, permission: "view"
+  };
+  clean.character.notes[1].sharing = {
+    sharedByMe: true, continuous: true,
+    sharedWith: [{ name: HOSTILE, device: "aaa111", permission: "edit" }]
+  };
   const notes = clean.renderNotesTab();
   suite.ok("a note shared with you shows an incoming tag", /class="share-tag share-tag-in"/.test(notes));
   suite.ok("a note you share shows an outgoing one", /class="share-tag share-tag-out"/.test(notes));

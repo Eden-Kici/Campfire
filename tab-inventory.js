@@ -961,11 +961,13 @@ function openGiveToModal(item, qty) {
   });
 }
 
-/* The item only leaves the bag once the message is actually away. If the
-   socket is down there is nothing to receive it, and destroying it here would
-   lose it for everyone. */
+/* A give is an offer, not a delivery. The item leaves the bag as soon as the
+   offer is away -- promising the same sword to two people while one of them
+   thinks about it is worse than a moment of it looking gone -- and comes back
+   on a no. Nothing leaves at all if the socket is down. */
 function applyGive(item, qty, recipient) {
-  if (!partyGiveItem(item, qty, recipient.device)) {
+  const transferId = partyGiveItem(item, qty, recipient);
+  if (!transferId) {
     showToast("Not connected \u2014 nothing was given");
     return;
   }
@@ -974,5 +976,93 @@ function applyGive(item, qty, recipient) {
   else item.qty = currentQty - qty;
   closeModal();
   renderContent();
-  showToast("Gave " + qty + " " + item.name + " to " + recipient.name);
+  showGiveStatusModal(transferId);
+}
+
+function itemAmountLabel(name, qty) {
+  return (qty > 1 ? qty + " " : "") + name;
+}
+
+/* What the giver watches while the other player decides. Closeable on purpose:
+   a phone held up mid-demo should not be stuck on a spinner, and the window
+   comes back by itself the moment an answer arrives. */
+function showGiveStatusModal(transferId) {
+  const pending = pendingGives[transferId];
+  if (!pending) return;
+  const what = itemAmountLabel(pending.item.name, pending.qty);
+  const waiting = pending.status === "waiting";
+
+  let line;
+  if (waiting) line = esc(pending.toName) + " is deciding\u2026";
+  else if (pending.status === "accepted") line = esc(pending.toName) + " accepted.";
+  else if (pending.status === "declined") {
+    line = esc(pending.toName) + " declined."
+      + (pending.reason ? " (" + esc(pending.reason) + ")" : "")
+      + " It's back in your bag.";
+  } else line = "No answer from " + esc(pending.toName) + ". It's back in your bag.";
+
+  openModal("center", `
+    <div class="breakdown-title">Sending ${esc(what)}</div>
+    <div class="breakdown-source" style="margin-bottom:12px;">${line}</div>
+    ${waiting ? `<div class="empty-hint" style="padding:0 0 10px;">You can close this \u2014 it comes back when they answer.</div>` : ""}
+    <button class="btn-secondary" id="give-status-close">${waiting ? "Close" : "Done"}</button>
+  `);
+  document.getElementById("modal-overlay")
+    .querySelector("#give-status-close")
+    .addEventListener("click", () => {
+      if (!waiting) delete pendingGives[transferId];
+      closeModal();
+    });
+}
+
+/* An item arriving uninvited is a change to someone's character that they did
+   not make, so it is asked rather than done. */
+function openIncomingItemModal(offer) {
+  const what = itemAmountLabel(offer.item.name, offer.item.qty);
+  openModal("center", `
+    <div class="breakdown-title">${esc(offer.fromName)} wants to give you</div>
+    <div class="res-row"><div class="res-name">${esc(what)}</div></div>
+    ${offer.item.description ? `<div class="effect-note">${esc(offer.item.description)}</div>` : ""}
+    <button class="btn-primary" id="offer-accept-button" style="margin-top:12px;">Accept</button>
+    <button class="btn-secondary" id="offer-decline-button">Decline</button>
+  `);
+  const modal = document.getElementById("modal-overlay");
+  modal.querySelector("#offer-accept-button").addEventListener("click", () => respondToOffer(true));
+  modal.querySelector("#offer-decline-button").addEventListener("click", () => respondToOffer(false));
+}
+
+function respondToOffer(accepted) {
+  const offer = incomingOffer;
+  incomingOffer = null;
+  if (!offer) { closeModal(); return; }
+
+  let missing = [];
+  if (accepted) {
+    const landed = receivedItem(offer.item, character, offer.transferId);
+    applyReceivedItem(character, landed.item);
+    missing = landed.missing;
+  }
+  if (offer.from) {
+    partySend("item-reply", { transferId: offer.transferId, to: offer.from, accepted: accepted, fromName: myPartyName() });
+  }
+  closeModal();
+  if (!accepted) return;
+
+  const what = itemAmountLabel(offer.item.name, offer.item.qty);
+  showToast(missing.length
+    ? "Took " + what + " \u2014 no " + missing.join(" or ") + " here, so it arrived unlinked"
+    : "Took " + what);
+  renderContent();
+}
+
+/* Said no on the player's behalf, when they are in no position to be asked.
+   Answering straight away is kinder to the giver than a minute of silence. */
+function declineOffer(offer, reason) {
+  if (offer.from) {
+    partySend("item-reply", {
+      transferId: offer.transferId, to: offer.from,
+      accepted: false, reason: reason, fromName: myPartyName()
+    });
+  }
+  showToast(offer.fromName + " tried to give you something \u2014 " + reason);
 }

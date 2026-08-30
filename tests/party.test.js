@@ -10,6 +10,8 @@ module.exports = function (suite) {
           receivedEffectGroup, applyEffectGroup, wireEffectGroup, partyMemberList,
           wireNote, readNote, receivedNote, inboxSection, applySharedNote, removeSharedNote,
           readItem, wireItem, landingCategory, receivedItem, applyReceivedItem, equippedEffectItems,
+          normaliseNoteSharing, notesSharedWith, sharePermissionFor, absentShares,
+          autoSharedNotes, enrolInAutoShares,
           weaponList,
           PARTY_PROTOCOL_VERSION } = app;
 
@@ -255,16 +257,24 @@ module.exports = function (suite) {
   suite.is("but a genuinely second gift is a second row", twice.inventory.length, 2);
 
   suite.section("item messages");
-  const itemMsg = parsePartyMessage(partyMessage("item", {
+  const itemMsg = parsePartyMessage(partyMessage("item-offer", {
     transferId: "aaa111-5", item: wireItem(bow()), to: "d4e5f6", from: "a1b2c3", fromName: "Sigrid" }));
   suite.is("an item message reads back its item", itemMsg.item.name, "Shortbow");
   suite.is("and who to answer", itemMsg.from, "a1b2c3");
   suite.is("an item message with no transfer id is refused",
-    parsePartyMessage(partyMessage("item", { item: wireItem(bow()), to: "d4e5f6" })), null);
+    parsePartyMessage(partyMessage("item-offer", { item: wireItem(bow()), to: "d4e5f6" })), null);
   suite.is("an item message with no item is refused",
-    parsePartyMessage(partyMessage("item", { transferId: "aaa111-5", to: "d4e5f6" })), null);
-  suite.is("an acknowledgement reads back its transfer id",
-    parsePartyMessage(partyMessage("item-ack", { transferId: "aaa111-5", to: "a1b2c3" })).transferId, "aaa111-5");
+    parsePartyMessage(partyMessage("item-offer", { transferId: "aaa111-5", to: "d4e5f6" })), null);
+  const yes = parsePartyMessage(partyMessage("item-reply", { transferId: "aaa111-5", to: "a1b2c3", accepted: true, fromName: "Tomas" }));
+  suite.is("an answer reads back its transfer id", yes.transferId, "aaa111-5");
+  suite.is("and that it was a yes", yes.accepted, true);
+  suite.is("a missing accepted flag reads as no, the cautious direction",
+    parsePartyMessage(partyMessage("item-reply", { transferId: "aaa111-5", to: "a1b2c3" })).accepted, false);
+  suite.is("a declined answer can say why",
+    parsePartyMessage(partyMessage("item-reply", { transferId: "aaa111-5", to: "a1b2c3", reason: "no character open" })).reason,
+    "no character open");
+  suite.is("an answer with no transfer id is refused",
+    parsePartyMessage(partyMessage("item-reply", { to: "a1b2c3", accepted: true })), null);
 
   suite.section("sharing a note");
   const myNote = () => ({
@@ -320,6 +330,77 @@ module.exports = function (suite) {
   suite.is("an update does not duplicate", reader.notes.length, 1);
   suite.is("the new words arrive", reader.notes[0].body, "Paid up.");
   suite.is("and it stays where the reader filed it", reader.notes[0].sectionId, 9);
+
+  suite.section("sharing survives the session");
+  /* Sharing is an arrangement, not a single send. It is stored by device so it
+     can be honoured again when that device comes back. */
+  const shelf = () => ({
+    noteSections: [{ id: 1, name: "Shared", autoShare: true }, { id: 2, name: "Private" }],
+    notes: [
+      { id: "a1b2c3-1", sectionId: 1, title: "Gold split", sharing: { sharedByMe: true, continuous: true,
+        sharedWith: [{ name: "Tomas", device: "d4e5f6", permission: "edit" },
+                     { name: "Wren", device: "999zzz", permission: "view" }] } },
+      { id: "a1b2c3-2", sectionId: 2, title: "Private plan", sharing: null }
+    ]
+  });
+
+  suite.is("the notes shared with one device are found",
+    notesSharedWith(shelf(), "d4e5f6").map(n => n.title), ["Gold split"]);
+  suite.is("with the permission that was set for them",
+    sharePermissionFor(shelf().notes[0], "999zzz"), "view");
+  suite.is("a device nobody shared with gets nothing",
+    notesSharedWith(shelf(), "nobody").length, 0);
+
+  const roomWithTomas = [{ device: "a1b2c3", you: true, name: "Me" }, { device: "d4e5f6", name: "Tomas" }];
+  suite.is("someone shared with but not at the table is still listed",
+    absentShares(shelf().notes[0], roomWithTomas, "a1b2c3").map(s => s.name), ["Wren"]);
+  suite.is("and someone who is here is not listed as absent",
+    absentShares(shelf().notes[0], roomWithTomas, "a1b2c3").some(s => s.device === "d4e5f6"), false);
+
+  suite.section("clearing out sharing that was never real");
+  const stale = {
+    notes: [
+      // written before sharing meant anything: a name and no address
+      { id: 2, sharing: { sharedByMe: true, continuous: true,
+        sharedWith: [{ name: "Mira Stonehallow", permission: "edit" }] } },
+      // demo dressing: an incoming share on a note that never came off a wire
+      { id: 1, sharing: { sharedByMe: false, sharedByName: "Aldric (GM)", permission: "view" } },
+      // a real one: kept
+      { id: "zzz111-4", sharing: { sharedByMe: false, sharedByName: "Sigrid", permission: "edit" } },
+      // half real: the addressable entry survives, the nameless one does not
+      { id: 5, sharing: { sharedByMe: true, continuous: true,
+        sharedWith: [{ name: "Ghost", permission: "edit" }, { name: "Tomas", device: "d4e5f6", permission: "view" }] } }
+    ]
+  };
+  normaliseNoteSharing(stale);
+  suite.is("a share with nobody addressable is cleared", stale.notes[0].sharing, null);
+  suite.is("an incoming share on a note that never crossed a wire is cleared", stale.notes[1].sharing, null);
+  suite.is("a genuinely received note keeps its provenance", stale.notes[2].sharing.sharedByName, "Sigrid");
+  suite.is("and a half-real list keeps only the half that can be sent to",
+    stale.notes[3].sharing.sharedWith.map(s => s.name), ["Tomas"]);
+
+  suite.section("a section that auto-shares means whoever is at the table");
+  const alone = shelf();
+  alone.notes[0].sharing = { sharedByMe: true, continuous: true, sharedWith: [] };
+  suite.is("a note written alone in an auto-share section is still a candidate",
+    autoSharedNotes(alone).map(n => n.title), ["Gold split"]);
+  suite.is("a note in an ordinary section is not",
+    autoSharedNotes(alone).some(n => n.title === "Private plan"), false);
+
+  suite.is("someone arriving is enrolled in it",
+    enrolInAutoShares(alone, "d4e5f6", "Tomas").length, 1);
+  suite.is("at edit permission, which is what auto-share means",
+    sharePermissionFor(alone.notes[0], "d4e5f6"), "edit");
+  suite.is("and arriving twice does not enrol them twice",
+    enrolInAutoShares(alone, "d4e5f6", "Tomas").length, 0);
+
+  /* A decision made by hand outranks a rule set once. */
+  const optedOut = shelf();
+  optedOut.notes[0].sharing = null;
+  optedOut.notes[0].autoShareOptOut = true;
+  suite.is("a note you deliberately stopped sharing stays stopped",
+    autoSharedNotes(optedOut).length, 0);
+  suite.is("so nobody is enrolled in it", enrolInAutoShares(optedOut, "d4e5f6", "Tomas").length, 0);
 
   suite.section("taking a shared note back");
   suite.is("the sender can withdraw it", !!removeSharedNote(reader, "a1b2c3-7"), true);

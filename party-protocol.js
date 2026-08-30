@@ -225,11 +225,11 @@ function parsePartyMessage(raw) {
     return { t: "bye", device: msg.device };
   }
 
-  if (msg.t === "item") {
+  if (msg.t === "item-offer") {
     const item = readItem(msg.item);
     if (!item || msg.transferId == null) return null;
     return {
-      t: "item", item: item,
+      t: "item-offer", item: item,
       transferId: String(msg.transferId).slice(0, 40),
       to: typeof msg.to === "string" ? msg.to : "*",
       from: typeof msg.from === "string" ? msg.from : null,
@@ -237,12 +237,15 @@ function parsePartyMessage(raw) {
     };
   }
 
-  if (msg.t === "item-ack") {
+  if (msg.t === "item-reply") {
     if (msg.transferId == null) return null;
     return {
-      t: "item-ack",
+      t: "item-reply",
       transferId: String(msg.transferId).slice(0, 40),
-      to: typeof msg.to === "string" ? msg.to : "*"
+      to: typeof msg.to === "string" ? msg.to : "*",
+      accepted: !!msg.accepted,
+      reason: clampText(msg.reason, 60, null),
+      fromName: clampText(msg.fromName, 40, "They")
     };
   }
 
@@ -533,6 +536,80 @@ function removeSharedNote(target, id) {
   if (!gone) return null;
   target.notes = target.notes.filter(n => n !== gone);
   return gone;
+}
+
+/* Sharing is a standing arrangement, and it is kept by device rather than by
+   name -- a name is not an address. Two players can bring characters called
+   the same thing, and a name tells you nothing about where to send.
+
+   Entries written before sharing was real carry a name and nothing else. They
+   can never be delivered to anybody, so they are cleared rather than left in
+   the interface claiming a share that is not happening. */
+function normaliseNoteSharing(target) {
+  (target.notes || []).forEach(note => {
+    if (!note.sharing) return;
+    if (!note.sharing.sharedByMe) {
+      /* A note someone really gave us keeps the sender's device-prefixed id.
+         A bare number cannot have come off a wire, so an incoming share on one
+         is dressing from before any of this was real. */
+      if (typeof note.id === "number") note.sharing = null;
+      return;
+    }
+    const real = (note.sharing.sharedWith || []).filter(s => s && s.device);
+    note.sharing = real.length ? Object.assign({}, note.sharing, { sharedWith: real }) : null;
+  });
+  return target;
+}
+
+/* Auto-share belongs to the section, not to the instant a note was written in
+   it. A note made in an auto-share section while you were the only person here
+   was shared with nobody, and without this it would stay that way for the rest
+   of its life -- which is the most likely reason a note "isn't arriving".
+
+   Explicitly stopping a note's sharing sets autoShareOptOut, and that is the
+   one thing that overrules the section: a decision the player made by hand
+   outranks a rule they set once. */
+function autoSharedNotes(target) {
+  const auto = {};
+  (target.noteSections || []).forEach(s => { if (s.autoShare) auto[String(s.id)] = true; });
+  return (target.notes || []).filter(note =>
+    !note.autoShareOptOut &&
+    auto[String(note.sectionId)] &&
+    (!note.sharing || note.sharing.sharedByMe));
+}
+
+function enrolInAutoShares(target, device, name) {
+  const enrolled = [];
+  autoSharedNotes(target).forEach(note => {
+    if (!note.sharing) note.sharing = { sharedByMe: true, continuous: true, sharedWith: [] };
+    if (!note.sharing.sharedWith.some(s => s.device === device)) {
+      note.sharing.sharedWith.push({ name: name, device: device, permission: "edit" });
+      enrolled.push(note);
+    }
+  });
+  return enrolled;
+}
+
+function notesSharedWith(target, device) {
+  return (target.notes || []).filter(note =>
+    note.sharing && note.sharing.sharedByMe &&
+    (note.sharing.sharedWith || []).some(s => s.device === device));
+}
+
+function sharePermissionFor(note, device) {
+  const list = (note.sharing && note.sharing.sharedWith) || [];
+  const share = list.find(s => s.device === device);
+  return share ? share.permission : null;
+}
+
+/* Who a note is shared with but who isn't at the table right now. Shown in the
+   share screen so a standing share is visible rather than invisible -- the
+   arrangement outlives the session, and something you can't see is something
+   you can't take back. */
+function absentShares(note, members, myDevice) {
+  if (!note.sharing || !note.sharing.sharedByMe) return [];
+  const here = partyMemberList(members, myDevice).map(m => m.device);
+  return (note.sharing.sharedWith || []).filter(s => s.device && here.indexOf(s.device) === -1);
 }
 
 /* ---------- receiving an effect ---------- */

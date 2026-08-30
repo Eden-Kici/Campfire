@@ -336,20 +336,17 @@ let character = {
       id: 1, sectionId: 1, title: "Rumor: the old mill",
       body: "Locals say lights have been seen in the abandoned mill north of town after dark.",
       createdAt: Date.now() - 1000 * 60 * 60 * 24 * 2, updatedAt: Date.now() - 1000 * 60 * 60 * 24 * 2,
-      sharing: { sharedByMe: false, sharedByName: "Aldric (GM)", continuous: true, permission: "view" }
+      // sharing is real now, so the demo character no longer pretends: this
+      // used to claim it came from a GM who has never existed
+      sharing: null
     },
     {
       id: 2, sectionId: 1, title: "Party gold split",
       body: "412 gold total, split 4 ways after the goblin camp haul. Everyone's owed 103.",
       createdAt: Date.now() - 1000 * 60 * 60 * 5, updatedAt: Date.now() - 1000 * 60 * 60 * 5,
-      sharing: {
-        sharedByMe: true, continuous: true,
-        sharedWith: [
-          { name: "Mira Stonehallow", permission: "edit" },
-          { name: "Tomas Blackwell", permission: "view" },
-          { name: "Wren Ashby", permission: "view" }
-        ]
-      }
+      // likewise: this was shared with three people who cannot be sent to,
+      // which read in the interface as a share that was quietly not happening
+      sharing: null
     },
     {
       id: 3, sectionId: 2, title: "Suspicious innkeeper",
