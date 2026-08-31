@@ -500,6 +500,15 @@ thing wants, and the picker.
   stroked path scales its stroke too, and a heavier line is a worse inconsistency than the one being
   fixed. An icon added by hand and not put through the pass will sit wrong, and you will not see it
   until it is in a list beside forty others.
+- **The slot is exactly the icon's size, and the gap to the name is one number.** Attacks,
+  resources, spells and items are four renderers and they drifted: the slot was wider than the icon
+  and centred it, so every mark sat 3.5px right of the card's 14px padding while the right-hand side
+  kept its 14 — which nobody reads as "centred in a slot", they read it as a strip of dead space
+  down the left of the whole list. The gap to the name had gone to 3px in a resource row and 11.5px
+  in an attack, and resource icons were 17px against everyone else's 19. All four now put the mark
+  at 14 and the name at 45. Each row's own `gap` also spaces the pills on the right, so the slot
+  carries a `margin-right` that tops each one up to the same 12 rather than the gaps being changed.
+  `icons.test.js` pins both, since this is exactly the sort of thing that drifts silently.
 - **`campfire-icons.zip` at the repo root is the set as an asset pack** — every icon as its own
   SVG, a sprite sheet of `<symbol>`s, `icons.json`, the app icons, and a contact sheet. Rebuild it
   whenever the set changes; it is a copy, and a stale copy is worse than none.

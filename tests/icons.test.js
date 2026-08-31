@@ -161,6 +161,38 @@ module.exports = function (suite) {
   suite.ok("and the beating heart is not the plain one",
     ICONS["heart-beat"] !== ICONS["heart"]);
 
+  suite.section("every kind of row lines its mark up the same way");
+  /* Attacks, resources, spells and items are four different renderers and they
+     drifted apart: the icon started 3.5px right of the card's padding while the
+     right-hand side kept its 14, and the gap to the name was 3px in a resource
+     row and 11.5px in an attack. Both read as sloppiness long before anyone can
+     name them. The geometry is CSS, and the harness fires no listeners, so what
+     is pinned here is the CSS itself -- the behaviour was measured in Chromium.
+
+     The slot must be exactly the icon's own size: a wider slot centres the icon
+     inside it and re-introduces the inset this was fixing. */
+  const css = harness.readFile("style.css");
+  const slot = (css.match(/\.row-icon \{[^}]*\}/) || [""])[0];
+  const iconSize = (css.match(/\.row-icon \.ico \{[^}]*width:\s*(\d+)px/) || [])[1];
+  suite.ok("the slot is the icon's own width, not a wider one",
+    slot.indexOf("width: " + iconSize + "px") !== -1 && slot.indexOf("flex: 0 0 " + iconSize + "px") !== -1,
+    "slot rule: " + slot.replace(/\s+/g, " "));
+  suite.is("and no row overrides that size for itself",
+    (css.match(/\.(res-name-wrap|atk-row|item-row)[^{]*\.row-icon[^}]*\{[^}]*width:/g) || []), []);
+
+  /* Each row's own gap differs because it also spaces the pills on the right,
+     so the slot tops it up. The numbers have to add to one distance. */
+  const rowGap = name => Number((css.match(new RegExp("\\." + name + " \\{[^}]*gap:\\s*(\\d+)px")) || [])[1]);
+  const topUp = sel => Number((css.match(new RegExp("\\." + sel + " \\.row-icon \\{[^}]*margin-right:\\s*(\\d+)px")) || [])[1]);
+  const distances = {
+    attack: rowGap("atk-row") + topUp("atk-row"),
+    item: rowGap("item-row") + topUp("item-row"),
+    resource: topUp("res-name-wrap")            // .res-name-wrap has no gap of its own
+  };
+  const values = Object.keys(distances).map(k => distances[k]);
+  suite.ok("mark to name is one distance in every row",
+    values.every(v => v === values[0] && v > 0), JSON.stringify(distances));
+
   suite.section("the set loads before anything that draws with it");
   const scripts = harness.scriptFiles();
   suite.ok("icons.js is in the page", scripts.indexOf("icons.js") !== -1);
