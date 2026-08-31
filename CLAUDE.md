@@ -475,13 +475,28 @@ thing wants, and the picker.
   every theme works off one set of drawings. The suite fails any icon that carries its own
   `fill` or `stroke`, because one filled shape would sit on the Light theme as a dark blob that no
   CSS could reach.
-- **Centred is not enough; they are fitted.** A set where one drawing fills 14 units and its
-  neighbour fills 11 reads as a wobbling, uneven column the moment forty of them are stacked down a
-  list, even though each one looks fine on its own. A pass measures every drawing's real bounding
-  box in a real browser and wraps it in a `<g transform>` that fits it to one optical size. Where
-  that means scaling, the group carries a **compensating `stroke-width`** — scaling a stroked path
-  scales its stroke too, and a heavier line is a worse inconsistency than the one being fixed.
-  An icon added by hand and not put through that pass will sit at the wrong size next to the rest.
+- **They are centred on their weight, not their bounding box.** Those are not the same point and
+  the eye follows the weight. The sparkle is the clearest case: a big four-pointed star with a small
+  one trailing off the corner, so its box centre sits between the two and box-centring shoves the
+  big star — the part anyone actually sees — off to one side. **66 of the 121 had their mass more
+  than half a unit off their box centre.** The fitting pass renders each icon, weighs the lit
+  pixels, and lands most of the way toward that centre of mass; not all the way, because a pure
+  centroid over-corrects for anything with a long thin tail.
+  This took three attempts to get right, and the first two both measured clean. `getBBox()` returns
+  a bbox *before* the element's own transform, so it reported a fix that had not happened;
+  `getBoundingClientRect()` then reported a box that really was centred while the drawing inside it
+  still was not. **What settled it was screenshotting each icon's slot on its own and measuring the
+  lit pixels** — the thing the person is actually looking at. When someone reports the same visual
+  problem three times, the measurement is what is wrong, not them.
+- **And fitted to one size.** A set where one drawing fills 14 units and its neighbour fills 11
+  reads as an uneven column however well each one is centred. Where that means scaling, the group
+  carries a **compensating `stroke-width`** — scaling a stroked path scales its stroke too, and a
+  heavier line is a worse inconsistency than the one being fixed.
+  An icon added by hand and not put through that pass will sit at the wrong size and the wrong
+  place, and you will not see it until it is in a list beside forty others.
+- **`campfire-icons.zip` at the repo root is the set as an asset pack** — every icon as its own
+  SVG, a sprite sheet of `<symbol>`s, `icons.json`, the app icons, and a contact sheet. Rebuild it
+  whenever the set changes; it is a copy, and a stale copy is worse than none.
 - **They were drawn at the size they are used.** 18-24px next to a name, 32 in the picker. Anything
   that needed more detail than that to read was cut rather than shipped as a smudge, which is why
   there is no crossbow, halberd or gauntlet in the set: each was drawn three or four times, never

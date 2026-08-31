@@ -123,11 +123,12 @@ module.exports = function (suite) {
   suite.is("and every resource",
     character.resources.filter(r => !ICONS[iconFor(r, "resource")]).map(r => r.name), []);
 
-  suite.section("every drawing sits in the middle of its own box");
+  suite.section("every drawing is fitted, not just placed");
   /* Off-centre by a unit is invisible on one icon and reads as a wobbling
-     column once forty are stacked down a list of resources. The centring is
-     baked in as a translate rather than left to CSS, because CSS cannot know
-     where inside the 24x24 grid a particular drawing happens to sit. */
+     column once forty are stacked down a list of resources. It is baked in as
+     a transform rather than left to CSS, because CSS cannot know where inside
+     the 24x24 grid a particular drawing's weight happens to sit -- and weight,
+     not bounding box, is what the eye is lining up. */
   const fitted = Object.keys(ICONS).filter(n => /^<g transform="translate\(/.test(ICONS[n]));
   suite.ok("nearly all of them carry the fit in their markup", fitted.length > 100);
   suite.is("and every transform is a translate, optionally with a scale — never a rotate or a skew",
