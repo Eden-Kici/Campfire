@@ -60,8 +60,20 @@ function domStub() {
       createElement: () => element,
       addEventListener: () => {}
     },
-    window: { addEventListener: () => {} },
-    setTimeout: () => {},
+    /* matchMedia answers "no preference" so the animation paths run their
+       normal branch here rather than the reduced-motion one. */
+    window: {
+      addEventListener: () => {},
+      matchMedia: () => ({ matches: false, addEventListener: () => {} })
+    },
+    /* Timers do nothing and return a handle. Every animation in this app is
+       decoration over a DOM that already holds the real answer (see
+       tumbleRollTotal), so a suite where no timer ever fires is a suite that
+       reads exactly what the player would have ended up looking at. */
+    setTimeout: () => 0,
+    clearTimeout: () => {},
+    setInterval: () => 0,
+    clearInterval: () => {},
     location: { reload: () => {} },
     localStorage: {
       getItem: key => (key in store ? store[key] : null),

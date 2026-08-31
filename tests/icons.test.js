@@ -119,9 +119,51 @@ module.exports = function (suite) {
   suite.is("and every resource",
     character.resources.filter(r => !ICONS[iconFor(r, "resource")]).map(r => r.name), []);
 
+  suite.section("every drawing sits in the middle of its own box");
+  /* Off-centre by a unit is invisible on one icon and reads as a wobbling
+     column once forty are stacked down a list of resources. The centring is
+     baked in as a translate rather than left to CSS, because CSS cannot know
+     where inside the 24x24 grid a particular drawing happens to sit. */
+  const shifted = Object.keys(ICONS).filter(n => /^<g transform="translate\(/.test(ICONS[n]));
+  suite.ok("the ones that needed nudging carry it in the markup", shifted.length > 20);
+  suite.is("and every nudge is a plain translate, never a scale or a rotate",
+    shifted.filter(n => /transform="(?!translate\()/.test(ICONS[n])), []);
+
+  suite.section("a surge is a heart going faster");
+  suite.is("Action Surge", guessIcon("Action Surge", "resource"), "heart-beat");
+  suite.ok("and the beating heart is not the plain one",
+    ICONS["heart-beat"] !== ICONS["heart"]);
+
   suite.section("the set loads before anything that draws with it");
   const scripts = harness.scriptFiles();
   suite.ok("icons.js is in the page", scripts.indexOf("icons.js") !== -1);
   suite.ok("and ahead of ui.js, which builds the picker's fields out of it",
     scripts.indexOf("icons.js") < scripts.indexOf("ui.js"));
+
+  suite.section("an icon can be chosen everywhere a thing is made");
+  /* Every form that creates something the sheet will draw needs the picker.
+     The custom item library was the one that got missed the first time --
+     it is a different file from the inventory's own form. */
+  const forms = {
+    "the inventory's item form": ["tab-inventory.js", "if-icon"],
+    "the resource form": ["tab-combat.js", "new-res-icon"],
+    "the resource editor": ["tab-combat.js", "edit-res-icon"],
+    "the spell form": ["tab-spells.js", "spell-form-icon"],
+    "and Manage Content's custom item form": ["content-forms.js", "ci-icon"]
+  };
+  Object.keys(forms).forEach(label => {
+    const src = harness.readFile(forms[label][0]);
+    const id = forms[label][1];
+    suite.ok(label, src.indexOf('iconFieldHtml("' + id) !== -1
+      && src.indexOf('wireIconField("' + id) !== -1);
+  });
+
+  suite.section("the roll window throws a die rather than an em dash");
+  const roll = harness.readFile("roll.js");
+  suite.ok("the unrolled slot holds the d20", /iconSvg\("d20"\)/.test(roll));
+  suite.ok("tapping it rolls", /roll-die"\)[\s\S]{0,120}addEventListener\("click", rollNow\)/.test(roll));
+  suite.ok("the number is written before the tumble plays, never after",
+    roll.indexOf("redrawRollWindow();\n  tumbleRollTotal();") !== -1);
+  suite.ok("and the tumble is skipped for anyone who asked for less motion",
+    /prefers-reduced-motion/.test(roll));
 };

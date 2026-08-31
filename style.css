@@ -895,7 +895,20 @@ body {
 .roll-dc { text-align: center; margin-top: 14px; }
 .roll-dc-label { font-size: 10px; font-weight: bold; letter-spacing: 1.4px; text-transform: uppercase; color: var(--text-faint); }
 .roll-dc-value { font-size: 30px; font-weight: bold; color: var(--accent-soft); line-height: 1.1; }
-.roll-total.unrolled { color: var(--text-faint); }
+.roll-total.unrolled { color: var(--text-faint); padding: 0; }
+
+/* The die stands in the slot the number will land in, at the size that number
+   will be, so nothing shifts when it resolves. */
+.roll-die {
+  background: none; border: none; padding: 0 14px; cursor: pointer;
+  color: var(--accent); display: flex; align-items: center;
+}
+.roll-die .ico { width: 52px; height: 52px; }
+.roll-die:active { color: var(--accent-soft); }
+
+/* Pure theatre, and skipped for anyone who has asked their system for less of
+   it (see tumbleRollTotal). The number underneath is the real one throughout. */
+.roll-total.tumbling { filter: blur(1.6px); opacity: .78; }
 
 /* the pill sits in a row of round steppers, so it centres its own label
    rather than relying on the button default */

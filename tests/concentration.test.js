@@ -69,7 +69,10 @@ module.exports = function (suite) {
 
   suite.section("the player rolls it, the app does not");
   suite.ok("nothing is rolled on opening", !app.rollState.rolled);
-  suite.ok("the total is blank", /roll-total unrolled">—</.test(html));
+  /* Where the number will land, there is a die you can tap -- the same control
+     as the Roll button below it, and the thing people reach for first. */
+  suite.ok("the slot holds a die rather than a number", /roll-total unrolled"/.test(html));
+  suite.ok("and the die is a control", /id="roll-die"/.test(html));
   suite.ok("no verdict yet", !/roll-verdict/.test(html));
   suite.ok("and a roll button rather than a reroll", /id="roll-now"/.test(html) && !/id="roll-reroll"/.test(html));
 

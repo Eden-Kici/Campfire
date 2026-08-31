@@ -497,6 +497,16 @@ thing wants, and the picker.
 - **It opens on its own layer** (`#icon-overlay`), the way `confirmModal` does, because it is nearly
   always opened from a half-filled form and `openModal` would replace that form and throw the typing
   away.
+- **The unrolled slot holds a die, and the die is a control.** Where the number will land there is
+  a tappable d20 at the size that number will be, so nothing shifts when it resolves. It is the same
+  action as the Roll button below it, because it is the thing people reach for first.
+- **The tumble is played over the real answer, never before it.** `rollNow()` redraws the window
+  with the true total and *then* calls `tumbleRollTotal()`, which flickers random numbers over that
+  element for eight frames and puts back exactly the text it found. Interrupt it, close the window,
+  read it with a screen reader mid-flicker and you still get the roll that was actually made and
+  logged — an animation that computed the number at the end could show one thing and record another.
+  It is skipped entirely under `prefers-reduced-motion`. In the suite no timer ever fires, so the
+  tests read what the player ends up looking at.
 - **A picked icon does not make an item homebrew.** `contentShape()` drops `icon` along with the
   other decisions you make about your copy rather than about the thing: choosing a flame for your
   torch is not a claim about what a torch is.

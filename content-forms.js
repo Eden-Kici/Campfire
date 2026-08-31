@@ -326,6 +326,7 @@ function customItemFormHtml() {
     <div class="modal-heading">${item ? "Edit Custom Item" : "Add Custom Item"}</div>
     ${itemTypeToggleHtml(contentItemState.type)}
     ${textFieldHtml("ci-name", "Name", item ? item.name : "", { placeholder: "e.g. Potion of Healing", style: "margin-top:10px;" })}
+    ${iconFieldHtml("ci-icon", item && item.icon, item ? item.name : "", "item")}
     ${numberFieldHtml("ci-weight", "Weight (lb)", item && item.weight != null ? item.weight : 1)}
     ${textAreaFieldHtml("ci-desc", "Description (optional)", item ? item.description : "", { placeholder: "What it is, what it does" })}
     ${selectFieldHtml("ci-rarity", "Rarity", ["None"].concat(ITEM_RARITIES), item && item.rarity || "None")}
@@ -339,6 +340,7 @@ function customItemFormHtml() {
 function openCustomItemForm(existingId) {
   const item = existingId ? customContent.items.find(i => i.id === existingId) : null;
   contentItemState = Object.assign({ editingId: existingId || null }, newItemFormState(item));
+  contentItemState.icon = (item && item.icon) || "";
   contentScreen = "item-form";
   redrawContentManager();
 }
@@ -351,6 +353,8 @@ function wireCustomItemForm() {
   renderItemTypeFields(container, contentItemState.type, item, contentItemState);
   wireItemTypeToggle(contentItemState, container, item);
   wireSelect("ci-rarity");
+  wireIconField("ci-icon", "ci-name", () => contentItemState.icon || "",
+    v => { contentItemState.icon = v; }, "item");
   document.getElementById("ci-attunement").addEventListener("click", (e) => e.currentTarget.classList.toggle("on"));
 
   document.getElementById("content-back-button").addEventListener("click", () => {
@@ -369,7 +373,8 @@ function wireCustomItemForm() {
       weight: parseFloat(document.getElementById("ci-weight").value) || 0,
       description: document.getElementById("ci-desc").value.trim(),
       type: contentItemState.type
-    }, rarity !== "None" ? { rarity, attunement } : {});
+    }, contentItemState.icon ? { icon: contentItemState.icon } : {},
+       rarity !== "None" ? { rarity, attunement } : {});
     applyItemType(built, contentItemState.type, contentItemState);
 
     if (contentItemState.editingId) {

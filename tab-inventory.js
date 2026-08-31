@@ -863,6 +863,8 @@ function openAddInventoryModal(presetCategory, presetType) {
 
   function pickCatalogueItem(entry) {
     pickedSource = entry;
+    // a library item that was given an icon in Manage Content keeps it here
+    itemFormIcon = entry.icon || "";
     Object.assign(state, newItemFormState(entry));
     renderItemBody();
   }
@@ -870,6 +872,7 @@ function openAddInventoryModal(presetCategory, presetType) {
   function startBlank() {
     pickedSource = null;
     pickedBaseline = null;
+    itemFormIcon = "";
     Object.assign(state, newItemFormState());
     renderItemBody();
   }

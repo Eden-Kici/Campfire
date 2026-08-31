@@ -234,6 +234,48 @@ function showRoll(config) {
   wireRollWindow();
 }
 
+/* The dice landing. The window is redrawn with the real result first and the
+   tumble plays over the top of it, so the number in the DOM is the true one
+   from the first frame: interrupt the animation, close the window, read it
+   with a screen reader, and you still get the roll that was actually made.
+   An animation that computed the number at the end could show you one thing
+   and record another.
+
+   A blurred number is the point -- it is the only part of a dice app that is
+   pure theatre, and a roll that simply appears feels like a lookup rather
+   than a throw. Anyone who has asked their system for less movement is given
+   the result straight. */
+const TUMBLE_FRAMES = 8;
+const TUMBLE_MS = 45;
+let tumbleTimer = null;
+
+function wantsMotion() {
+  return !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+}
+
+function tumbleRollTotal() {
+  if (tumbleTimer) { clearInterval(tumbleTimer); tumbleTimer = null; }
+  const slot = document.querySelector("#modal-overlay .roll-total");
+  if (!slot || !wantsMotion()) return;
+
+  const landed = slot.textContent;
+  const ceiling = Math.max(2, maxFor(rollState.config));
+  let frame = 0;
+  slot.classList.add("tumbling");
+  tumbleTimer = setInterval(() => {
+    frame += 1;
+    if (frame >= TUMBLE_FRAMES) {
+      clearInterval(tumbleTimer);
+      tumbleTimer = null;
+      // put back exactly what was there, rather than re-deriving it
+      slot.textContent = landed;
+      slot.classList.remove("tumbling");
+      return;
+    }
+    slot.textContent = String(1 + Math.floor(Math.random() * ceiling));
+  }, TUMBLE_MS);
+}
+
 /* The first actual throw, from the Roll button. Separate from rerollCurrent
    because only the first one spends anything. */
 function rollNow() {
@@ -242,6 +284,7 @@ function rollNow() {
   rollState.rolled = true;
   recordCurrentRoll();
   redrawRollWindow();
+  tumbleRollTotal();
 }
 
 /* Called at each of the two moments a roll actually resolves -- showRoll()
@@ -262,6 +305,7 @@ function rerollCurrent() {
   rollState.rolled = true;
   recordCurrentRoll();
   redrawRollWindow();
+  tumbleRollTotal();
 }
 
 function setRollMode(mode) {
@@ -322,7 +366,8 @@ function rollWindowHtml() {
 
     <div class="roll-values">
       <div class="roll-side">${isDamage && rolled ? `<div class="roll-side-label">½</div><div class="roll-side-value">${Math.floor(total / 2)}</div>` : ""}</div>
-      <div class="roll-total ${rolled ? "" : "unrolled"}">${rolled ? total : "—"}</div>
+      <div class="roll-total ${rolled ? "" : "unrolled"}">${rolled ? total
+        : `<button class="roll-die" id="roll-die" title="Roll ${esc(config.notation)}" aria-label="Roll ${esc(config.notation)}">${iconSvg("d20")}</button>`}</div>
       <div class="roll-side">${isDamage && rolled ? `<div class="roll-side-label">MAX</div><div class="roll-side-value">${maxFor(config)}</div>` : ""}</div>
     </div>
 
@@ -374,6 +419,10 @@ function wireRollWindow() {
   // ammunition or the slot -- a reroll must not spend it a second time
   const rollNowButton = document.getElementById("roll-now");
   if (rollNowButton) rollNowButton.addEventListener("click", rollNow);
+  // the die sitting where the number will be is the same control as the button
+  // underneath it -- it is the thing people reach for first
+  const die = document.getElementById("roll-die");
+  if (die) die.addEventListener("click", rollNow);
 
   document.querySelectorAll("[data-roll-decision]").forEach(button => {
     button.addEventListener("click", () => {
