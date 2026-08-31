@@ -967,6 +967,16 @@ function showToast(message) {
 const SWIPE_MIN_X = 60;
 const SWIPE_SIDEWAYS_RATIO = 1.5;
 
+/* The tab bar's markup carries only the word; the mark is put in from here at
+   boot, so index.html and icons.js don't hold two copies of the same six
+   paths that can drift apart. */
+function drawTabIcons() {
+  document.querySelectorAll(".tab-item").forEach(button => {
+    const label = button.textContent.trim();
+    button.innerHTML = iconSvg("tab-" + button.dataset.tab) + "<span>" + esc(label) + "</span>";
+  });
+}
+
 function wireTabSwiping() {
   const content = document.getElementById("content");
   let startX = 0, startY = 0, tracking = false;

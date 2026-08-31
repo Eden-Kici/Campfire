@@ -380,7 +380,7 @@ body {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   background: var(--surface); border-radius: 14px; padding: 11px 14px; margin-bottom: 8px;
 }
-.res-name-wrap { cursor: pointer; min-width: 0; }
+.res-name-wrap { cursor: pointer; min-width: 0; display: flex; align-items: center; }
 .res-name { font-weight: bold; font-size: 14px; }
 .res-tag { white-space: nowrap; font-size: 10px; color: var(--text-faint); font-weight: bold; margin-left: 6px; padding: 1px 5px; border-radius: 6px; }
 .res-count { font-weight: bold; font-size: 13px; color: var(--text-dim); min-width: 34px; text-align: center; }
@@ -1313,3 +1313,79 @@ input, textarea, select, .note-body-field, .note-title-field {
 /* Hit points beside a name you are about to aim a heal at. Quiet, because the
    name is what you are picking; present, because it is what you are picking on. */
 .cast-target-hp { margin-left: 8px; font-size: 11px; color: var(--text-dim); }
+
+
+/* -------------------- icons -------------------- */
+
+/* Every icon strokes with currentColor (see icons.js), so this file never
+   gives one a colour. It inherits the row's, which is what makes a dimmed row
+   dim its icon and every theme work without a second set of drawings. */
+.ico {
+  width: 18px; height: 18px; flex: 0 0 auto;
+  vertical-align: -3px;
+}
+
+/* The tab bar: mark above word. The padding came down from 32px because the
+   icon is now carrying the height the padding used to. */
+.tab-item {
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  padding: 14px 0 16px;
+}
+.tab-item .ico { width: 23px; height: 23px; }
+
+/* A row's mark sits in a fixed-width slot so the names line up down the
+   column whether the icon is a wide axe or a narrow dagger. */
+.row-icon {
+  width: 26px; flex: 0 0 26px; display: flex; align-items: center;
+  justify-content: center; color: var(--text-dim);
+}
+.row-icon .ico { width: 19px; height: 19px; }
+.res-name-wrap .row-icon { width: 23px; flex: 0 0 23px; }
+.res-name-wrap .row-icon .ico { width: 17px; height: 17px; }
+.atk-row .row-icon, .item-row .row-icon { color: var(--accent-soft); }
+
+/* The picker. Its own layer over whatever form opened it, so a half-typed
+   item survives being decorated. */
+.icon-overlay {
+  position: absolute; inset: 0; background: var(--scrim); z-index: 500;
+  display: flex; align-items: flex-end;
+}
+.icon-sheet {
+  background: var(--surface); width: 100%; max-height: 88%; overflow-y: auto;
+  border-radius: 18px 18px 0 0; padding: 18px 16px 26px;
+  box-shadow: inset 0 0 0 1px var(--card-edge);
+}
+
+.icon-grid {
+  display: grid; grid-template-columns: repeat(6, 1fr); gap: 7px;
+  margin-bottom: 6px;
+}
+.icon-cell {
+  aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+  background: var(--control); border: 1px solid var(--border); border-radius: 11px;
+  color: var(--text); cursor: pointer; padding: 0;
+}
+.icon-cell .ico { width: 24px; height: 24px; }
+.icon-cell.chosen { border-color: var(--accent); background: var(--control-raised); color: var(--accent); }
+
+.icon-auto {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+  background: var(--control); border: 1px solid var(--border); border-radius: 12px;
+  color: var(--text); padding: 11px 13px; margin: 4px 0 6px; cursor: pointer;
+  font-family: inherit;
+}
+.icon-auto.chosen { border-color: var(--accent); background: var(--control-raised); }
+.icon-auto .ico { width: 22px; height: 22px; color: var(--accent-soft); }
+.icon-auto-title { display: block; font-size: 13.5px; font-weight: bold; }
+.icon-auto-hint { display: block; font-size: 11.5px; color: var(--text-dim); margin-top: 2px; }
+
+/* The form's button. Shows the icon the thing would get if saved right now,
+   automatic guess included, so "Automatic" is never a mystery. */
+.icon-field {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  background: var(--control); border: 1px solid var(--border); border-radius: 10px;
+  color: var(--text); padding: 9px 12px; cursor: pointer;
+  font-family: inherit; font-size: 13.5px;
+}
+.icon-field .ico { width: 21px; height: 21px; color: var(--accent-soft); }
+.menu-note + .field, .menu-note + .field-row { margin-top: 12px; }

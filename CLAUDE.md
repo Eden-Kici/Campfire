@@ -464,6 +464,43 @@ than a button. A cantrip still resolves on the tap; anything with a level opens 
   (on) draws slots as tappable pips instead of a fraction, in both tabs and in Combat's Spells
   section.
 
+## Icons
+
+`icons.js` — 120 line icons on a 24x24 grid, the table that guesses which one a
+thing wants, and the picker.
+
+- **An icon is markup, not a file.** Each one is a string of SVG paths with no colour and no size
+  of its own; `iconSvg()` wraps it in an `<svg>` that strokes with `currentColor`. That is the whole
+  theming story: an icon takes the colour of the row it sits in, so a dimmed row dims its icon and
+  all three themes work off one set of drawings. The suite fails any icon that carries its own
+  `fill` or `stroke`, because one filled shape would sit on the Light theme as a dark blob that no
+  CSS could reach.
+- **They were drawn at the size they are used.** 18-24px next to a name, 32 in the picker. Anything
+  that needed more detail than that to read was cut rather than shipped as a smudge, which is why
+  there is no crossbow, halberd or gauntlet in the set: each was drawn three or four times, never
+  read as itself at 24px, and the name maps onto a near neighbour instead (a crossbow gets the bow).
+  **The only way to know whether an icon works is to render it and look at it** — every one of these
+  was reviewed on a contact sheet, several times, and about a third of the first drafts were thrown
+  away.
+- **Nothing is iconless, and almost nothing has to be chosen.** `guessIcon()` reads the name against
+  `ICON_KEYWORDS` and the first match wins, so a fresh sheet is fully decorated on its first run
+  instead of after a trip through forty rows. A stored `icon` overrides it (`iconFor()`), and a
+  stored name that no longer exists falls back to the guess rather than rendering a gap — an icon can
+  be retired without emptying every sheet that picked it.
+- **Order in that table is load-bearing.** Weapons are read first, so a Flame Tongue is a sword;
+  then damage types, so a Fire Bolt is a fire and not a bolt; then healing above poison, so a Potion
+  of Healing does not get the venom flask. The three collisions that actually bit are pinned in
+  `icons.test.js` by name.
+- **The picker searches that same keyword table**, not just icon names, so "fire" finds the flame
+  and "armor" finds the cloak. Matching names alone made the search a spelling test for a vocabulary
+  only this file knows.
+- **It opens on its own layer** (`#icon-overlay`), the way `confirmModal` does, because it is nearly
+  always opened from a half-filled form and `openModal` would replace that form and throw the typing
+  away.
+- **A picked icon does not make an item homebrew.** `contentShape()` drops `icon` along with the
+  other decisions you make about your copy rather than about the thing: choosing a flame for your
+  torch is not a claim about what a torch is.
+
 ## Gestures on a phone
 
 Long-pressing a row to drag it also asks iOS to select the text under the finger and pop the callout

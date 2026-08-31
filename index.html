@@ -75,6 +75,9 @@
 
   <script src="dice-history.js"></script>
   <script src="roll.js"></script>
+  <!-- icons.js before ui.js: the picker is built out of ui.js's field helpers,
+       but ui.js never calls back into it at load time -->
+  <script src="icons.js"></script>
   <script src="ui.js"></script>
   <script src="theme.js"></script>
   <script src="characters.js"></script>

@@ -429,7 +429,8 @@ function itemRowHtml(item, cat, nested) {
   return `
     <div class="item-row${nested ? " item-nested" : ""}" data-item-view="${item.id}" data-item-id="${item.id}"
          ${container ? `data-container-row="${item.id}"` : ""} style="touch-action:pan-y;">
-      <div style="flex:1;">
+      <div class="row-icon">${iconHtml(item, "item")}</div>
+      <div style="flex:1;min-width:0;">
         <div class="item-name">${container ? `<span class="pack-caret" data-container-toggle="${item.id}">${isOpen ? "\u25BE" : "\u25B8"}</span> ` : ""}${esc(item.name)}${item.qty > 1 ? " \u00D7" + item.qty : ""}${itemSourceTagHtml(item)}</div>
         ${(rule.appliesEffects && (item.acBonus || item.attackBonus)) ? `<div class="item-effect">${item.acBonus ? formatModifier(item.acBonus) + " AC " : ""}${item.attackBonus ? formatModifier(item.attackBonus) + " Attack " : ""}</div>` : ""}
         <div class="item-meta">${rule.countsWeight ? roundWeight(weight) + " lb" : "No weight"}${container ? " \u00b7 " + contents.length + (contents.length === 1 ? " item" : " items") : ""}${container && item.ignoresContentWeight ? " \u00b7 weightless" : ""}</div>
@@ -450,6 +451,12 @@ function itemTypeToggleHtml(current) {
     </div>`;
 }
 
+/* The icon the item form is currently holding. A module-level let rather than
+   a field read back off the DOM, because "Automatic" is the absence of a
+   choice and an empty string in a hidden input cannot be told apart from a
+   field nobody has wired yet. Both flows set it before they render. */
+let itemFormIcon = "";
+
 function commonItemFieldsHtml(item, afterName) {
   item = item || {};
   const categories = Object.keys(character.categoryRules);
@@ -459,6 +466,7 @@ function commonItemFieldsHtml(item, afterName) {
       labelExtra: `<span id="if-name-tag">${itemSourceTagHtml(item)}</span>`
     })}
     ${afterName || ""}
+    ${iconFieldHtml("if-icon", item.icon, item.name, "item")}
     ${selectFieldHtml("if-category", "Category", categories, item.category || categories[0])}
     <div class="field-row">
       ${numberFieldHtml("if-weight", "Weight (lb)", item.weight != null ? item.weight : 1)}
@@ -537,7 +545,8 @@ function readCommonItemFields() {
     category: document.getElementById("if-category").value,
     weight: parseFloat(document.getElementById("if-weight").value) || 0,
     qty: parseInt(document.getElementById("if-qty").value) || 1,
-    description: document.getElementById("if-desc").value.trim()
+    description: document.getElementById("if-desc").value.trim(),
+    icon: itemFormIcon
   };
 }
 
@@ -767,6 +776,9 @@ function contentShape(entry) {
      catalogue's value is a default -- pointing yours at a quiver instead of the
      loose stack is an arrangement, the same as which pocket you keep it in. */
   delete bones.ammunition;
+  /* And the picture, for the same reason: choosing a flame for your torch is
+     not a claim about what a torch is. */
+  delete bones.icon;
   /* An empty box and a field that was never there say the same thing. The form
      hands back "" for a description nobody typed, the catalogue simply has no
      description, and without this every single item read as modified the
@@ -847,6 +859,7 @@ function openAddInventoryModal(presetCategory, presetType) {
      which is why a blank form is never "custom". */
   let pickedSource = null;
   let pickedBaseline = null;
+  itemFormIcon = "";        // a fresh form starts on Automatic
 
   function pickCatalogueItem(entry) {
     pickedSource = entry;
@@ -883,6 +896,7 @@ function openAddInventoryModal(presetCategory, presetType) {
     `;
     wireSelect("if-category");
     wireItemSearch();
+    wireIconField("if-icon", "if-name", () => itemFormIcon, v => { itemFormIcon = v; }, "item");
 
     const typeFields = document.getElementById("type-fields");
     renderItemTypeFields(typeFields, state.type, pickedSource, state);
@@ -1225,6 +1239,7 @@ function openItemDetailModal(itemId) {
 function openItemEditModal(itemId) {
   const item = character.inventory.find(i => i.id == itemId);
   const state = newItemFormState(item);
+  itemFormIcon = item.icon || "";
 
   openModal("full", `
     <div class="modal-heading-row">
@@ -1242,6 +1257,7 @@ function openItemEditModal(itemId) {
   guardModalEdits();
 
   wireSelect("if-category");
+  wireIconField("if-icon", "if-name", () => itemFormIcon, v => { itemFormIcon = v; }, "item");
   const typeFields = document.getElementById("type-fields");
   renderItemTypeFields(typeFields, state.type, item, state);
   wireItemTypeToggle(state, typeFields, item);
@@ -1249,6 +1265,7 @@ function openItemEditModal(itemId) {
 
   document.getElementById("save-item-edit-button").addEventListener("click", () => {
     Object.assign(item, readCommonItemFields());
+    if (!item.icon) delete item.icon;
     const ac = parseInt(document.getElementById("if-ac").value) || 0;
     const atkb = parseInt(document.getElementById("if-atkb").value) || 0;
     if (ac) item.acBonus = ac; else delete item.acBonus;

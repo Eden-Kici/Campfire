@@ -31,6 +31,7 @@ const SUITES = [
   ["custom-items", "./custom-items.test.js"],
   ["containers", "./containers.test.js"],
   ["casting", "./casting.test.js"],
+  ["icons", "./icons.test.js"],
   ["party", "./party.test.js"],
   ["smoke", "./smoke.test.js"]
 ];

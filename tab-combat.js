@@ -190,7 +190,7 @@ function renderCombatTab() {
       const slot = character.spellSlots[lvl];
       return `
       <div class="res-row">
-        <div class="res-name-wrap" data-slot-view="${lvl}"><span class="res-name">${slotRowName(lvl)}</span><span class="res-tag">${esc(rechargeLabel(slot.recharge))}</span></div>
+        <div class="res-name-wrap" data-slot-view="${lvl}"><span class="row-icon">${iconSvg("sparkle")}</span><span class="res-name">${slotRowName(lvl)}</span><span class="res-tag">${esc(rechargeLabel(slot.recharge))}</span></div>
         ${usingVisualSlots()
           ? spellSlotPipsHtml(slot, lvl)
           : `<div class="stepper"><button data-slot-minus="${lvl}">\u2212</button><span class="res-count">${slot.current}/${slot.max}</span><button data-slot-plus="${lvl}">+</button></div>`}
@@ -202,6 +202,7 @@ function renderCombatTab() {
     ${resourceRows(character).map(row => `
       <div class="res-row">
         <div class="res-name-wrap" data-resource-view="${esc(row.key)}">
+          <span class="row-icon">${iconHtml(row, "resource")}</span>
           <span class="res-name">${esc(row.name)}</span>
           ${rechargeLabel(row.recharge) === "\u2014" ? "" : `<span class="res-tag">${esc(rechargeLabel(row.recharge))}</span>`}
           ${row.container ? `<span class="res-tag" style="white-space:nowrap;" title="Refills from ${esc(row.refillFrom)}">HOLDS ${esc(row.refillFrom)}</span>` : ""}
@@ -223,10 +224,9 @@ function renderCombatTab() {
       ? `<div class="empty-hint">No attacks yet. Anything in a category that grants attacks shows up here — add a weapon from your Inventory.</div>` : ""}
     ${weaponList(character).map(weapon => {
       const atk = calculateAttack(character, weapon);
-      const icon = weapon.weaponType === "ranged" ? "\uD83C\uDFF9" : "\u2694\uFE0F";
       return `
         <div class="atk-row" data-atk-detail="${weapon.id}">
-          <div class="atk-icon">${icon}</div>
+          <div class="row-icon">${iconHtml(weapon, "weapon")}</div>
           <div style="flex:1;min-width:0;">
             <div class="atk-name">${esc(weapon.name)}${atk.proficiency.proficient ? "" : `<span class="atk-warn" title="Not proficient">!</span>`}${atk.offHand ? `<span class="res-tag" style="margin-left:6px;">OFF-HAND</span>` : ""}</div>
             <div class="atk-range">${esc([
@@ -998,18 +998,23 @@ function openAddResourceModal() {
   openModal("sheet", `
     <div class="modal-heading">New Resource</div>
     ${textFieldHtml("new-res-name", "Name", "", { placeholder: "e.g. Bardic Inspiration" })}
+    ${iconFieldHtml("new-res-icon", "", "", "resource")}
     ${numberFieldHtml("new-res-max", "Max Uses", 1)}
     ${rechargeFieldHtml("new-res")}
     <button class="btn-primary" id="save-res-button">Add Resource</button>
   `);
   guardModalEdits();
   wireRechargeField("new-res");
+  let newResIcon = "";
+  wireIconField("new-res-icon", "new-res-name", () => newResIcon, v => { newResIcon = v; }, "resource");
   document.getElementById("save-res-button").addEventListener("click", () => {
     const name = document.getElementById("new-res-name").value.trim() || "New Resource";
     const max = parseInt(document.getElementById("new-res-max").value) || 1;
     const recharge = readRechargeValue("new-res");
     const newId = makeId(character.resources);
-    character.resources.push({ id: newId, name, recharge, current: max, max });
+    const resource = { id: newId, name, recharge, current: max, max };
+    if (newResIcon) resource.icon = newResIcon;
+    character.resources.push(resource);
     closeModal();
     renderContent();
   });
@@ -1028,6 +1033,7 @@ function openResourceDetailModal(resourceId) {
   openModal("sheet", `
     <div class="modal-heading">Edit Resource</div>
     ${textFieldHtml("edit-res-name", "Name", r.name)}
+    ${iconFieldHtml("edit-res-icon", r.icon, r.name, "resource")}
     ${scaling ? `
       <div class="breakdown-row"><span>Max Uses (scales by level)</span><span>${effective}</span></div>
       ${toggleLineHtml("res-max-override-switch", "Override the scaled max", overrideOn)}
@@ -1041,6 +1047,8 @@ function openResourceDetailModal(resourceId) {
   `);
   guardModalEdits();
   wireRechargeField("edit-res");
+  let editResIcon = r.icon || "";
+  wireIconField("edit-res-icon", "edit-res-name", () => editResIcon, v => { editResIcon = v; }, "resource");
 
   if (scaling) {
     const switchEl = document.getElementById("res-max-override-switch");
@@ -1054,6 +1062,7 @@ function openResourceDetailModal(resourceId) {
 
   document.getElementById("save-edit-res-button").addEventListener("click", () => {
     r.name = document.getElementById("edit-res-name").value.trim() || r.name;
+    if (editResIcon) r.icon = editResIcon; else delete r.icon;
     if (scaling) {
       if (overrideOn) r.maxOverride = parseInt(document.getElementById("edit-res-max-override").value) || effective;
       else delete r.maxOverride;

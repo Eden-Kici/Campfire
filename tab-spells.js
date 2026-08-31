@@ -108,6 +108,7 @@ function renderSpellRow(spell) {
   return `
     <div class="atk-row" data-spell-view="${spell.id}">
       ${spell.level > 0 ? `<div class="prof-dot ${spell.prepared ? "prof" : ""}" data-spell-prep="${spell.id}"></div>` : ""}
+      <div class="row-icon">${iconHtml(spell, "spell")}</div>
       <div style="flex:1;min-width:0;">
         <div class="atk-name">${esc(spell.name)}<span class="res-tag">${esc(spell.castingTime)}</span></div>
         ${showClassTag ? `<div class="atk-range">${esc(spell.classSource)}</div>` : ""}
@@ -378,6 +379,7 @@ function spellFormFieldsHtml(spell, pickFromSrd) {
       ? textFieldHtml("spell-form-name", "Name", "", { placeholder: "Search the SRD or type your own" })
         + searchListHtml("spell-form-name-results")
       : textFieldHtml("spell-form-name", "Name", spell ? spell.name : "", { placeholder: "e.g. Fireball" })}
+    ${iconFieldHtml("spell-form-icon", spell && spell.icon, spell ? spell.name : "", "spell")}
     <div class="field-row">
       ${selectFieldHtml("spell-form-level", "Level",
         [{ value: "0", label: "Cantrip" }].concat([1, 2, 3, 4, 5, 6, 7, 8, 9].map(l => ({ value: String(l), label: levelLabel(l) }))),
@@ -428,6 +430,7 @@ function wireSpellEffectRows(formEffects) {
    effects:[] would read as different content from the catalogue row it came
    from, and would export three keys that mean nothing. */
 function tidySpellFields(spell) {
+  if (!spell.icon) delete spell.icon;
   if (!spell.damage) delete spell.damage;
   if (!spell.heal) { delete spell.heal; delete spell.healMod; }
   else if (!spell.healMod) delete spell.healMod;
@@ -451,6 +454,7 @@ function readSpellForm() {
 function openAddSpellModal() {
   let attackOn = false;
   let healModOn = false;
+  let formIcon = "";
   const formEffects = [];
   openModal("full", `
     <div class="modal-heading">Add Spell</div>
@@ -462,6 +466,7 @@ function openAddSpellModal() {
   document.getElementById("spell-form-attack-switch").addEventListener("click", (e) => { attackOn = !attackOn; e.currentTarget.classList.toggle("on", attackOn); });
   document.getElementById("spell-form-heal-mod").addEventListener("click", (e) => { healModOn = !healModOn; e.currentTarget.classList.toggle("on", healModOn); });
   wireSpellEffectRows(formEffects);
+  wireIconField("spell-form-icon", "spell-form-name", () => formIcon, v => { formIcon = v; }, "spell");
 
   // picking a real SRD spell prefills everything else on the form: level,
   // casting time (best-effort -- see spellCastingTimeCode's own comment),
@@ -492,6 +497,7 @@ function openAddSpellModal() {
     const spell = Object.assign({ id: newId, attackRoll: attackOn }, formData);
     spell.healMod = healModOn;
     spell.effects = formEffects.filter(e => e && e.category);
+    spell.icon = formIcon;
     tidySpellFields(spell);
     if (spell.level > 0) spell.prepared = false;
     character.spells.push(spell);
@@ -581,6 +587,7 @@ function openSpellEditModal(spellId) {
   const spell = character.spells.find(s => s.id == spellId);
   let attackOn = spell.attackRoll || false;
   let healModOn = spell.heal ? !!spell.healMod : spellHealingAddsModifier(spell.desc);
+  let formIcon = spell.icon || "";
   const formEffects = JSON.parse(JSON.stringify(spell.effects || []));
   openModal("full", `
     <div class="modal-heading">Edit Spell</div>
@@ -595,12 +602,14 @@ function openSpellEditModal(spellId) {
   document.getElementById("spell-form-attack-switch").addEventListener("click", (e) => { attackOn = !attackOn; e.currentTarget.classList.toggle("on", attackOn); });
   document.getElementById("spell-form-heal-mod").addEventListener("click", (e) => { healModOn = !healModOn; e.currentTarget.classList.toggle("on", healModOn); });
   wireSpellEffectRows(formEffects);
+  wireIconField("spell-form-icon", "spell-form-name", () => formIcon, v => { formIcon = v; });
   document.getElementById("save-spell-edit-button").addEventListener("click", () => {
     const formData = readSpellForm();
     Object.assign(spell, formData);
     spell.attackRoll = attackOn;
     spell.healMod = healModOn;
     spell.effects = formEffects.filter(e => e && e.category);
+    spell.icon = formIcon;
     tidySpellFields(spell);
     if (spell.level === 0) delete spell.prepared;
     else if (spell.prepared === undefined) spell.prepared = false;
