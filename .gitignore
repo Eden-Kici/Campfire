@@ -1,8 +1,19 @@
 # Patch archives used to move work onto this machine. Not part of the app.
 _to_delete/
 
-# Scratch output from review passes.
+# Working notes from the build: review passes, findings, the original port plan
+# and the handoff written partway through. Kept on disk, out of the repo -- they
+# describe work that is finished, and the architecture they were feeding into
+# now lives in CLAUDE.md.
 review-findings/
+REVIEW.md
+REVIEW-APP-WIDE.md
+REVIEW-CHROME.md
+PORT-PLAN.md
+HANDOFF.md
+
+# Patch archives and the icon-fitting intermediates.
+*.tgz
 
 # OS and editor noise
 .DS_Store
