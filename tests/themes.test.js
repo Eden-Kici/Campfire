@@ -46,9 +46,10 @@ module.exports = function (suite) {
     return all;
   });
 
-  suite.ok("the three themes are all defined",
-    Object.keys(blocks).sort().join(",") === "ember,fantasy,light",
-    "found " + Object.keys(blocks).join(", "));
+  /* Read off THEMES rather than hardcoded here, so adding a theme to the app
+     and forgetting to give it a palette is what fails -- not this list. */
+  const themeNames = app.THEMES.map(t => t.value).sort().join(",");
+  suite.is("every theme the app offers has a palette", Object.keys(blocks).sort().join(","), themeNames);
 
   const reference = blocks.ember;
   suite.ok("ember defines a full palette", reference && reference.size > 15, "only " + (reference ? reference.size : 0));
@@ -69,8 +70,31 @@ module.exports = function (suite) {
     const match = palette.match(new RegExp('\\[data-theme="' + name + '"\\]\\s*\\{([^}]*)\\}'));
     return match ? match[1] : "";
   }
-  suite.ok("fantasy is not a copy of ember", valuesIn("fantasy") !== valuesIn("ember"));
-  suite.ok("light is not a copy of ember", valuesIn("light") !== valuesIn("ember"));
+  app.THEMES.map(t => t.value).filter(n => n !== "ember").forEach(name => {
+    suite.ok(name + " is not a copy of ember", valuesIn(name) !== valuesIn("ember"));
+  });
+
+  /* Ember owns the brand orange. A second theme that lands on the same hue is
+     a second Ember, which is the one thing a theme list must not contain --
+     the point of picking one is that the app looks different afterwards. */
+  function hue(hex) {
+    const n = parseInt(hex.slice(1), 16);
+    const r = (n >> 16 & 255) / 255, g = (n >> 8 & 255) / 255, b = (n & 255) / 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    if (max === min) return null;                       // grey has no hue to clash
+    let h;
+    if (max === r) h = (g - b) / (max - min);
+    else if (max === g) h = 2 + (b - r) / (max - min);
+    else h = 4 + (r - g) / (max - min);
+    h *= 60; return h < 0 ? h + 360 : h;
+  }
+  function hueGap(a, b) { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; }
+  const emberHue = hue(colourOf("ember", "--accent"));
+  app.THEMES.map(t => t.value).filter(n => n !== "ember").forEach(name => {
+    const own = hue(colourOf(name, "--accent"));
+    suite.ok(name + " does not reuse the brand orange", own === null || hueGap(own, emberHue) > 25,
+      name + " accent sits " + (own === null ? "grey" : Math.round(hueGap(own, emberHue)) + "\u00B0") + " from ember's");
+  });
 
   suite.section("light really is lighter");
   function brightness(hex) {
@@ -104,7 +128,7 @@ module.exports = function (suite) {
     const one = lum(a), two = lum(b);
     return (Math.max(one, two) + 0.05) / (Math.min(one, two) + 0.05);
   }
-  ["ember", "fantasy", "light"].forEach(name => {
+  app.THEMES.map(t => t.value).forEach(name => {
     const ratio = contrast(colourOf(name, "--text"), colourOf(name, "--surface"));
     suite.ok(name + " body text clears 7:1 on a card", ratio >= 7, "ratio " + ratio.toFixed(1));
     const dim = contrast(colourOf(name, "--text-dim"), colourOf(name, "--surface"));
@@ -163,7 +187,8 @@ module.exports = function (suite) {
   app.openThemeModal();
   const html = app.__modals[before].html;
   suite.ok("offers every theme", app.THEMES.every(t => html.includes('data-theme-pick="' + t.value + '"')));
-  suite.ok("previews each one with its own colours", (html.match(/class="theme-swatches" data-theme=/g) || []).length === 3);
+  suite.is("previews each one with its own colours",
+    (html.match(/class="theme-swatches" data-theme=/g) || []).length, app.THEMES.length);
   suite.ok("marks the current one", /theme-option active/.test(html));
   suite.ok("offers the adjustable colours", app.CUSTOM_SWATCHES.every(s => html.includes('data-swatch="' + s.variable + '"')));
   suite.ok("and a way back", /id="theme-reset"/.test(html));

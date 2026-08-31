@@ -53,8 +53,11 @@
   --card-edge: rgba(255, 255, 255, .07);
 }
 
-/* Warm leather and antique gold. Still dark, so it reads as a different mood
-   rather than a different brightness. */
+/* Warm leather with a verdigris accent. It was antique gold, which sat twelve
+   degrees off the brand orange -- close enough that Fantasy read as Ember in
+   a slightly different light rather than as its own thing. The leather stays;
+   the green against it is the gold-tooled-binding pairing, and it is the part
+   that makes picking this theme visibly a choice. */
 [data-theme="fantasy"] {
   --page: #17110B;
   --frame: #1E1710;
@@ -71,9 +74,9 @@
   --text-faint: #AC9880;
   --on-fill: #F3E6D0;
 
-  --accent: #C89440;
-  --accent-ink: #1A1206;
-  --accent-soft: #E7C77E;
+  --accent: #57B389;
+  --accent-ink: #0E1611;
+  --accent-soft: #A2DEC1;
 
   --danger: #A8382E;
   --danger-text: #E39A90;
@@ -93,8 +96,50 @@
   --card-edge: rgba(255, 255, 255, .08);
 }
 
-/* Paper. The surfaces invert, but the accent and the state colours stay
-   recognisably the same app. */
+/* Near-black and crimson, from the prototype. The neutral greys carry no hue
+   at all, which is what makes it read as a different app rather than a dimmer
+   Ember -- the warm browns are the whole of Ember's character, so a dark theme
+   that keeps them is just Ember with the lights off. */
+[data-theme="midnight"] {
+  --page: #0A0A0B;
+  --frame: #0F0F11;
+  --sunken: #101113;
+  --surface: #17181A;
+  --control: #1E1F22;
+  --control-raised: #26282C;
+  --hairline: #1B1C1F;
+  --border: #2A2C31;
+  --border-strong: #3A3D43;
+
+  --text: #F2F3F5;
+  --text-dim: #9BA1A9;
+  --text-faint: #878D95;
+  --on-fill: #FFFFFF;
+
+  --accent: #EB4E64;
+  --accent-ink: #1A0508;
+  --accent-soft: #F2909E;
+
+  --danger: #C4353F;
+  --danger-text: #F08A96;
+  --danger-surface: #4A1F25;
+  --danger-tint: #201316;
+
+  --success-text: #86D39A;
+  --success-surface: #22402B;
+  --info-text: #8FBEE0;
+
+  --track: #000000;
+  --knob: #FFFFFF;
+  --temp-surface: #2E3A44;
+
+  --scrim: rgba(0, 0, 0, .68);
+  --fill-shadow: rgba(0, 0, 0, .9);
+  --card-edge: rgba(255, 255, 255, .06);
+}
+
+/* Paper. The surfaces invert, but the state colours stay recognisably the
+   same app. */
 [data-theme="light"] {
   --page: #E8E3DB;
   --frame: #F6F2EA;
@@ -111,13 +156,16 @@
   --text-faint: #6A5F52;
   --on-fill: #FAF6F0;
 
-  /* The brand orange survives on white as an accent; the gold "soft" tone
-     does not -- as body text it reads as washed-out yellow. Light gets a
-     warm brown-red for secondary text instead. The three themes do not have
-     to use the same hue for this, only the same role. */
-  --accent: #A8451A;
+  /* Paper takes ink, not fire. The brand orange technically passed contrast on
+     white, but a warm accent on a warm paper ground is a theme that reads as a
+     washed-out Ember rather than a choice -- and this is the one theme where
+     the surfaces are already doing the warmth. A deep ink blue is the oldest
+     thing to put on paper and it gives Light an identity of its own; a slate
+     grey-blue carries the secondary role. A theme owes the palette a set of
+     roles, not a hue. */
+  --accent: #2A4C86;
   --accent-ink: #FFFFFF;
-  --accent-soft: #6B4A3A;
+  --accent-soft: #4A5468;
 
   --danger: #B33A32;
   --danger-text: #9E2B24;
@@ -965,6 +1013,11 @@ body {
 [data-theme="fantasy"] {
   --warning-text: #EDC469;
   --warning-tint: #3B2C14;
+}
+
+[data-theme="midnight"] {
+  --warning-text: #E9C26A;
+  --warning-tint: #2E2413;
 }
 
 [data-theme="light"] {

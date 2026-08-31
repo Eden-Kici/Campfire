@@ -27,7 +27,7 @@ phone's home screen and runs offline. See `DEPLOY.md`.
 tones (`#F5C37A` gold, `#E8843A` orange, `#533A2A` log brown) that are already the palette's own
 accents. `logo-mark.png` is the transparent mark, sized in CSS against the wordmark it sits beside
 so the two stay one lockup; the icons sit on `#17120f`, the manifest's own background, so the
-install splash doesn't seam. There is one mark for all three themes, which is what the brand sheet
+install splash doesn't seam. There is one mark for every theme, which is what the brand sheet
 specifies. **Adding an image means adding it to `tools/build-sw.js`'s static list and re-running it**
 — a file the page loads but the worker doesn't cache works perfectly until the phone loses signal.
 
@@ -472,9 +472,16 @@ thing wants, and the picker.
 - **An icon is markup, not a file.** Each one is a string of SVG paths with no colour and no size
   of its own; `iconSvg()` wraps it in an `<svg>` that strokes with `currentColor`. That is the whole
   theming story: an icon takes the colour of the row it sits in, so a dimmed row dims its icon and
-  all three themes work off one set of drawings. The suite fails any icon that carries its own
+  every theme works off one set of drawings. The suite fails any icon that carries its own
   `fill` or `stroke`, because one filled shape would sit on the Light theme as a dark blob that no
   CSS could reach.
+- **Centred is not enough; they are fitted.** A set where one drawing fills 14 units and its
+  neighbour fills 11 reads as a wobbling, uneven column the moment forty of them are stacked down a
+  list, even though each one looks fine on its own. A pass measures every drawing's real bounding
+  box in a real browser and wraps it in a `<g transform>` that fits it to one optical size. Where
+  that means scaling, the group carries a **compensating `stroke-width`** — scaling a stroked path
+  scales its stroke too, and a heavier line is a worse inconsistency than the one being fixed.
+  An icon added by hand and not put through that pass will sit at the wrong size next to the rest.
 - **They were drawn at the size they are used.** 18-24px next to a name, 32 in the picker. Anything
   that needed more detail than that to read was cut rather than shipped as a smudge, which is why
   there is no crossbow, halberd or gauntlet in the set: each was drawn three or four times, never
@@ -510,6 +517,29 @@ thing wants, and the picker.
 - **A picked icon does not make an item homebrew.** `contentShape()` drops `icon` along with the
   other decisions you make about your copy rather than about the thing: choosing a flame for your
   torch is not a claim about what a torch is.
+
+## Themes
+
+Four of them, and the palette is the only place a colour is allowed to live — the suite fails any
+hex or `rgb()` in a rule or an inline style, because one hardcoded colour is a thing that stays dark
+when everything else goes light and only shows up on the one screen nobody checked.
+
+- **Ember** is the brand: warm browns, the campfire orange. Unchanged and the default.
+- **Midnight** is near-black and crimson, from the prototype. Its greys carry no hue at all, and
+  that is the whole point — Ember's warm browns *are* Ember's character, so a dark theme that keeps
+  them is just Ember with the lights off rather than a different app.
+- **Fantasy** is leather with a verdigris accent. It was antique gold, which measured twelve degrees
+  off the brand orange: close enough that picking it changed the brightness and not much else.
+- **Light** is paper and ink blue. The orange technically passed contrast on white, but a warm
+  accent on a warm paper ground reads as a washed-out Ember, and this is the one theme whose
+  surfaces are already doing the warmth.
+- **A theme owes the palette a set of roles, not a hue**, which is why none of the four share one.
+  The suite measures the hue angle of every accent against Ember's and fails anything within 25° —
+  that check is what caught Fantasy, and it is the thing that stops a fifth theme quietly becoming
+  a fifth orange. It also reads the theme list off `THEMES` rather than a hardcoded list, so adding
+  a theme and forgetting to give it a palette is what fails.
+- Contrast is enforced per theme, not by eye: body text at 7:1 on a card, secondary text, the accent
+  as text, and the button label on the accent all at 4.5:1.
 
 ## Gestures on a phone
 

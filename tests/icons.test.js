@@ -32,11 +32,15 @@ module.exports = function (suite) {
   /* Every icon strokes with currentColor and carries no colour of its own. One
      with a fill, or its own stroke, would sit on a light theme as a dark blob
      and no amount of CSS would reach it. */
-  /* width/height on a <rect> is geometry, not styling, so only the attributes
-     that would override what iconSvg sets are checked. */
+  /* Only the attributes that would break the theme are banned. width/height on
+     a <rect> is geometry, and `stroke-width` on a scaled group is what keeps
+     every icon at the same rendered weight (see the header) -- neither touches
+     colour, which is the thing that has to stay inherited. */
   const offenders = Object.keys(ICONS).filter(n =>
-    /\b(fill|stroke|stroke-width|stroke-linecap|style|viewBox)=/.test(ICONS[n]));
+    /\b(fill|stroke|style|viewBox)=/.test(ICONS[n]));
   suite.is("none carry their own colour", offenders, []);
+  suite.is("and a stroke-width only ever appears alongside a scale, to cancel it",
+    Object.keys(ICONS).filter(n => /stroke-width=/.test(ICONS[n]) && !/scale\(/.test(ICONS[n])), []);
   suite.is("and none smuggle one in through a class",
     Object.keys(ICONS).filter(n => /class=/.test(ICONS[n])), []);
 
@@ -124,10 +128,12 @@ module.exports = function (suite) {
      column once forty are stacked down a list of resources. The centring is
      baked in as a translate rather than left to CSS, because CSS cannot know
      where inside the 24x24 grid a particular drawing happens to sit. */
-  const shifted = Object.keys(ICONS).filter(n => /^<g transform="translate\(/.test(ICONS[n]));
-  suite.ok("the ones that needed nudging carry it in the markup", shifted.length > 20);
-  suite.is("and every nudge is a plain translate, never a scale or a rotate",
-    shifted.filter(n => /transform="(?!translate\()/.test(ICONS[n])), []);
+  const fitted = Object.keys(ICONS).filter(n => /^<g transform="translate\(/.test(ICONS[n]));
+  suite.ok("nearly all of them carry the fit in their markup", fitted.length > 100);
+  suite.is("and every transform is a translate, optionally with a scale — never a rotate or a skew",
+    Object.keys(ICONS).filter(n => /transform="/.test(ICONS[n])
+      && !/^transform="translate\([-\d. ]+\)( scale\([\d.]+\))?"$/.test(
+        (ICONS[n].match(/transform="[^"]*"/) || [""])[0].replace(/^ */, ""))), []);
 
   suite.section("a surge is a heart going faster");
   suite.is("Action Surge", guessIcon("Action Surge", "resource"), "heart-beat");

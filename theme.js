@@ -11,8 +11,9 @@
 
 const THEMES = [
   { value: "ember", label: "Ember", hint: "The original" },
-  { value: "fantasy", label: "Fantasy", hint: "Leather and gold" },
-  { value: "light", label: "Light", hint: "Paper" }
+  { value: "midnight", label: "Midnight", hint: "Near-black and crimson" },
+  { value: "fantasy", label: "Fantasy", hint: "Leather and verdigris" },
+  { value: "light", label: "Light", hint: "Paper and ink" }
 ];
 
 // the ones worth exposing; the rest follow from the base theme
