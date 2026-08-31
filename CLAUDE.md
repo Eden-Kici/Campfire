@@ -488,12 +488,18 @@ thing wants, and the picker.
   still was not. **What settled it was screenshotting each icon's slot on its own and measuring the
   lit pixels** — the thing the person is actually looking at. When someone reports the same visual
   problem three times, the measurement is what is wrong, not them.
-- **And fitted to one size.** A set where one drawing fills 14 units and its neighbour fills 11
-  reads as an uneven column however well each one is centred. Where that means scaling, the group
-  carries a **compensating `stroke-width`** — scaling a stroked path scales its stroke too, and a
-  heavier line is a worse inconsistency than the one being fixed.
-  An icon added by hand and not put through that pass will sit at the wrong size and the wrong
-  place, and you will not see it until it is in a list beside forty others.
+- **And evened out in size, to the set's own median.** A set where one drawing fills 14 units and
+  its neighbour fills 11 reads as an uneven column however well each one is centred. **The target is
+  measured, not chosen.** An earlier version of this pass fitted to a picked number and quietly
+  shrank 111 of the 121 icons by a tenth — perfectly even, and visibly smaller, which Eden spotted
+  immediately and none of my measurements did, because I was measuring evenness and never checked
+  where the middle had gone. Normalising to the median moves the outliers in from both ends and
+  leaves the middle exactly where it was. `icons.test.js` now pins the median scale near 1 and
+  requires icons to have moved in both directions.
+  Where fitting means scaling, the group carries a **compensating `stroke-width`** — scaling a
+  stroked path scales its stroke too, and a heavier line is a worse inconsistency than the one being
+  fixed. An icon added by hand and not put through the pass will sit wrong, and you will not see it
+  until it is in a list beside forty others.
 - **`campfire-icons.zip` at the repo root is the set as an asset pack** — every icon as its own
   SVG, a sprite sheet of `<symbol>`s, `icons.json`, the app icons, and a contact sheet. Rebuild it
   whenever the set changes; it is a copy, and a stale copy is worse than none.

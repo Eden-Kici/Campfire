@@ -129,6 +129,26 @@ module.exports = function (suite) {
      a transform rather than left to CSS, because CSS cannot know where inside
      the 24x24 grid a particular drawing's weight happens to sit -- and weight,
      not bounding box, is what the eye is lining up. */
+  /* The fitting pass once shrank 111 of 121 icons by a tenth while making the
+     set perfectly even, and every measurement I had said it was fine, because
+     I was measuring evenness and not size. The scales have to sit around 1:
+     the pass exists to pull outliers toward the middle, so if the middle has
+     moved, the middle is what broke. */
+  const scales = Object.keys(ICONS)
+    .map(n => (ICONS[n].match(/scale\(([\d.]+)\)/) || [0, "1"])[1])
+    .map(Number).sort((a, b) => a - b);
+  const median = scales[Math.floor(scales.length / 2)];
+  suite.ok("the set was evened out, not quietly resized",
+    median > 0.97 && median < 1.03, "median scale " + median.toFixed(3));
+  const shrunk = scales.filter(v => v < 0.995).length;
+  const grown = scales.filter(v => v > 1.005).length;
+  suite.ok("with icons moving in from both ends rather than all one way",
+    shrunk > 0 && grown > 0 && Math.max(shrunk, grown) < scales.length * 0.75,
+    shrunk + " shrunk, " + grown + " grown, of " + scales.length);
+  suite.ok("and nothing resized so far it stops matching the rest",
+    scales[0] > 0.8 && scales[scales.length - 1] < 1.3,
+    "range " + scales[0] + " to " + scales[scales.length - 1]);
+
   const fitted = Object.keys(ICONS).filter(n => /^<g transform="translate\(/.test(ICONS[n]));
   suite.ok("nearly all of them carry the fit in their markup", fitted.length > 100);
   suite.is("and every transform is a translate, optionally with a scale — never a rotate or a skew",
